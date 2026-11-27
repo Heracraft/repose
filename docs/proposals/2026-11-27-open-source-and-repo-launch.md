@@ -136,20 +136,13 @@ Kernel/KVM boundaries, nftables bridge drop rules, 24-hour Ed25519 SSH certifica
 
 ---
 
-## 8. Execution order (checklist for future workstreams)
+## 8. Ordered launch waves (coordinated with active conductor work)
 
-1. **Stage 1 — Private mirror & Coolify repoint (pre-launch ops, zero user-visible change)**
-   - Create private `Heracraft/repose-internal`, push `--mirror`, move Coolify (`api`, `api-grpc`, `web`) and conductor tooling to `repose-internal`, verify deploy and `release-assets`.
-2. **Stage 2 — Pre-launch security, Free BYOH, & fleet readiness**
-   - Move extra `watch.go` / `internal/abuse` patterns to runtime config on `repose.run`.
-   - Complete adversarial boundary review (gateway, webhook ingest, SSRF dialers, token scopes, foreign-host bounds).
-   - Ship Free BYOH (`FreeOwnHosts = 1`, `$10/month` starting at 2 hosts) + `ENG-215` address-pool expansion ([2026-11-27-own-hardware-free.md](2026-11-27-own-hardware-free.md)) and `ENG-271` (`host-02` back to `Standard_D64s_v7`).
-3. **Stage 3 — Public tree export, git author email switch, tag sanitization, and contributor docs (launch)**
-   - Switch git author `user.email` off the owner's private email to GitHub's `users.noreply.github.com` address or `nehemia@repose.run` for the squashed root commit and future commits.
-   - Add `LICENSE` (`Apache-2.0`), `NOTICE`, public `README.md`, `CONTRIBUTING.md`, and public `SECURITY.md`; enable GitHub Private Vulnerability Reporting.
-   - Build `ops/dev/public-export` with automated leak-grep (including private email deny-check) + clean-checkout `go test ./...` + `pnpm check`.
-   - Export clean orphan commit to `Heracraft/repose`, re-point release tags without losing Release assets, verify `git clone --mirror` has zero historical leaks, and verify `ops/dev/release-assets` passes 100%.
-4. **Stage 4 — Turnkey control-plane self-hosting (~1 week post-launch, once demand is seen)**
-   - Build `SECRET_MASTER_KEY` `KeyVault` implementation + unit tests.
-   - Add `GET /public/auth-config` and OIDC decoupling so `repose login --api-url <url>` works with zero flags.
-   - Write and E2E-test `docker-compose.yml` + `SELF-HOSTING.md` on a clean non-Azure Linux VM.
+| Wave | Board items | Why this exact order |
+|---|---|---|
+| **Wave 0 (In flight now)** | Conductor batch `r20261127-7` (`msgs-plain` `I-1724`, `a11y-config`), `msgs-plain-2` (`I-1728`), `d2-core-6` (`I-1726`, `ENG-279` option a), `d2-surface-4`, and `[sweep-cli]` cards | Finishes Mac Design 2 pass-2 fixes and establishes the 2-line plain-words refusal architecture (`I-1724`) across `internal/api/ops/`, `internal/cli/`, and `apps/web/src/lib/refusal.ts`. |
+| **Wave 1 (Build now — disjoint from Wave 0)** | `ENG-215` (1,000-host address ceiling), `ENG-284` (security hardening + externalized abuse watchlists), `ENG-99` (alert on red `release-assets.yml`), plus owner call on `ENG-282` (default-off email) | Touches `internal/api/hostmgr/`, `internal/abuse`, `watch.go`, and `.github/workflows/` — zero file overlap with Wave 0, and closes every safety/capacity prerequisite before Free BYOH or public repo promotion. |
+| **Wave 2 (Unblocks after Wave 0 + `ENG-215` + `ENG-282`)** | `ENG-283` (Free BYOH: `FreeOwnHosts = 1`, no card, remote browser unlocked; `$10/month` `Own hardware` at 2+ hosts), `ENG-253` (Mac Design 2 landing visuals) | Building `ENG-283` *after* `msgs-plain` (`I-1724`) avoids merge conflicts in `ops/`, `cli/run.go`, and `refusal.ts`, and ensures Free-tier host-limit and first-run messages follow the new 2-line plain-words standard. |
+| **Wave 3 (Clean queue boundary after `ENG-284` + `ENG-99` + `ENG-283`)** | `ENG-285` (Mirror `Heracraft/repose-internal`, repoint Coolify, switch git author `user.email` to GitHub noreply or `nehemia@repose.run`, build `ops/dev/public-export` with leak-gate CI, push squashed `Apache-2.0` commit & re-point tags without losing Releases; closes `ENG-5`) | **Must run at a clean conductor wave boundary (`release-queue ls` empty):** active worktrees on `woker-1` currently point `origin` at `Heracraft/repose`, so repointing `woker-1` + Coolify to `repose-internal` and rewriting public `Heracraft/repose` mid-wave would break open `gh pr create --base integrated` branches. Verify `ops/dev/release-assets` (`I-1398`) immediately after cutover. |
+| **Wave 4 (Final pre-announcement switch)** | `ENG-271` (Resize `host-02` back to `Standard_D64s_v7`, reissue & undrain) | Kept last so `host-02` keeps saving ~$51/day on `Standard_D32s_v7` throughout Waves 0–3 until launch day. |
+| **Wave 5 (~1 week post-launch)** | `ENG-286` (Turnkey self-hosting: `SECRET_MASTER_KEY` local `KeyVault`, Logto/OIDC decoupling, `docker-compose.yml`), `ENG-287` + `ENG-288` (Integrations engine & YAML templates, stages 1–5) | Deferred past launch on purpose: launch first, measure real self-hosting demand, and unlock community YAML integration PRs. |
