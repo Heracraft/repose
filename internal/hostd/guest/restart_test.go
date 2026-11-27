@@ -76,7 +76,8 @@ func TestRestartHostRefusesWhenAMachineCannotBeParked(t *testing.T) {
 	}
 	res := fh.m.Execute(context.Background(), restartCmd("c-r2", false))
 	r := res.GetRestart()
-	if !res.Ok || r.GetRestarting() || r.GetParked() != 1 || !slices.Equal(r.GetNotParked(), []string{gid2}) {
+	if !res.Ok || r.GetRestarting() || r.GetParked() != 1 || !slices.Equal(r.GetNotParked(), []string{gid2}) ||
+		!slices.Equal(r.GetNotParkedReasons(), []string{"started with nobody logged in"}) {
 		t.Fatalf("%+v", res)
 	}
 	if !fh.unitActive(gid1) || fh.record(gid1) != nil || !fh.unitActive(gid2) {

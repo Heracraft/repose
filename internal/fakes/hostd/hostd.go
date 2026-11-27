@@ -1163,7 +1163,11 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 		}
 		not := append([]string{}, f.opts.NotParked...)
 		f.mu.Unlock()
-		r := &hostdv1.RestartResult{Parked: uint32(max(running-len(not), 0)), NotParked: not, Restarting: len(not) == 0 || c.RestartHost.Force, ParkMs: 900}
+		why := make([]string, len(not))
+		for i := range why {
+			why[i] = "started with nobody logged in"
+		}
+		r := &hostdv1.RestartResult{Parked: uint32(max(running-len(not), 0)), NotParked: not, NotParkedReasons: why, Restarting: len(not) == 0 || c.RestartHost.Force, ParkMs: 900}
 		return ok(func(res *hostdv1.Result) { res.Payload = &hostdv1.Result_Restart{Restart: r} })
 	case *hostdv1.Command_DeleteSnapshot:
 		// The fake keeps no files; a delete is always ok, as hostd's is

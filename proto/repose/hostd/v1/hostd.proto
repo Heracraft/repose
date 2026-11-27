@@ -533,7 +533,9 @@ message Result {
 // down: parked is how many guests are saved (parked now or before),
 // not_parked the guest ids that could not be, restarting whether the
 // restart was asked for, and park_ms how long the park took.
-message RestartResult { uint32 parked = 1; repeated string not_parked = 2; bool restarting = 3; uint32 park_ms = 4; }
+// not_parked_reasons is, for each of not_parked in order, the park's
+// fixed reason (never tenant text), so the api can say why.
+message RestartResult { uint32 parked = 1; repeated string not_parked = 2; bool restarting = 3; uint32 park_ms = 4; repeated string not_parked_reasons = 5; }
 // BootTimings is where one boot's time went, in milliseconds (DECISIONS
 // I-707): volume (create only: the thin volume and its filesystem),
 // prepare (the hypervisor's argv, the network and virtiofsd), ready (the

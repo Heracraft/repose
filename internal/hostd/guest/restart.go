@@ -35,8 +35,23 @@ func (m *Manager) RestartOn() bool { return m.d.RestartHost != nil && m.ParkEnab
 // not run at all returns none, and its guests would lose their memory as
 // surely as a failed one).
 func RestartTally(running []string, res []ParkResult) (parked int, notParked []string) {
+	parked, notParked, _ = restartTally(running, res)
+	return parked, notParked
+}
+
+// ReasonNotParked is the reason given for a running guest the park did
+// not report on at all.
+const ReasonNotParked = "the park did not reach it"
+
+func restartTally(running []string, res []ParkResult) (parked int, notParked, reasons []string) {
 	saved := map[string]bool{}
+	why := map[string]string{}
 	for _, r := range res {
+		if r.Reason != "" {
+			why[r.GuestID] = r.Reason
+		} else if r.Outcome != "" {
+			why[r.GuestID] = "the park " + r.Outcome
+		}
 		switch {
 		case r.Outcome == "parked", r.Outcome == "skipped" && r.Reason == SkipParked:
 			saved[r.GuestID] = true
@@ -48,9 +63,14 @@ func RestartTally(running []string, res []ParkResult) (parked int, notParked []s
 	for _, id := range running {
 		if !saved[id] {
 			notParked = append(notParked, id)
+			r := why[id]
+			if r == "" {
+				r = ReasonNotParked
+			}
+			reasons = append(reasons, r)
 		}
 	}
-	return parked, notParked
+	return parked, notParked, reasons
 }
 
 // runningGuests are the guests a park would take: state running and the
@@ -85,8 +105,8 @@ func (m *Manager) restartHost(ctx context.Context, c *hostdv1.RestartHost) (*hos
 	}
 	t0 := m.d.Now()
 	res := m.ParkAll(ctx, ParkOperator)
-	parked, notParked := RestartTally(running, res)
-	out := &hostdv1.RestartResult{Parked: uint32(parked), NotParked: notParked, ParkMs: uint32(m.d.Now().Sub(t0).Milliseconds())}
+	parked, notParked, reasons := restartTally(running, res)
+	out := &hostdv1.RestartResult{Parked: uint32(parked), NotParked: notParked, NotParkedReasons: reasons, ParkMs: uint32(m.d.Now().Sub(t0).Milliseconds())}
 	if len(notParked) > 0 && !c.GetForce() {
 		back := m.UnparkAll(ctx)
 		m.d.Log.Warn("restart refused: machines could not be parked", "event", "host_restart", "parked", parked, "not_parked", len(notParked), "unparked", len(back))

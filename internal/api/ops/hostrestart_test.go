@@ -37,7 +37,7 @@ func TestHostRestartOpRefusedNamesTheMachine(t *testing.T) {
 	if op.State != "error" || op.Error["code"] != ops.CodeNotParked {
 		t.Fatalf("restart with a machine it cannot park: %s %+v", op.State, op.Error)
 	}
-	want := "1 machine could not be parked and would start fresh (kept). Nothing restarted, and the parked machines run again."
+	want := "1 machine could not be parked and would start fresh (kept: started with nobody logged in). Nothing restarted, and the parked machines run again."
 	if op.Error["message"] != want {
 		t.Fatalf("message %q, want %q", op.Error["message"], want)
 	}

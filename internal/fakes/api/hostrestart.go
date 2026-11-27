@@ -55,6 +55,11 @@ func (f *Fake) restartHost(w http.ResponseWriter, r *http.Request) *apiError {
 	}
 	_, running := f.machinesOn(h.ID)
 	not := append([]string{}, h.notParked...)
+	// hostd's fixed reason for each, as the api puts it after the name.
+	named := make([]string, len(not))
+	for i, s := range not {
+		named[i] = s + ": started with nobody logged in"
+	}
 	o := &op{id: f.nextID(), kind: "host_restart", created: f.now()}
 	o.hostID = h.ID
 	o.State = "done"
@@ -66,7 +71,7 @@ func (f *Fake) restartHost(w http.ResponseWriter, r *http.Request) *apiError {
 		if len(not) == 1 {
 			what = "1 machine could not be parked and would start fresh"
 		}
-		o.Error = fmt.Sprintf("%s (%s). Nothing restarted, and the parked machines run again.", what, strings.Join(not, ", "))
+		o.Error = fmt.Sprintf("%s (%s). Nothing restarted, and the parked machines run again.", what, strings.Join(named, "; "))
 		o.errCode = "not_parked"
 	}
 	f.ops[o.id] = o

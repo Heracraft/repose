@@ -34,13 +34,30 @@ func (e *Engine) onRestartHost(ctx context.Context, op *store.Op, r *hostdv1.Res
 		return err
 	}
 	fields := map[string]any{"parked": r.Parked, "not_parked": names, "restarting": r.Restarting, "park_ms": r.ParkMs}
+	if len(r.NotParkedReasons) == len(names) && len(names) > 0 {
+		fields["not_parked_reasons"] = r.NotParkedReasons
+	}
 	if err := e.setResult(ctx, op, fields); err != nil {
 		return err
 	}
 	if r.Restarting {
 		return nil
 	}
-	return &resultRefusal{code: CodeNotParked, msg: notParkedSentence(names)}
+	return &resultRefusal{code: CodeNotParked, msg: notParkedSentence(withReasons(names, r.NotParkedReasons))}
+}
+
+// withReasons is each name with hostd's reason after it ("api: the screen
+// is locked"), where hostd gave one for every name; a hostd's reasons are
+// fixed phrases, never tenant text.
+func withReasons(names, reasons []string) []string {
+	if len(reasons) != len(names) {
+		return names
+	}
+	out := make([]string, len(names))
+	for i := range names {
+		out[i] = names[i] + ": " + reasons[i]
+	}
+	return out
 }
 
 // notParkedSentence is the refusal the user reads, in the words of
@@ -50,7 +67,7 @@ func notParkedSentence(names []string) string {
 	if len(names) == 1 {
 		what = "1 machine could not be parked and would start fresh"
 	}
-	return fmt.Sprintf("%s (%s). Nothing restarted, and the parked machines run again.", what, strings.Join(names, ", "))
+	return fmt.Sprintf("%s (%s). Nothing restarted, and the parked machines run again.", what, strings.Join(names, "; "))
 }
 
 // slugsOfGuests names guests by their projects' slugs, in the order given;

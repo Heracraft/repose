@@ -4171,14 +4171,17 @@ func (*Result_Restart) isResult_Payload() {}
 // down: parked is how many guests are saved (parked now or before),
 // not_parked the guest ids that could not be, restarting whether the
 // restart was asked for, and park_ms how long the park took.
+// not_parked_reasons is, for each of not_parked in order, the park's
+// fixed reason (never tenant text), so the api can say why.
 type RestartResult struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Parked        uint32                 `protobuf:"varint,1,opt,name=parked,proto3" json:"parked,omitempty"`
-	NotParked     []string               `protobuf:"bytes,2,rep,name=not_parked,json=notParked,proto3" json:"not_parked,omitempty"`
-	Restarting    bool                   `protobuf:"varint,3,opt,name=restarting,proto3" json:"restarting,omitempty"`
-	ParkMs        uint32                 `protobuf:"varint,4,opt,name=park_ms,json=parkMs,proto3" json:"park_ms,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Parked           uint32                 `protobuf:"varint,1,opt,name=parked,proto3" json:"parked,omitempty"`
+	NotParked        []string               `protobuf:"bytes,2,rep,name=not_parked,json=notParked,proto3" json:"not_parked,omitempty"`
+	Restarting       bool                   `protobuf:"varint,3,opt,name=restarting,proto3" json:"restarting,omitempty"`
+	ParkMs           uint32                 `protobuf:"varint,4,opt,name=park_ms,json=parkMs,proto3" json:"park_ms,omitempty"`
+	NotParkedReasons []string               `protobuf:"bytes,5,rep,name=not_parked_reasons,json=notParkedReasons,proto3" json:"not_parked_reasons,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *RestartResult) Reset() {
@@ -4237,6 +4240,13 @@ func (x *RestartResult) GetParkMs() uint32 {
 		return x.ParkMs
 	}
 	return 0
+}
+
+func (x *RestartResult) GetNotParkedReasons() []string {
+	if x != nil {
+		return x.NotParkedReasons
+	}
+	return nil
 }
 
 // BootTimings is where one boot's time went, in milliseconds (DECISIONS
@@ -7085,7 +7095,7 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"\vtrigger_run\x18\x14 \x01(\v2!.repose.hostd.v1.TriggerRunResultH\x00R\n" +
 	"triggerRun\x12:\n" +
 	"\arestart\x18\x15 \x01(\v2\x1e.repose.hostd.v1.RestartResultH\x00R\arestartB\t\n" +
-	"\apayload\"\x7f\n" +
+	"\apayload\"\xad\x01\n" +
 	"\rRestartResult\x12\x16\n" +
 	"\x06parked\x18\x01 \x01(\rR\x06parked\x12\x1d\n" +
 	"\n" +
@@ -7093,7 +7103,8 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"\n" +
 	"restarting\x18\x03 \x01(\bR\n" +
 	"restarting\x12\x17\n" +
-	"\apark_ms\x18\x04 \x01(\rR\x06parkMs\"\xb5\x01\n" +
+	"\apark_ms\x18\x04 \x01(\rR\x06parkMs\x12,\n" +
+	"\x12not_parked_reasons\x18\x05 \x03(\tR\x10notParkedReasons\"\xb5\x01\n" +
 	"\vBootTimings\x12\x1b\n" +
 	"\tvolume_ms\x18\x01 \x01(\rR\bvolumeMs\x12\x1d\n" +
 	"\n" +

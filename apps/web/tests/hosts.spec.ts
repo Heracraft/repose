@@ -452,7 +452,7 @@ test('a Mac that parks its machines restarts from the Hosts page', async ({ page
 	await row.getByRole('button', { name: 'Restart mac-mini…' }).click();
 	await confirm.getByRole('button', { name: 'Restart mac-mini now' }).click();
 	await expect(page.getByTestId('host-restart-refused')).toContainText(
-		`1 machine could not be parked and would start fresh (${p.slug}). Nothing restarted`
+		`1 machine could not be parked and would start fresh (${p.slug}: started with nobody logged in). Nothing restarted`
 	);
 	await shots(page, 'hosts-restart-refused');
 	await confirm.getByRole('button', { name: 'Restart mac-mini anyway' }).click();
