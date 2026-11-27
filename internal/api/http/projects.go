@@ -153,6 +153,20 @@ func (s *Server) projectJSON(ctx context.Context, p *store.Project, u *store.Use
 			return nil, err
 		}
 	}
+	if p.State == "creating" && p.HostID == nil {
+		// A create waiting for a host of the account's own to finish
+		// installing (I-1700): the clients say whose, and that the
+		// machine starts there once it has.
+		var name, provider string
+		err := s.d.Pool.QueryRow(ctx, `select h.name, coalesce(h.provider, '') from ops o join hosts h on h.id = (o.params->>$3)::uuid
+			 where o.project_id = $1 and o.kind = $4 and o.state in ('pending', 'running') and h.owner_account_id = $2
+			   and o.params ? $3 order by o.created_at limit 1`, p.ID, u.ID, ops.ParamWaitHost, ops.KindCreate).Scan(&name, &provider)
+		if err == nil {
+			out["waiting_for_host"] = map[string]any{"name": name, "provider": provider}
+		} else if !errors.Is(err, pgx.ErrNoRows) {
+			return nil, err
+		}
+	}
 	sized, err := s.projectSized(ctx, p, onShared)
 	if err != nil {
 		return nil, err
@@ -604,10 +618,12 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 	}
 	rid := store.NewID()
 	var (
-		opID uuid.UUID
-		p    *store.Project
+		opID     uuid.UUID
+		p        *store.Project
+		opParams map[string]any
 	)
 	err = db.InTx(ctx, s.d.Pool, func(tx db.Tx) error {
+		opParams = nil // a retried transaction starts again
 		// The project count is checked under a row lock on the user so two
 		// creates cannot both pass.
 		var count int
@@ -626,6 +642,13 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 		held := billing.NewProjectHeldBytes
 		hostID, err := s.d.Engine.PlaceNewOn(ctx, tx, &store.Project{ID: pid, UserID: u.ID, Class: body.Class,
 			VolumeBytes: volume, Placement: placement, DiskHeldBytes: &held, GuestRuntime: runtime}, pin)
+		// The account's host is still installing: the row is written
+		// with no host and the create waits for it (ENG-131, I-1700).
+		var wait *ops.RegistrationWait
+		if errors.As(err, &wait) {
+			hostID, err = nil, nil
+			opParams = map[string]any{ops.ParamWaitHost: wait.HostID.String()}
+		}
 		if err != nil {
 			return err
 		}
@@ -658,6 +681,13 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 		if body.StartAgent {
 			create.Phases = ops.PlanCreateWithAgent(runtime)
 			create.Params = map[string]any{"agent": agent, "remote_control": body.RemoteControl}
+		}
+		for k, v := range opParams {
+			// The host the create waits for (I-1700).
+			if create.Params == nil {
+				create.Params = map[string]any{}
+			}
+			create.Params[k] = v
 		}
 		if opID, err = s.d.Engine.Enqueue(ctx, tx, create, false); err != nil {
 			return err
@@ -988,6 +1018,12 @@ func (s *Server) destroyProject(w http.ResponseWriter, r *http.Request) error {
 	var id uuid.UUID
 	ctx := r.Context()
 	err = db.InTx(ctx, s.d.Pool, func(tx db.Tx) error {
+		// A create still waiting for its host to register ends here, so
+		// the destroy is not refused behind it for as long as the host
+		// takes (I-1700).
+		if _, err := s.d.Engine.CancelRegistrationWait(ctx, tx, pid); err != nil {
+			return err
+		}
 		var err error
 		if id, err = s.d.Engine.Enqueue(ctx, tx, ops.NewOp{Kind: ops.KindDestroy, ProjectID: &pid, Phases: ops.PlanDestroy(p)}, false); err != nil {
 			return err

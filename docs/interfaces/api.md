@@ -82,7 +82,7 @@ the operator's (`repose-admin hosts`) and appear on none of them.
 | Method | Path | Body / result |
 |---|---|---|
 | GET | `/hosts` | `[Host]`, oldest first: the hosts this account owns. A host repose runs is never listed, and neither is another account's, so an empty list is the answer for almost every account |
-| POST | `/hosts` | `{name?}`, or no body at all, which is the same as no name → `201`, the `Host` plus `join_token`, `join_token_expires_at` and `install`: the one answer that carries the token, as a minted API token is. `name` matches `[a-z0-9][a-z0-9-]{0,31}` and is free among this account's hosts; without it the api names the host `host-1`, `host-2`, … in the account, and the caller never invents a name. The token is single-use and valid 24 hours, the same token `repose-admin hosts add` mints, and the host trades it for its identity with `Register` (`grpc-hostd.md`) |
+| POST | `/hosts` | `{name?, provider?}`, or no body at all, which is the same as no name; `provider` is `mac` or `metal` (the default), what the caller knows the machine is before it registers (`repose host add` on a Mac sends `mac`, I-1700; anything else is `400 invalid` `reason: provider`), kept as the host's `provider` → `201`, the `Host` plus `join_token`, `join_token_expires_at` and `install`: the one answer that carries the token, as a minted API token is. `name` matches `[a-z0-9][a-z0-9-]{0,31}` and is free among this account's hosts; without it the api names the host `host-1`, `host-2`, … in the account, and the caller never invents a name. The token is single-use and valid 24 hours, the same token `repose-admin hosts add` mints, and the host trades it for its identity with `Register` (`grpc-hostd.md`) |
 | DELETE | `/hosts/{id}` | `204`: the host is drained and retired, its certificate serials and its unused join token cleared so it cannot come back on them, and a machine that is still dialling is refused. A host that still holds live machines is `409 conflict` `host_has_projects` with their slugs, **unless its state is `unreachable` or `lost`**, where it is retired with them still on it (I-1420): a destroy's phases are skipped only for `lost` and `retired` (I-924), so refusing left an account unable to remove the host, unable to destroy the machines and unable to add a replacement against the plan's one slot. The machines are not destroyed, and every `repose rm` on them then drains to no phases; what is lost is said at the client's confirmation, not here. Already retired answers `204` too, so a repeated remove is not an error. The row stays, so `GET /hosts` still lists it as `retired`; `repose host ls` and the dashboard leave a removed host out, because it is not hardware the user has. It also clears `last_error` on the account's machines that are in `error`, hold no host and failed on `capacity`: a placement that found no host of the account's own frees the machine and leaves its sentence on the row, so without this "your host mac-mini has not registered yet" outlives the host and the dashboard names hardware the user no longer has. The ops keep the history, and the next start says what is true then |
 | POST | `/hosts/{id}/restart` | `{force?}`, or no body → `202 {op_id}` (added with I-1690): a `host_restart` op whose one phase is hostd's `RestartHost` (`grpc-hostd.md`): every machine on the host is parked with its memory, then the host restarts, and the machines run again at its user's next login. Only for a host whose `can_restart` is true. A `host_restart` op already pending or running for the host is answered with its `op_id`, so a second press is the same restart. Refusals: `404 not_found` for a host that is not the account's; `409 conflict` `detail.reason = "host_not_ready"` (with `detail.state`) for a host that is not `ready` or is being removed; `409 conflict` `detail.reason = "restart_unsupported"` for a host whose hostd does not name `restart`. The op ends `done` with `result {parked, not_parked: [slug], restarting: true, park_ms}` when the host restarts (with `force`, `not_parked` names the machines that start fresh), and `error` with `code` `not_parked` when a machine could not be parked and `force` was false (when nothing was parked because the Mac's screen is locked, the `message` is "This Mac's screen is locked, and a locked Mac cannot save a machine's memory. Nothing restarted; unlock it and restart again."; otherwise its `message` names them by slug, each with hostd's reason (`kept: started with nobody logged in`), its `result` has them in `not_parked` and the reasons in `not_parked_reasons`, nothing restarted and the parked machines run again |
 | GET | `/hosts/:id/ops/:op_id` | an op of one of the account's hosts, in the shape of `GET /projects/:id/ops/:op_id` without the long-poll fields (`{op_id, kind, state, created_at, finished_at, error?: {code, message, detail?}, result?}`); `404 not_found` for a host or op that is not the account's (added with I-1690) |
@@ -314,6 +314,14 @@ first silent one). One `not_answering` event
 running project whose guestd is not answering. An api older than I-1652
 sends nothing.
 
+`waiting_for_host` (I-1700) is set on a `creating` project with no host
+whose create waits for a host of the account's own to finish installing:
+`{name, provider}`, the host's name and its `provider` (`mac` when it was
+added from that Mac). The clients say `Waiting for your Mac (NAME) to
+finish installing. This project starts there when it's ready.`, or `your
+host NAME` for any other provider. Absent everywhere else and from an api
+older than I-1700.
+
 `parked` (I-1672) is set on a `running` project on a host an account
 owns whose newest sample says the machine is parked and waits for the
 Mac's user to log in (hostd's `parked_waiting_since`, sent only by hostd
@@ -433,11 +441,29 @@ why `PATCH /projects/:id` does not take it: nothing would honour it. An
 account whose plan sells no memory on repose's own hosts never lands
 there, whatever the field says (I-1366): a re-placement of such a project
 goes to its owner's hardware. A create for `own` while the account's own
-host has not registered yet, or cannot take the machine, is refused at
-the request with `503 capacity` and a message that names the host and
-its state, rather than quietly using the fleet, and nothing is written
-(I-1390; before it the create op failed and left the row in `error`). An
-api older than I-1366 has no field and places as it always did.
+host cannot take the machine is refused at the request with `503
+capacity` and a message that names the host and its state, rather than
+quietly using the fleet, and nothing is written (I-1390; before it the
+create op failed and left the row in `error`). An api older than I-1366
+has no field and places as it always did.
+
+Since I-1700 a create for `own` that no host of the account's can take
+now, while one of them (the pinned one, with `host`) is still
+installing (`registering`, never registered, its join token still
+good), is not refused: it answers `201` with the project `creating`,
+`host_id` null and `waiting_for_host` set, and the create op waits for
+that host and is placed on it alone once it registers. The wait ends
+when the host is removed (`DELETE /hosts/{id}`) or its join token
+expires before it joined: the op fails with `capacity` and `your host
+NAME was removed before it finished installing` or `your host NAME did
+not finish installing within 24 hours of `repose host add``, the
+project is destroyed as a create the host refused is (I-1648), and
+`GET /projects/:id` answers `404 not_found` `NAME was not created: WHY`
+with `detail.reason = "create_refused"`. `DELETE /projects/:id` while it
+waits ends the create (its op `error`, code `cancelled`) and is accepted
+instead of `409 conflict`. A host that has not registered and can no
+longer join is refused as before. An api older than I-1700 refuses every
+such create with `503 capacity` `your host NAME has not registered yet`.
 
 `host` (DECISIONS I-1584) pins the create to one host the account owns,
 by id or by name: the scheduler considers that host alone, and when it
@@ -478,10 +504,10 @@ keeps the project's.
 | Method | Path | Body / result |
 |---|---|---|
 | GET | `/projects/:id/config` | `{revision_id, fragment, menu?: MenuSelection, base_version, applied_at?, personal, personal_revision_id, personal_opt_out}`; `personal` is the `machine.nix` text the active revision carries (`""` for none) and `personal_revision_id` the account revision it came from (added with I-490) |
-| PUT | `/projects/:id/config` | `{fragment}` or `{menu: MenuSelection}` (the api renders menu → fragment) → `{revision_id, op_id}`; build starts immediately; apply happens when the build succeeds. On an `erofs` project (I-1462) only `{menu}` is taken: nothing is built, a running machine applies the menu in place (the op's log carries the install lines, its error code `menu_failed` when an item did not install), a stopped one at its next start, and the revision carries no `machine.nix`. `{fragment}` there is `409 nix_config_retired` with the message "This machine runs the Ubuntu base; custom Nix files are not used, and `repose config add <item>` installs packages and services." and `detail.reason = "nix_config_retired"`. The revision carries the account's current `machine.nix` unless the project opted out (I-490). Open personal builds (queued by a `machine.nix` save) do not refuse it with `conflict`: one not started yet is superseded (its revision becomes `failed` with `superseded by revision <id>`), one already building is queued behind. A project that is `creating`, `building`, `stopping` (since I-710), `destroying` or `destroyed` answers `409 conflict` "<slug> is <state>". While the project has another op pending or running (a second tab's change, a start), the PUT is `409 conflict` "a build is in progress", except that open `machine.nix` builds are superseded or queued as above. `base_revision_id` (optional, I-1528) is the `revision_id` the client's last `GET /config` returned: when it is present and is not the project's current revision, the PUT is `409 menu_stale` with the message "The configuration changed since you loaded it; reload it and make your change again." and `detail: {reason: "menu_stale", current_revision_id}`, and nothing is written, so a stale tab cannot drop what another tab installed. Absent, the PUT is taken as before; the old shape is accepted for one release |
+| PUT | `/projects/:id/config` | `{fragment}` or `{menu: MenuSelection}` (the api renders menu → fragment) → `{revision_id, op_id}`; build starts immediately; apply happens when the build succeeds. On an `erofs` project (I-1462) only `{menu}` is taken: nothing is built, a running machine applies the menu in place (the op's log carries the install lines, its error code `menu_failed` when an item did not install), a stopped one at its next start, and the revision carries no `machine.nix`. `{fragment}` there is `409 nix_config_retired` with the message "This machine runs the Ubuntu base; custom Nix files are not used. Install packages on the machine with apt-get." (until I-1698 it ended "and `repose config add <item>` installs packages and services.") and `detail.reason = "nix_config_retired"`. Since I-1698 no client of this release sends `{menu}` to an erofs project (the CLI refuses `config add` there, the dashboard has no menu); it is still taken for one release, from an older CLI or dashboard and for `repose config remove` of an earlier entry, and goes in the next. The revision carries the account's current `machine.nix` unless the project opted out (I-490). Open personal builds (queued by a `machine.nix` save) do not refuse it with `conflict`: one not started yet is superseded (its revision becomes `failed` with `superseded by revision <id>`), one already building is queued behind. A project that is `creating`, `building`, `stopping` (since I-710), `destroying` or `destroyed` answers `409 conflict` "<slug> is <state>". While the project has another op pending or running (a second tab's change, a start), the PUT is `409 conflict` "a build is in progress", except that open `machine.nix` builds are superseded or queued as above. `base_revision_id` (optional, I-1528) is the `revision_id` the client's last `GET /config` returned: when it is present and is not the project's current revision, the PUT is `409 menu_stale` with the message "The configuration changed since you loaded it; reload it and make your change again." and `detail: {reason: "menu_stale", current_revision_id}`, and nothing is written, so a stale tab cannot drop what another tab installed. Absent, the PUT is taken as before; the old shape is accepted for one release |
 | GET | `/projects/:id/config/revisions` | list, newest first, with `{revision_id, created_at, status: building\|applied\|failed, error?, fragment_line?, personal, personal_opt_out, personal_revision_id?, personal_line?}`; `personal` (bool) says the revision carries `machine.nix`, `personal_line` is an error's line in it (added with I-490) |
 | POST | `/projects/:id/config/revisions/:rev/apply` | re-apply an older successful revision |
-| GET | `/catalog` | menu catalog: `[{id, label, group, kind, description, options?: [{id, type, values, default}]}]` (packages and services the dashboard menu offers; `kind` is `service|package|agent|runtime`, `options` are enums the menu shows as selects; from `internal/menu`, DECISIONS I-44) |
+| GET | `/catalog` | menu catalog: `[{id, label, group, kind, description, options?: [{id, type, values, default}]}]` (packages and services the dashboard menu offered; `kind` is `service|package|agent|runtime`, `options` are enums the menu showed as selects; from `internal/menu`, DECISIONS I-44). Deprecated by I-1698: the dashboard no longer reads it and the CLI reads it only for `config add` on a Nix project; it answers for one release, for older clients, and goes in the next |
 
 A `MenuSelection` is an array whose items are either a catalog entry
 `{id, options?: {name: value}}` or any nixpkgs package by attribute path

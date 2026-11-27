@@ -189,7 +189,13 @@ own hardware, and a stranger's project is never placed there. Owned hosts
 are outside the seat count, the waitlist and the pool gauges, because
 repose did not buy them.
 
-A create for `own` while the account's host has not registered yet, or
+Since I-1700 a create while the account's host is still installing waits
+for it instead (`waiting_for_host`; api.md "POST /projects"): the minutes
+after `repose host add` are when a customer most likely makes a first
+project, and on the Own hardware plan a refusal had no way out to name.
+The wait ends when the host joins, is removed, or its token expires.
+
+A create for `own` while the account's host cannot join any more, or
 cannot take the machine, is refused at the request with `capacity` and a
 message that names the host and its state, rather than quietly using the
 fleet and billing for it, and nothing is written (I-1390). Until I-1390

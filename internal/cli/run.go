@@ -1598,6 +1598,10 @@ func ensureRunningFrom(ctx context.Context, e *Env, project *Project, pr *progre
 				return err
 			}
 			if op.State == "error" && !stopping {
+				if gone := notCreated(ctx, e, project); gone != nil {
+					pr.Fail()
+					return gone
+				}
 				return failedStart(e, project, op, pr)
 			}
 			if w := opWarning(op); w != "" {
@@ -2163,6 +2167,12 @@ func createProjectForRun(ctx context.Context, e *Env, remote string, opts RunOpt
 			// slug every later line and command uses, not the name as
 			// typed ("teksafari.org" is created as teksafari-org); the
 			// POST itself takes well under a second (I-191).
+			if l := waitingLine(p); l != "" {
+				// The host is still installing (I-1700): said once, and
+				// the wait below lasts until it registers.
+				pr.Fail()
+				_, _ = fmt.Fprintln(e.ErrOut, l)
+			}
 			pr.Phase("Creating "+p.Slug, createdLabel(p, class))
 			if opts.Size != "" && unsized(p) {
 				sizeIgnored(e.ErrOut, p.Slug, p.HostName)

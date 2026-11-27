@@ -82,10 +82,26 @@ export function errorDetailText(p: Pick<Project, 'state' | 'last_error'>): strin
 }
 
 /**
- * The reason line shown on a `/projects` row: an abuse stop, a boot fallback,
- * or an error's sentence.
+ * What a project says while its create waits for a host of the account's own
+ * to finish installing (DECISIONS I-1700), in the words `repose run` prints;
+ * "" otherwise. Matches `waitingLine` in internal/cli/hostwait.go.
  */
-export function projectRowReason(p: Pick<Project, 'state' | 'last_error'>): string {
+export function waitingForHostText(p: Pick<Project, 'state' | 'waiting_for_host'>): string {
+	const w = p.waiting_for_host;
+	if (!w || p.state !== 'creating') return '';
+	const who = w.provider === 'mac' ? `your Mac (${w.name})` : `your host ${w.name}`;
+	return `Waiting for ${who} to finish installing. This project starts there when it's ready.`;
+}
+
+/**
+ * The reason line shown on a `/projects` row: a wait for the account's host,
+ * an abuse stop, a boot fallback, or an error's sentence.
+ */
+export function projectRowReason(
+	p: Pick<Project, 'state' | 'last_error'> & Partial<Pick<Project, 'waiting_for_host'>>
+): string {
+	const waiting = waitingForHostText(p);
+	if (waiting) return waiting;
 	const abuse = platformStopReason(p);
 	if (abuse) return abuse;
 	const boot = bootFallbackReason(p);

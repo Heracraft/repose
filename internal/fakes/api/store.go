@@ -62,6 +62,10 @@ type Project struct {
 	// Parked is set on a machine parked on a Mac that waits for the
 	// Mac's user to log in (DECISIONS I-1672). SetParked sets it.
 	Parked *Parked `json:"parked,omitempty"`
+	// WaitingForHost is set on a project whose create waits for a host
+	// of the account's own to finish installing (DECISIONS I-1700).
+	// Fake.out sets it from the record.
+	WaitingForHost *WaitingForHost `json:"waiting_for_host,omitempty"`
 	// VM is what a running machine's VM got on a host that sizes each
 	// start (DECISIONS I-1680). SetVM sets it.
 	VM *VM `json:"vm,omitempty"`
@@ -92,6 +96,14 @@ type Project struct {
 	MemUsedBytes int64 `json:"mem_used_bytes,omitempty"`
 }
 
+// WaitingForHost is the api's `waiting_for_host` (I-1700): the host a
+// create waits for, by name, and what the caller said it is (`mac` when
+// `repose host add` ran on that Mac).
+type WaitingForHost struct {
+	Name     string `json:"name"`
+	Provider string `json:"provider"`
+}
+
 // fakeMemUsed is the memory every running fake machine reports in use,
 // 1.4 GiB, unless a test set its own (SetMemUsed).
 const fakeMemUsed = 1503238553
@@ -108,6 +120,14 @@ func (f *Fake) out(p *project) Project {
 	}
 	if o.State != "running" || o.Resting != nil || o.HostUnreachable {
 		o.NotAnswering = nil
+	}
+	o.WaitingForHost = nil
+	if p.waitHost != "" && o.State == "creating" {
+		for _, h := range f.ownedHosts {
+			if h.ID == p.waitHost {
+				o.WaitingForHost = &WaitingForHost{Name: h.Name, Provider: h.Provider}
+			}
+		}
 	}
 	if o.State != "running" {
 		o.Parked = nil // projects.go sends it on a running machine only
@@ -448,6 +468,9 @@ type userRec struct {
 type project struct {
 	Project
 	owner string
+	// waitHost is the owned host this project's create waits for, and
+	// waitOp that create (I-1700); "" when it waits for none.
+	waitHost, waitOp string
 	// memUsed is what SetMemUsed set, 0 for the default.
 	memUsed int64
 	// restSaved is a Mac machine resting as a save (SetRestSaved).

@@ -1,45 +1,11 @@
-// Checklist: "Menu tab renders every catalog group and search filters it;
-// Apply sends {menu} and shows the generated fragment." and "Nix tab:
-// editor with Nix highlighting, Apply, build log streams, a failing
-// fragment shows the error block with the line highlighted."
+// Checklist: "Nix editor with Nix highlighting, Apply, build log streams,
+// a failing fragment shows the error block with the line highlighted."
+// The menu is gone (DECISIONS I-1698): no Menu tab, no catalog.
 import { test, expect } from '@playwright/test';
 import { signIn, createProject, destroyProject, apiURLFromEnv } from './helpers';
 
 test.beforeEach(async ({ page }) => {
 	await signIn(page);
-});
-
-test('menu tab renders catalog groups and search filters them', async ({ page }) => {
-	const p = await createProject(apiURLFromEnv(), {
-		name: 'menu-app',
-		remote_url: 'github.com/heracraft/menu-app'
-	});
-	await page.goto(`/projects/${p.id}/config`);
-	await page.getByRole('tab', { name: 'Menu' }).click();
-
-	await expect(page.getByText('runtimes')).toBeVisible();
-	await expect(page.getByRole('heading', { name: 'Services' })).toBeVisible();
-	await expect(page.getByText('PostgreSQL', { exact: true })).toBeVisible();
-
-	await page.getByPlaceholder('Search packages and services…').fill('postgres');
-	await expect(page.getByText('PostgreSQL', { exact: true })).toBeVisible();
-	await expect(page.getByText('Bun', { exact: true })).toHaveCount(0);
-});
-
-test('applying a menu selection shows the generated fragment on the Nix tab', async ({ page }) => {
-	const p = await createProject(apiURLFromEnv(), {
-		name: 'menu-apply-app',
-		remote_url: 'github.com/heracraft/menu-apply-app'
-	});
-	await page.goto(`/projects/${p.id}/config`);
-	await page.getByRole('tab', { name: 'Menu' }).click();
-	await page.getByText('Zig', { exact: true }).click();
-	await page.getByRole('button', { name: 'Apply', exact: true }).click();
-
-	await expect(page.getByText('Applied.')).toBeVisible({ timeout: 10_000 });
-
-	await page.getByRole('tab', { name: 'Nix' }).click();
-	await expect(page.locator('.cm-content')).toContainText('pkgs.zig');
 });
 
 // The Revisions rail marks the live revision "current" and offers no
@@ -51,8 +17,9 @@ test('the revisions rail marks the live revision current', async ({ page }) => {
 	});
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await page.goto(`/projects/${p.id}/config`);
-	await page.getByRole('tab', { name: 'Menu' }).click();
-	await page.getByText('Zig', { exact: true }).click();
+	await page.locator('.cm-content').click();
+	await page.keyboard.press('Control+A');
+	await page.keyboard.type('{ pkgs, ... }: { home.packages = [ pkgs.zig ]; }');
 	await page.getByRole('button', { name: 'Apply', exact: true }).click();
 	await expect(page.getByText('Applied.')).toBeVisible({ timeout: 10_000 });
 	// Both revisions fall in one minute, so their order is not pinned here.
@@ -67,39 +34,6 @@ test('the revisions rail marks the live revision current', async ({ page }) => {
 	await destroyProject(apiURLFromEnv(), p.id);
 });
 
-// A selection with nixpkgs packages added by name (`repose config add gcc`,
-// DECISIONS I-220) lists them as "Extra packages", keeps them when the menu
-// is applied again, and can drop one.
-test('menu tab lists extra nixpkgs packages and keeps them on apply', async ({ page }) => {
-	const api = apiURLFromEnv();
-	const p = await createProject(api, {
-		name: 'menu-extra-app',
-		remote_url: 'github.com/heracraft/menu-extra-app'
-	});
-	const put = await fetch(`${api}/projects/${p.id}/config`, {
-		method: 'PUT',
-		headers: { 'Content-Type': 'application/json', Authorization: 'Bearer playwright' },
-		body: JSON.stringify({ menu: [{ id: 'bun' }, { package: 'gcc' }, { package: 'air' }] })
-	});
-	expect(put.status).toBe(202);
-
-	await page.goto(`/projects/${p.id}/config`);
-	await page.getByRole('tab', { name: 'Menu' }).click();
-	await expect(page.getByRole('heading', { name: 'Extra packages' })).toBeVisible();
-	await expect(page.getByText('gcc', { exact: true })).toBeVisible();
-	await expect(page.getByText('air', { exact: true })).toBeVisible();
-	await expect(page.getByRole('checkbox', { name: /^Bun/ })).toBeChecked();
-
-	await page.getByRole('button', { name: 'Remove air' }).click();
-	await page.getByRole('button', { name: 'Apply', exact: true }).click();
-	await expect(page.getByText('Applied.')).toBeVisible({ timeout: 10_000 });
-
-	await page.getByRole('tab', { name: 'Nix' }).click();
-	await expect(page.locator('.cm-content')).toContainText('"gcc"');
-	await expect(page.locator('.cm-content')).not.toContainText('"air"');
-	await expect(page.locator('.cm-content')).toContainText('pkgs.bun');
-});
-
 test('a failing fragment shows the error block with the fragment line highlighted', async ({
 	page
 }) => {
@@ -108,7 +42,6 @@ test('a failing fragment shows the error block with the fragment line highlighte
 		remote_url: 'github.com/heracraft/broken-fragment-app'
 	});
 	await page.goto(`/projects/${p.id}/config`);
-	await page.getByRole('tab', { name: 'Nix' }).click();
 
 	await page.locator('.cm-content').click();
 	await page.keyboard.press('Control+A');
@@ -138,27 +71,6 @@ test('hold base updates toggle round-trips', async ({ page }) => {
 	await expect(page.getByRole('checkbox', { name: /Hold base updates/ })).toBeChecked();
 });
 
-test('the Menu and Nix tabs are ARIA tabs the arrow keys move between', async ({ page }) => {
-	const p = await createProject(apiURLFromEnv(), {
-		name: 'tabs-app',
-		remote_url: 'github.com/heracraft/tabs-app'
-	});
-	await page.goto(`/projects/${p.id}/config`);
-	const menu = page.getByRole('tab', { name: 'Menu' });
-	const nix = page.getByRole('tab', { name: 'Nix' });
-	await menu.click();
-	await expect(menu).toHaveAttribute('aria-selected', 'true');
-	await expect(page.getByRole('tabpanel', { name: 'Menu' })).toBeVisible();
-	await page.keyboard.press('ArrowRight');
-	await expect(nix).toBeFocused();
-	await expect(nix).toHaveAttribute('aria-selected', 'true');
-	await expect(menu).toHaveAttribute('tabindex', '-1');
-	await expect(page.getByRole('tabpanel', { name: 'Nix' })).toBeVisible();
-	await page.keyboard.press('Home');
-	await expect(menu).toBeFocused();
-	await expect(page.getByRole('tabpanel', { name: 'Menu' })).toBeVisible();
-});
-
 // Apply sits in one bar held to the foot of the window, beside the state
 // of the tab in front (I-664, I-837), which says when a change is not
 // applied.
@@ -170,11 +82,10 @@ test('the Apply bar says Unsaved changes beside Apply, which waits for a change'
 		remote_url: 'github.com/heracraft/nix-bar-app'
 	});
 	await page.goto(`/projects/${p.id}/config`);
-	await page.getByRole('tab', { name: 'Nix' }).click();
-	const panel = page.getByRole('tabpanel', { name: 'Nix' });
+	const panel = page.locator('.cpanel');
 	const bar = page.locator('.hk-bottom-bar');
-	// Nothing to apply: the bar says nothing (the tab's head says when it
-	// was applied), and Apply is off, as on the Menu tab.
+	// Nothing to apply: the bar says nothing (the section's head says when
+	// it was applied), and Apply is off.
 	await expect(bar.getByRole('status')).toHaveText('');
 	const apply = bar.getByRole('button', { name: 'Apply', exact: true });
 	await expect(apply).toBeVisible();
@@ -188,35 +99,22 @@ test('the Apply bar says Unsaved changes beside Apply, which waits for a change'
 	await expect(apply).toHaveClass(/(^|\s)hk-btn(\s|$)/);
 });
 
-test('a Menu search that matches nothing says so', async ({ page }) => {
-	const p = await createProject(apiURLFromEnv(), {
-		name: 'menu-none-app',
-		remote_url: 'github.com/heracraft/menu-none-app'
-	});
-	await page.goto(`/projects/${p.id}/config`);
-	await page.getByRole('searchbox', { name: 'Search packages and services' }).fill('zzzz');
-	await expect(page.getByRole('tabpanel', { name: 'Menu' })).toContainText(
-		'No package matches “zzzz”.'
-	);
-});
-
 // Config has no side column (I-841): the switches sit in a row under the
-// tabs, then Secrets, then Packages with the editor across the column,
+// tabs, then Secrets, then repose.nix with the editor across the column,
 // then Revisions under it.
-test('Config reads top to bottom: switches, Secrets, Packages, Revisions', async ({ page }) => {
+test('Config reads top to bottom: switches, Secrets, repose.nix, Revisions', async ({ page }) => {
 	const p = await createProject(apiURLFromEnv(), {
 		name: 'config-order-app',
 		remote_url: 'github.com/heracraft/config-order-app'
 	});
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await page.goto(`/projects/${p.id}/config`);
-	await page.getByRole('tab', { name: 'Nix' }).click();
 	const y = async (name: string) =>
 		(await page.getByRole('heading', { level: 2, name, exact: true }).boundingBox())!.y;
 	const hold = (await page.getByRole('checkbox', { name: /Hold base updates/ }).boundingBox())!;
 	const [secrets, packages, revisions] = [
 		await y('Secrets'),
-		await y('Packages'),
+		await y('repose.nix'),
 		await y('Revisions')
 	];
 	expect(hold.y).toBeLessThan(secrets);
@@ -278,7 +176,6 @@ test('leaving with an unapplied edit asks first', async ({ page }) => {
 		remote_url: 'github.com/heracraft/nix-guard-app'
 	});
 	await page.goto(`/projects/${p.id}/config`);
-	await page.getByRole('tab', { name: 'Nix' }).click();
 	await page.locator('.cm-content').click();
 	await page.keyboard.press('End');
 	await page.keyboard.type(' ');
@@ -304,4 +201,29 @@ test('leaving with an unapplied edit asks first', async ({ page }) => {
 		.click();
 	await page.getByRole('alert').getByRole('button', { name: 'Leave' }).click();
 	await expect(page).toHaveURL(`/projects/${p.id}`);
+});
+
+// A fragment the menu wrote stays read-only until it is taken over, and
+// the page offers no menu to change it with (I-1698).
+test('a fragment the menu wrote is read-only until Edit as Nix, and there is no menu', async ({
+	page
+}) => {
+	const api = apiURLFromEnv();
+	const p = await createProject(api, {
+		name: 'menu-written-app',
+		remote_url: 'github.com/heracraft/menu-written-app'
+	});
+	const put = await fetch(`${api}/projects/${p.id}/config`, {
+		method: 'PUT',
+		headers: { 'Content-Type': 'application/json', Authorization: 'Bearer playwright' },
+		body: JSON.stringify({ menu: [{ id: 'bun' }] })
+	});
+	expect(put.status).toBe(202);
+	await page.goto(`/projects/${p.id}/config`);
+	await expect(page.getByText('The menu wrote this file.')).toBeVisible({ timeout: 10_000 });
+	await expect(page.locator('.hk-bottom-bar').getByRole('status')).toHaveText('Written by the menu');
+	await expect(page.getByRole('tab')).toHaveCount(0);
+	await expect(page.getByRole('searchbox')).toHaveCount(0);
+	await page.getByRole('button', { name: 'Edit as Nix' }).click();
+	await expect(page.getByText('The menu wrote this file.')).toHaveCount(0);
 });

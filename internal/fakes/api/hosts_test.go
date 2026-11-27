@@ -252,6 +252,9 @@ func TestFakePlacementWithSeveralOwnHosts(t *testing.T) {
 	var list []OwnedHost
 	call(t, f, "GET", "/v1/hosts", tok, nil).json(t, &list)
 	f.SetOwnedHostOffline(list[1].ID, 14*time.Minute)
+	// A host that can still join is waited for (I-1700); one whose token
+	// expired cannot, so the create is refused and names both.
+	f.ExpireJoinToken("e2e-x86-1")
 	r := call(t, f, "POST", "/v1/projects", tok, map[string]any{"name": "one", "class": "small"})
 	wantErr(t, r, 503, "capacity")
 	if d := detailOf(t, r); d["reason"] != "no_own_host" || d["host"] != "e2e-x86-1" || d["host_state"] != "registering" {
@@ -297,17 +300,101 @@ func TestSetOwnedHostStateLeavesRemovedHostsRemoved(t *testing.T) {
 			t.Fatalf("the removed mac-mini is %s again", h.State)
 		}
 	}
+	// The create waits for the one live mac-mini (I-1700).
 	r := call(t, f, "POST", "/v1/projects", tok, map[string]any{"name": "one", "class": "small"})
-	wantErr(t, r, 503, "capacity")
-	var body struct {
-		Error struct {
-			Message string `json:"message"`
-		} `json:"error"`
+	want(t, r, 201)
+	var p Project
+	r.json(t, &p)
+	if p.State != "creating" || p.WaitingForHost == nil || p.WaitingForHost.Name != "mac-mini" {
+		t.Fatalf("create while mac-mini waits: %+v", p)
 	}
-	r.json(t, &body)
-	if want := "your host mac-mini has not registered yet"; body.Error.Message != want {
-		t.Fatalf("message %q, want %q", body.Error.Message, want)
+}
+
+// TestFakeCreateWaitsForAnInstallingHost is the api's I-1700 in the
+// fake: a create whose only host is still installing is made, creating,
+// with waiting_for_host naming it, and the machine starts there when it
+// registers; removing the host, or its token expiring, ends the wait
+// and the project with a sentence that says which; a destroy while it
+// waits ends the create and goes ahead.
+func TestFakeCreateWaitsForAnInstallingHost(t *testing.T) {
+	type created struct {
+		Project
+		OpID string `json:"op_id"`
 	}
+	setup := func(t *testing.T) (*Fake, OwnedHost, created) {
+		f := New(Options{})
+		t.Cleanup(f.Close)
+		var h OwnedHost
+		r := call(t, f, "POST", "/v1/hosts", tok, map[string]any{"name": "mac-mini", "provider": "mac"})
+		want(t, r, 201)
+		r.json(t, &h)
+		r = call(t, f, "POST", "/v1/projects", tok, map[string]any{"name": "todo-app", "class": "small"})
+		want(t, r, 201)
+		var p created
+		r.json(t, &p)
+		if p.State != "creating" || p.HostID != "" || p.WaitingForHost == nil || *p.WaitingForHost != (WaitingForHost{Name: "mac-mini", Provider: "mac"}) {
+			t.Fatalf("create while mac-mini installs: %+v", p.Project)
+		}
+		var o Op
+		call(t, f, "GET", "/v1/projects/"+p.ID+"/ops/"+p.OpID, tok, nil).json(t, &o)
+		if o.State != "running" {
+			t.Fatalf("the waiting create's op is %q, want running", o.State)
+		}
+		return f, h, p
+	}
+	t.Run("registers", func(t *testing.T) {
+		f, h, p := setup(t)
+		f.SetOwnedHostState("mac-mini", "ready")
+		var got Project
+		call(t, f, "GET", "/v1/projects/"+p.ID, tok, nil).json(t, &got)
+		if got.State != "running" || got.HostID != h.ID || got.WaitingForHost != nil {
+			t.Fatalf("after mac-mini registered: %+v", got)
+		}
+		var o Op
+		call(t, f, "GET", "/v1/projects/"+p.ID+"/ops/"+p.OpID, tok, nil).json(t, &o)
+		if o.State != "done" {
+			t.Fatalf("op %q, want done", o.State)
+		}
+	})
+	for _, c := range []struct {
+		name, why string
+		end       func(f *Fake, h OwnedHost)
+	}{
+		{"removed", "your host mac-mini was removed before it finished installing", func(f *Fake, h OwnedHost) {
+			want(t, call(t, f, "DELETE", "/v1/hosts/"+h.ID, tok, nil), 204)
+		}},
+		{"never joins", "your host mac-mini did not finish installing within 24 hours of `repose host add`", func(f *Fake, h OwnedHost) {
+			f.ExpireJoinToken("mac-mini")
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f, h, p := setup(t)
+			c.end(f, h)
+			var o Op
+			call(t, f, "GET", "/v1/projects/"+p.ID+"/ops/"+p.OpID, tok, nil).json(t, &o)
+			if o.State != "error" || o.Error != c.why {
+				t.Fatalf("op %+v, want error %q", o, c.why)
+			}
+			r := call(t, f, "GET", "/v1/projects/"+p.ID, tok, nil)
+			wantErr(t, r, 404, "not_found")
+			if !strings.Contains(string(r.body), "todo-app was not created: "+c.why) {
+				t.Fatalf("read after: %s", r.body)
+			}
+		})
+	}
+	t.Run("destroyed while it waits", func(t *testing.T) {
+		f, _, p := setup(t)
+		want(t, call(t, f, "DELETE", "/v1/projects/"+p.ID, tok, nil), 202)
+		var o Op
+		call(t, f, "GET", "/v1/projects/"+p.ID+"/ops/"+p.OpID, tok, nil).json(t, &o)
+		if o.State != "error" {
+			t.Fatalf("the waiting create after a destroy: %+v", o)
+		}
+		f.SetOwnedHostState("mac-mini", "ready")
+		if r := call(t, f, "GET", "/v1/projects/"+p.ID, tok, nil); r.status != 404 {
+			t.Fatalf("the destroyed project came back when the host registered: %d %s", r.status, r.body)
+		}
+	})
 }
 
 // TestFakeOwnHostFullNamesTheFigure: as the api (I-1586, I-1630), a host
