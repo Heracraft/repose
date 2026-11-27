@@ -484,7 +484,7 @@ func TestHostRmOfAnX86BoxSaysHowToUninstall(t *testing.T) {
 	e, _ := newRoundtripEnv(t, fake)
 	ctx := context.Background()
 	onAppleSilicon = func() bool { return false }
-	t.Cleanup(func() { onAppleSilicon = func() bool { return runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" } })
+	t.Cleanup(func() { onAppleSilicon = func() bool { return false } }) // tests never act on the Mac they run on
 
 	for _, c := range []struct{ arch, want string }{
 		{"x86_64", "Repose still runs on box until this runs there as root:\n  " + hostUninstallX86 + "\n"},
@@ -511,7 +511,7 @@ func TestHostRmLocalOnLinux(t *testing.T) {
 		t.Skip("the Linux answer")
 	}
 	onAppleSilicon = func() bool { return false }
-	t.Cleanup(func() { onAppleSilicon = func() bool { return runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" } })
+	t.Cleanup(func() { onAppleSilicon = func() bool { return false } }) // tests never act on the Mac they run on
 	marker := filepath.Join(t.TempDir(), "hostd.env")
 	old := x86HostMarker
 	x86HostMarker = marker

@@ -7,6 +7,7 @@ import (
 	"context"
 	"io"
 	"net/netip"
+	"runtime"
 	"testing"
 	"time"
 
@@ -204,6 +205,13 @@ func TestSpoofedSourceIsDropped(t *testing.T) {
 }
 
 func TestNewFlowsOverTheRateAreDroppedAndCounted(t *testing.T) {
+	if raceOn && runtime.GOOS == "darwin" {
+		// Its 400 ms dial is a timing bound: under -race on a 3-core
+		// macOS runner no dial made it, the burst included (2 of 4 runs,
+		// d2-int 2026-11-27). It runs under -race on Linux and without it
+		// on a Mac.
+		t.Skip("timing under the race detector on macOS")
+	}
 	in := newInternet(t)
 	r := DefaultRules()
 	r.FlowRate, r.FlowBurst = 1, 3

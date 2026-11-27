@@ -19,6 +19,9 @@ import (
 // Mac the install runs here and the host follows.
 func TestHostAddJSONPrintsNoSecret(t *testing.T) {
 	t.Cleanup(func() { onLinuxX86 = func() bool { return runtime.GOOS == "linux" && runtime.GOARCH == "amd64" } })
+	// Not the Mac path (TestHostAddJSONOnAMacInstallsAndPrintsNoSecret is),
+	// on a Mac too: run on one, this test installed into the Mac it ran on.
+	onAppleSilicon = func() bool { return false }
 	for _, x86 := range []bool{false, true} {
 		fake := fakeapi.New(fakeapi.Options{})
 		e, _ := newRoundtripEnv(t, fake)

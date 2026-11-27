@@ -9,7 +9,12 @@ import (
 
 // The tests' keychain is a map: a test never writes to, or waits on, the
 // Keychain of the Mac it runs on.
+//
+// And no test acts on the Mac it runs on: onAppleSilicon is false unless a
+// test makes a stub Mac (newD2Mac), so `go test` on a Mac never installs
+// hostd, a LaunchDaemon or the appliance into it.
 func init() {
+	onAppleSilicon = func() bool { return false }
 	var mu sync.Mutex
 	items := map[string]string{}
 	keychainGet = func(account string) (string, bool) {
