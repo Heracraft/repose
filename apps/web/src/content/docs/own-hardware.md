@@ -134,7 +134,7 @@ A Mac that is only off the network keeps running your machines, and they are rea
 
 ## Restart your Mac through repose and your machines keep their memory
 
-`repose host restart` on the Mac, or **Restart…** for that host on the dashboard's Settings → Hosts from any computer, saves every running machine's memory to a file on the Mac (it parks them), then restarts the Mac. When you log in again, each machine comes back where it was: its programs, its tmux windows, an agent mid-task. On an M4 Mac mini three machines were parked in 10.2 seconds and were running again, memory and all, 15.4 seconds after the login.
+`repose host restart` on the Mac, or **Restart…** for that host on the dashboard's Settings → Hosts from any computer, saves every running machine's memory to a file on the Mac (it parks them), then restarts the Mac. When you log in again, each machine comes back where it was: its programs, its tmux windows, an agent mid-task. On an M4 Mac mini with automatic login, three machines were parked in 8 to 11 seconds and were running again, memory and all, 54 to 70 seconds after the command, three times in a row. Measured on 2026-11-27.
 
 A machine that cannot be parked stops the restart: the answer names it and why, nothing restarts, and the machines already parked run again. `repose host restart --force`, or **Restart anyway** on the dashboard, restarts all the same, and those machines start fresh. An app on the Mac with unsaved work can still cancel the restart, as at any restart; repose then runs the parked machines again within three minutes.
 
