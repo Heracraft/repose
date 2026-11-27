@@ -52,30 +52,8 @@ func (m *Manager) restPause(ctx context.Context, g *state.Guest, sock string) er
 		// it has rested RestSaveAfter, or at once when macOS is short.
 		return nil
 	}
-	m.dropCleanCache(ctx, g, sock)
 	m.saveRest(ctx, g, sock)
 	return nil
-}
-
-// dropCleanCache asks a paused guest's kernel to drop its clean page
-// cache before a save, so the save holds what the guest uses and not the
-// files a build read (images of 1.1-2.2 GB and restores of 9-31 s after
-// builds, d2-lab 2026-11-27): the VM is resumed for the call and paused
-// again. Best effort; a guest that does not answer is saved as it is.
-func (m *Manager) dropCleanCache(ctx context.Context, g *state.Guest, sock string) {
-	if err := m.d.CH.Resume(ctx, sock); err != nil {
-		return
-	}
-	if sess, err := m.session(g.GuestID); err == nil {
-		dctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		if r, err := sess.Exec(dctx, []string{"/bin/sh", "-c", "sync; echo 1 > /proc/sys/vm/drop_caches"}, 10, ""); err != nil || r.ExitCode != 0 {
-			m.log(g).Warn("page cache not dropped before the rest save", "event", "guest_resting")
-		}
-		cancel()
-	}
-	if err := m.d.CH.Pause(ctx, sock); err != nil {
-		m.log(g).Warn("guest not paused again after dropping its page cache", "event", "guest_resting", "err", err.Error())
-	}
 }
 
 // saveRest saves a paused guest to restDir and ends its hypervisor,
@@ -149,6 +127,11 @@ func (m *Manager) restoreRest(ctx context.Context, g *state.Guest, sock string) 
 		_ = os.Remove(filepath.Join(dir, s)) // the launcher makes them anew
 	}
 	props := GuestUnitProps(m.classOf(g.Class), m.cfg.GuestUser, m.cfg.GuestsDir, dir, m.d.LVM.DevPath(VolumeName(g.GuestID)), m.unitBundle(g))
+	// The save file is read ahead, in large sequential reads, beside the
+	// restore: VZ's own reads of a file macOS no longer caches took 44.8 s
+	// for 4.6 GB on the lab Mac, against 9.8-14.2 s with the read-ahead
+	// and 3.2-4.9 s when it was cached (DECISIONS I-1682).
+	readAhead(m.restDir(g.GuestID))
 	if err := m.d.Systemd.Run(ctx, GuestUnit(g.GuestID), props, ch.RestoreArgs(dir, m.restDir(g.GuestID))); err != nil {
 		return 0, err
 	}
@@ -255,9 +238,7 @@ func (m *Manager) SaveRests(ctx context.Context) int {
 		l.Lock()
 		cur, err := m.getGuest(id)
 		if err == nil && cur.Resting != nil && cur.State == StateRunning && !m.restSaved(cur) && m.unitRunning(ctx, cur) {
-			sock := ch.APISocket(m.guestDir(id))
-			m.dropCleanCache(ctx, cur, sock)
-			if m.saveRest(ctx, cur, sock) {
+			if m.saveRest(ctx, cur, ch.APISocket(m.guestDir(id))) {
 				n++
 			}
 		}
@@ -381,4 +362,32 @@ func (m *Manager) WakeTap(ctx context.Context, tap string) (*hostdv1.WakeResult,
 		}
 	}
 	return nil, errors.New("no guest on that port")
+}
+
+// readAhead reads every file in dir once, in the background, in 8 MiB
+// reads, so macOS caches a save file before VZ's own smaller reads need
+// it (I-1682). Best effort: an error stops the read and nothing else.
+func readAhead(dir string) {
+	des, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, de := range des {
+		if !de.Type().IsRegular() {
+			continue
+		}
+		go func(p string) {
+			f, err := os.Open(p)
+			if err != nil {
+				return
+			}
+			defer func() { _ = f.Close() }()
+			buf := make([]byte, 8<<20)
+			for {
+				if _, err := f.Read(buf); err != nil {
+					return
+				}
+			}
+		}(filepath.Join(dir, de.Name()))
+	}
 }

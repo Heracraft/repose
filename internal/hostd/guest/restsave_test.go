@@ -5,11 +5,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
-	guestdv1 "github.com/heracraft/repose/internal/gen/guestd/v1"
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
 )
 
@@ -181,8 +179,6 @@ func TestRestSavePastTheAgeLimit(t *testing.T) {
 // DECISIONS I-1682, the two-step rest: an idle machine rests by pause
 // first (its wake a resume, under a second) and is saved, giving its
 // memory back, only after RestSaveAfter, or at once when macOS is short.
-// The save is preceded by dropping the guest's clean page cache, which a
-// build fills and which made saves of 1.1-2.2 GB and restores of 9-31 s.
 func TestRestPausesFirstAndSavesLater(t *testing.T) {
 	fh := newParkHarness(t, nil)
 	fh.m.d.CH = saveCH{parkCH{Fake: fh.chc, h: fh.harness}}
@@ -190,13 +186,6 @@ func TestRestPausesFirstAndSavesLater(t *testing.T) {
 	fh.m.d.RestSaveAfter = 30 * time.Minute
 	tight := false
 	fh.m.d.MemoryTight = func() bool { return tight }
-	var drops atomic.Int32
-	fh.gopts.OnExec = func(argv []string) *guestdv1.ExecResult {
-		if len(argv) == 3 && strings.Contains(argv[2], "drop_caches") {
-			drops.Add(1)
-		}
-		return nil
-	}
 	fh.create(gid1)
 	fh.pauseOK(gid1)
 	if !fh.unitActive(gid1) || fh.m.restSaved(fh.guest(gid1)) {
@@ -212,9 +201,6 @@ func TestRestPausesFirstAndSavesLater(t *testing.T) {
 	}
 	if n := fh.m.SaveRests(context.Background()); n != 1 || fh.unitActive(gid1) || !fh.m.restSaved(fh.guest(gid1)) {
 		t.Fatalf("after RestSaveAfter: saved %d, active %v", n, fh.unitActive(gid1))
-	}
-	if drops.Load() != 1 {
-		t.Fatalf("page cache dropped %d times before the save, want 1", drops.Load())
 	}
 	if res := fh.mustOK(cmd(&hostdv1.WakeGuest{GuestId: gid1, Reason: "ssh"})); !res.GetWake().GetWasResting() {
 		t.Fatalf("wake %+v", res)

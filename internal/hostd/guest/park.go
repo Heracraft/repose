@@ -1857,6 +1857,12 @@ func (m *Manager) restoreGuest(ctx context.Context, g *state.Guest, rec *park.Re
 	}
 	props := GuestUnitProps(m.classOf(g.Class), m.cfg.GuestUser, m.cfg.GuestsDir, dir, m.d.LVM.DevPath(VolumeName(g.GuestID)), m.unitBundle(g))
 	argv := ch.RestoreArgs(dir, m.snapDir(g.GuestID))
+	if m.d.FileVolumes {
+		// A Mac: the save file is read ahead beside VZ's restore, as a
+		// rest save's is (restsave.go, I-1682). Linux reads its image as
+		// it always has.
+		readAhead(m.snapDir(g.GuestID))
+	}
 	if err := m.d.Systemd.Run(ctx, GuestUnit(g.GuestID), props, argv); err != nil {
 		return fmt.Errorf("hypervisor: %w", err)
 	}
