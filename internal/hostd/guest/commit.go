@@ -1,6 +1,7 @@
 package guest
 
 import (
+	"errors"
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
 	"github.com/heracraft/repose/internal/hostd/state"
 )
@@ -29,6 +30,12 @@ func (m *Manager) committedMiB(except string) uint64 {
 	var n uint64
 	for _, g := range gs {
 		if g.GuestID == except {
+			continue
+		}
+		if m.restSaved(g) {
+			// Resting as a save file: macOS has all of its memory
+			// (DECISIONS I-1712). It takes it back at its wake, which
+			// checks for room first (restoreRest).
 			continue
 		}
 		switch g.State {
@@ -93,6 +100,9 @@ func (m *Manager) committedVCPUs(except string) uint32 {
 		if g.GuestID == except {
 			continue
 		}
+		if m.restSaved(g) {
+			continue
+		}
 		switch g.State {
 		case StateRunning, StateStarting, StateStopping:
 			if g.VCPUs > 0 {
@@ -137,3 +147,18 @@ func (m *Manager) vmSize(g *state.Guest) *hostdv1.VmSize {
 	}
 	return v
 }
+
+// restoreRoom says whether g, resting as a save, fits back in the memory
+// commit with spare MiB left over (DECISIONS I-1712): a restore takes
+// the VM's whole configured memory, whatever it used before its rest.
+func (m *Manager) restoreRoom(g *state.Guest, spare uint64) bool {
+	if m.cfg.CommitMemMiB == 0 {
+		return true
+	}
+	return m.committedMiB(g.GuestID)+m.guestMemMiB(g)+spare <= m.cfg.CommitMemMiB
+}
+
+// ErrNoRoomToRestore is a wake of a guest resting as a save that does not
+// fit back: the machines running on the host hold the memory it would
+// take (DECISIONS I-1712).
+var ErrNoRoomToRestore = errors.New("the machines running on this host hold the memory this machine comes back with; stopping one of them frees room")

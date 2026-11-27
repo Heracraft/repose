@@ -199,7 +199,13 @@ func (s *Server) projectJSON(ctx context.Context, p *store.Project, u *store.Use
 			out["root_used_bytes"] = x.latest.RootUsed
 			out["root_size_bytes"] = x.latest.RootSize
 		}
-		if p.State == "running" && x.latest.MemUsed > 0 && !sampleBeforeStart(p, x.latest) {
+		if p.State == "running" && p.VMSize != nil && !sampleBeforeStart(p, x.latest) {
+			// On a Mac (its hostd sizes each start, I-1680) the figure is
+			// what macOS gives up for the machine, its VM's footprint, 0
+			// while it rests as a save (DECISIONS I-1712): that, not what
+			// the guest uses, decides whether the next machine starts.
+			out["mem_used_bytes"] = x.latest.MemRss
+		} else if p.State == "running" && x.latest.MemUsed > 0 && !sampleBeforeStart(p, x.latest) {
 			// What the machine uses now, as the guest sees it (I-1632):
 			// on a host the user owns it is what the clients show in
 			// place of a size.
@@ -981,6 +987,9 @@ func (s *Server) wakeProject(w http.ResponseWriter, r *http.Request) error {
 	res, err := waker.Wake(r.Context(), p.ID, "cli")
 	if err != nil {
 		return wakeFailed(p.Slug, err)
+	}
+	if wf := res.GetWaitsFor(); wf != "" {
+		return withDetail(errf("conflict", "%s", waitsSentence(r.Context(), s, p, wf)), map[string]any{"reason": "waits_for_" + wf})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"was_resting": res.GetWasResting(), "wake_ms": res.GetWakeMs()})
 	return nil

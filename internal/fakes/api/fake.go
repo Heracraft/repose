@@ -197,6 +197,10 @@ type Fake struct {
 	// wakeDelay is how long POST /internal/wake takes, as a Mac's
 	// restore from a rest save does (I-1696).
 	wakeDelay time.Duration
+	// wakeWaits makes POST /internal/wake answer 409 with this sentence,
+	// as the api does for a machine resting as a save its locked Mac
+	// cannot read (I-1712).
+	wakeWaits string
 	// wakes counts POST /internal/wake, for the gateway's dedupe tests;
 	// userWakes counts POST /projects/:id/wake (I-1682).
 	userWakes int

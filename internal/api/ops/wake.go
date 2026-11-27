@@ -100,5 +100,6 @@ func (e *Engine) wake(ctx context.Context, projectID uuid.UUID, reason string) (
 		return &hostdv1.WakeResult{}, nil
 	}
 	ms, _ := op.Result["wake_ms"].(float64)
-	return &hostdv1.WakeResult{WasResting: was, WakeMs: uint32(ms)}, nil
+	wf, _ := op.Result["waits_for"].(string)
+	return &hostdv1.WakeResult{WasResting: was, WakeMs: uint32(ms), WaitsFor: wf}, nil
 }

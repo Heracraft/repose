@@ -593,7 +593,16 @@ type Deps struct {
 	// rest); 0 saves at the pause. MemoryTight, when it says true, saves
 	// at once whatever the time.
 	RestSaveAfter time.Duration
-	MemoryTight   func() bool
+	// OnDestroyed runs after a guest is destroyed, in the background: a
+	// Mac sweeps the destroyed machine's kept snapshot clones then
+	// (DECISIONS I-1712). Nil does nothing.
+	OnDestroyed func()
+	// HeldBytes is what the host gives up for a guest's VM, where the
+	// hypervisor unit's own memory is not it (a Mac: the VZ process's
+	// footprint, DECISIONS I-1712); samples report it as mem_rss_bytes,
+	// 0 for a guest resting as a save. Nil keeps the unit's memory.
+	HeldBytes func(ctx context.Context, id string) (uint64, bool)
+	MemoryTight func() bool
 	// SessionState is the Mac user's session: SessionUnlocked,
 	// SessionLocked or SessionNone, for what a guest resting as a save or
 	// a held park waits for (waitsFor, DECISIONS I-1682). Nil on every
@@ -712,6 +721,8 @@ type Manager struct {
 	// (I-1682).
 	wakeAtUnlock sync.Map // guest id -> true
 	rebindDue    sync.Map // guest id -> true
+	// onDestroyed is SetOnDestroyed's hook (Deps.OnDestroyed wins).
+	onDestroyed atomic.Pointer[func()]
 
 	// restMu guards the two maps below. It is deliberately not mu: the
 	// monitor goroutine reads the resting mark on every dial retry, and

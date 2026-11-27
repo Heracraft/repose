@@ -1540,7 +1540,7 @@ func (e *Engine) onResult(ctx context.Context, op *store.Op, phase string, res *
 		// The machine is awake, whether this phase woke it or found it
 		// so: the marker goes now rather than when hostd's event lands,
 		// so the phases after it never read a stale row (I-818).
-		if w := res.GetWake(); w == nil || w.WasResting {
+		if w := res.GetWake(); w == nil || (w.WasResting && w.GetWaitsFor() == "") {
 			if _, err := e.pool.Exec(ctx, "update projects set resting_since = null where id = $1 and resting_since is not null", p.ID); err != nil {
 				return err
 			}
@@ -1548,7 +1548,7 @@ func (e *Engine) onResult(ctx context.Context, op *store.Op, phase string, res *
 		if op.Kind == KindWake {
 			// The caller reads whether the host answered; a phase skipped
 			// for a host that is away leaves no result (I-1642).
-			return e.setResult(ctx, op, map[string]any{"was_resting": res.GetWake().GetWasResting(), "wake_ms": res.GetWake().GetWakeMs()})
+			return e.setResult(ctx, op, map[string]any{"was_resting": res.GetWake().GetWasResting(), "wake_ms": res.GetWake().GetWakeMs(), "waits_for": res.GetWake().GetWaitsFor()})
 		}
 		return nil
 	case PhaseExec:

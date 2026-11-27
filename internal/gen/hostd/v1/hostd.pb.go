@@ -4961,10 +4961,14 @@ func (x *PauseResult) GetAt() int64 {
 // WakeResult answers a WakeGuest: was_resting says whether this call is
 // what resumed the guest, and wake_ms how long from the resume to
 // guestd's answer (DECISIONS I-818).
+// waits_for (DECISIONS I-1712) is set, and nothing woken, when the guest
+// rests as a save file its Mac cannot read now: "unlock" or "login", as
+// GuestSample.waits_for. The guest wakes once its user unlocks or logs in.
 type WakeResult struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	WasResting    bool                   `protobuf:"varint,1,opt,name=was_resting,json=wasResting,proto3" json:"was_resting,omitempty"`
 	WakeMs        uint32                 `protobuf:"varint,2,opt,name=wake_ms,json=wakeMs,proto3" json:"wake_ms,omitempty"`
+	WaitsFor      string                 `protobuf:"bytes,3,opt,name=waits_for,json=waitsFor,proto3" json:"waits_for,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5011,6 +5015,13 @@ func (x *WakeResult) GetWakeMs() uint32 {
 		return x.WakeMs
 	}
 	return 0
+}
+
+func (x *WakeResult) GetWaitsFor() string {
+	if x != nil {
+		return x.WaitsFor
+	}
+	return ""
 }
 
 type ExecResult struct {
@@ -7284,12 +7295,13 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"\vPauseResult\x12\x16\n" +
 	"\x06paused\x18\x01 \x01(\bR\x06paused\x12\x17\n" +
 	"\awhy_not\x18\x02 \x01(\tR\x06whyNot\x12\x0e\n" +
-	"\x02at\x18\x03 \x01(\x03R\x02at\"F\n" +
+	"\x02at\x18\x03 \x01(\x03R\x02at\"c\n" +
 	"\n" +
 	"WakeResult\x12\x1f\n" +
 	"\vwas_resting\x18\x01 \x01(\bR\n" +
 	"wasResting\x12\x17\n" +
-	"\awake_ms\x18\x02 \x01(\rR\x06wakeMs\"Y\n" +
+	"\awake_ms\x18\x02 \x01(\rR\x06wakeMs\x12\x1b\n" +
+	"\twaits_for\x18\x03 \x01(\tR\bwaitsFor\"Y\n" +
 	"\n" +
 	"ExecResult\x12\x1b\n" +
 	"\texit_code\x18\x01 \x01(\x05R\bexitCode\x12\x16\n" +

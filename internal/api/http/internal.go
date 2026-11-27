@@ -140,8 +140,27 @@ func (s *Server) internalWake(w http.ResponseWriter, r *http.Request) error {
 		obs.Logger(r.Context(), s.d.Log).Warn("wake failed", "event", "guest_wake_fail", "project_id", pid.String(), "reason", reason, "err", err.Error())
 		return errf("internal", "%s did not wake", p.Slug)
 	}
+	if wf := res.GetWaitsFor(); wf != "" {
+		return withDetail(errf("conflict", "%s", waitsSentence(r.Context(), s, p, wf)), map[string]any{"reason": "waits_for_" + wf})
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"was_resting": res.GetWasResting(), "wake_ms": res.GetWakeMs()})
 	return nil
+}
+
+// waitsSentence is what a user reads for a wake held because the
+// machine's Mac cannot read its save now (DECISIONS I-1712).
+func waitsSentence(ctx context.Context, s *Server, p *store.Project, waits string) string {
+	where := "its Mac"
+	if p.HostID != nil {
+		var name string
+		if err := s.d.Pool.QueryRow(ctx, "select name from hosts where id = $1 and owner_account_id is not null", *p.HostID).Scan(&name); err == nil && name != "" {
+			where = name
+		}
+	}
+	if waits == "login" {
+		return p.Slug + " is resting and wakes once you log in to " + where + "; its memory is kept"
+	}
+	return p.Slug + " is resting and wakes once you unlock " + where + "; its memory is kept"
 }
 
 // lowerSnake accepts the reason words a client may send: up to 32

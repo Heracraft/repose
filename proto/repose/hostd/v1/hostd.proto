@@ -599,7 +599,10 @@ message PauseResult { bool paused = 1; string why_not = 2; int64 at = 3; }
 // WakeResult answers a WakeGuest: was_resting says whether this call is
 // what resumed the guest, and wake_ms how long from the resume to
 // guestd's answer (DECISIONS I-818).
-message WakeResult { bool was_resting = 1; uint32 wake_ms = 2; }
+// waits_for (DECISIONS I-1712) is set, and nothing woken, when the guest
+// rests as a save file its Mac cannot read now: "unlock" or "login", as
+// GuestSample.waits_for. The guest wakes once its user unlocks or logs in.
+message WakeResult { bool was_resting = 1; uint32 wake_ms = 2; string waits_for = 3; }
 message ExecResult { int32 exit_code = 1; bytes stdout = 2; bytes stderr = 3; }
 // SayResult is guestd's answer to a SayToAgent (DECISIONS I-1144): state
 // delivered or waiting, the window it went to, and whether it replaced a
