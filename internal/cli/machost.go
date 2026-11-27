@@ -33,7 +33,7 @@ import (
 // macHostVersion is the hostd-<version> release `repose host add` installs
 // on a Mac. The release must be published before a CLI that pins it
 // (TestReleaseAssetsAnswerAnonymously checks it answers).
-const macHostVersion = "2026.11.28.1"
+const macHostVersion = "2026.11.28.2"
 
 // The Mac's lab knobs: a manifest to install from and the key it is
 // signed with, for the Mac days before a release exists. No Mac owner
