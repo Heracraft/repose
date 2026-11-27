@@ -103,7 +103,7 @@ For more detail on any command, add `-v`; its request IDs are what support looks
 
 ## Your own hardware
 
-**`This Mac has 6 GB free; repose needs 10 GB for itself and a machine's base image`.** `repose host add` checks free space before it adds a host to your account or downloads anything, so nothing was created or written. Free up space and run `repose host add` again ([What a Mac mini needs](/docs/own-hardware#what-a-mac-mini-needs)).
+**`This Mac has 6 GB free; repose needs 10 GB for itself and a machine's base image`.** `repose host add` checks free space before it adds a host to your account or downloads anything, so nothing was created or written. Free up space and run `repose host add` again ([What a Mac needs](/docs/own-hardware#what-a-mac-needs)).
 
 **`macOS ... is older than 14; repose needs macOS 14 or later`**, or **`This Mac has ... GB of memory; repose needs 8 GB or more`**. Checked before a host is added to your account, so nothing was created.
 
