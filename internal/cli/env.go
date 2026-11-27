@@ -317,11 +317,12 @@ func apiErrorExit(apiErr *APIError, stderr io.Writer) int {
 		if apiErr.RequestID != "" {
 			rid = ", request " + apiErr.RequestID
 		}
-		if apiErr.Raw {
-			say("The repose api answered %d%s. Try again in a minute.", apiErr.Status, rid)
-		} else {
-			say("The repose api failed (%s%s). Try again in a minute.", apiErr.Code, rid)
+		// No code and no status in brackets: the user can do nothing
+		// with them (I-1724). The request id is what support asks for.
+		if apiErr.RequestID != "" {
+			rid = " If it keeps happening, give support this: " + apiErr.RequestID + "."
 		}
+		say("Repose had a problem on its side. Try again in a minute.%s", rid)
 		return ExitGeneric
 	}
 	say("%s", apiRefusal(apiErr))
@@ -329,13 +330,15 @@ func apiErrorExit(apiErr *APIError, stderr io.Writer) int {
 }
 
 // apiRefusal is a 4xx refusal as a sentence: the api's message, which
-// since I-159 is written for the user, with its code after it.
+// since I-159 is written for the user. Its code is not shown: the user
+// can do nothing with it, and --json and the exit code carry it (I-1724,
+// amending I-159).
 func apiRefusal(apiErr *APIError) string {
 	m := strings.TrimSuffix(strings.TrimSpace(apiErr.Message), ".")
 	if m == "" {
-		return fmt.Sprintf("The api refused it (%s).", apiErr.Code)
+		return "Repose refused it."
 	}
-	return fmt.Sprintf("%s (%s).", capitalFirst(m), apiErr.Code)
+	return capitalFirst(m) + "."
 }
 
 // capitalFirst capitalises a sentence's first letter, unless its first

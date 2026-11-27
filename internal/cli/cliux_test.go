@@ -53,9 +53,9 @@ func TestDestroyReportsAFailedOp(t *testing.T) {
 		wants []string
 	}{
 		{"older api: the host's wording", map[string]any{"code": "guest_unresponsive", "message": rawGuestdError},
-			[]string{"Could not destroy todo-app", "stopped answering", "(guest_unresponsive)", "`repose rm todo-app` tries again", "still there"}},
+			[]string{"Could not destroy todo-app", "stopped answering", "`repose rm todo-app` tries again", "still there"}},
 		{"api with I-159 sentences", map[string]any{"code": "internal", "message": "the host could not remove the volume", "detail": "lvremove: exit 5"},
-			[]string{"Could not destroy todo-app: the host could not remove the volume (internal).", "`repose rm todo-app` tries again"}},
+			[]string{"Could not destroy todo-app: the host could not remove the volume.", "`repose rm todo-app` tries again"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fake := fakeapi.New(fakeapi.Options{})

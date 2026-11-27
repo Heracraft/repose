@@ -1960,7 +1960,7 @@ func (e *Engine) ownHostRefusalDetail(ctx context.Context, p *store.Project, pin
 		live = append(live, h)
 	}
 	if len(live) == 0 {
-		return "you own no host yet; `repose host add` prints the step that adds one", detail
+		return "you have no host of your own yet. `repose host add` adds one", detail
 	}
 	// The figures a ready host refused with (I-1586). Without them the
 	// sentence is I-1366's "has no room", still true.
@@ -1971,7 +1971,7 @@ func (e *Engine) ownHostRefusalDetail(ctx context.Context, p *store.Project, pin
 	detail["host"], detail["host_state"] = live[0].Name, live[0].State
 	if len(live) == 1 {
 		h := live[0]
-		return "your host " + h.Name + " " + e.ownHostWhy(h, p.Class, false, rooms), detail
+		return ownLabel(h.Name, h.Arch) + " " + e.ownHostWhy(h, p.Class, false, rooms), detail
 	}
 	why := make([]string, len(live))
 	for i, h := range live {
@@ -1981,10 +1981,10 @@ func (e *Engine) ownHostRefusalDetail(ctx context.Context, p *store.Project, pin
 		if r, ok := rooms[h.ID]; ok && !r.Shares {
 			// A host whose hostd does not share yet places by class
 			// (I-1630), so the sentence names the class it asked for.
-			return "none of your hosts can take " + aClass(p.Class) + " machine (" + gbText(scheduler.ClassRAM(p.Class)) + "): " + strings.Join(why, "; "), detail
+			return "none of your hosts has room for " + aClass(p.Class) + " machine (" + gbText(scheduler.ClassRAM(p.Class)) + "): " + strings.Join(why, "; "), detail
 		}
 	}
-	return "none of your hosts can start a machine: " + strings.Join(why, "; "), detail
+	return "none of your hosts has room: " + strings.Join(why, "; "), detail
 }
 
 // ownHostWhy is why one host of the account's own took no placement, as
@@ -2003,9 +2003,9 @@ func (e *Engine) ownHostWhy(h store.Host, class string, short bool, rooms map[uu
 			if short {
 				return "never finished installing"
 			}
-			return "never finished installing, and its join token has expired; `repose host rm " + h.Name + "` and `repose host add` start over"
+			return "never finished installing. Remove it and add it again: repose host rm " + h.Name + ", then repose host add"
 		}
-		return "has not registered yet"
+		return "has not joined your account yet"
 	case "unreachable":
 		// How long it has been quiet, not just that it is: a user
 		// reading "14m" knows their Mac went to sleep, and one
@@ -2016,10 +2016,7 @@ func (e *Engine) ownHostWhy(h store.Host, class string, short bool, rooms map[uu
 		// the user's to fix.
 		return "has not answered for " + quietFor(h.LastHeartbeatAt, e.now())
 	case "draining":
-		if short {
-			return "is being removed"
-		}
-		return "is being removed, so nothing can be placed on it"
+		return "is being removed"
 	}
 	if r, ok := rooms[h.ID]; ok {
 		if why := roomWhy(r, class, short); why != "" {
@@ -2027,12 +2024,9 @@ func (e *Engine) ownHostWhy(h store.Host, class string, short bool, rooms map[uu
 		}
 	}
 	if short {
-		return "has no room"
+		return "is full"
 	}
-	if r, ok := rooms[h.ID]; ok && !r.Shares {
-		return "has no room for " + aClass(class) + " machine"
-	}
-	return "has no room for a machine"
+	return "is full. Stop a machine there"
 }
 
 // roomWhy is the figure that keeps a machine of class off a ready host
@@ -2052,20 +2046,16 @@ func roomWhy(r scheduler.Room, class string, short bool) string {
 	switch {
 	case r.FreeBytes < need:
 		if short {
-			return "has " + gbText(r.FreeBytes) + " free"
-		}
-		if !r.Shares {
-			return "has " + gbText(r.FreeBytes) + " of memory free for machines, and " + aClass(class) + " machine needs " + gbText(need) +
-				". A machine holds its memory while it runs, so stopping one frees room for it"
+			return "is full"
 		}
 		return ownMemoryWhy(r.FreeBytes)
 	case r.PoolUnavailable:
-		return "cannot use its disk for machines"
+		return "cannot use its disk right now"
 	case r.PoolFreeBytes < r.PoolNeedBytes:
 		if short {
-			return "has " + gbText(r.PoolFreeBytes) + " of disk free, " + gbText(r.PoolNeedBytes) + " needed"
+			return "is out of disk space"
 		}
-		return "has " + gbText(r.PoolFreeBytes) + " of disk free, and a new machine needs " + gbText(r.PoolNeedBytes) + " free"
+		return "is out of disk space: " + gbText(r.PoolFreeBytes) + " free, " + gbText(r.PoolNeedBytes) + " needed. `repose rm` a machine there to free some"
 	}
 	return ""
 }
@@ -2083,8 +2073,17 @@ func aClass(class string) string {
 // reports free and the figure a start needs. Shared by placement's
 // refusal and by a start hostd refused for memory, so both read alike.
 func ownMemoryWhy(free int64) string {
-	return "has " + gbText(max(free, 0)) + " of memory free, and a machine starts there when it has at least " +
-		gbText(scheduler.OwnedStartFreeBytes) + " free. Stopping a machine frees the memory it uses"
+	return "is full. Stop a machine there"
+}
+
+// ownLabel is a host of the user's own as the user knows it (the owner's
+// rule of 2026-11-27, I-1724): "your Mac NAME" for an Apple silicon
+// host, which is the only arm64 host a user owns, else "your host NAME".
+func ownLabel(name string, arch *string) string {
+	if arch != nil && (*arch == "aarch64" || *arch == "arm64") {
+		return "your Mac " + name
+	}
+	return "your host " + name
 }
 
 // gbText is a size in the GB the docs and `repose host ls` use (GiB),

@@ -108,7 +108,7 @@ func TestOwnedCPURefusalNamesTheHostAndTheWayOut(t *testing.T) {
 	p := h.NewProject(u, "pocketmail", "small")
 	pid := p.ID
 	op := h.WaitOp(h.Enqueue(ops.NewOp{Kind: ops.KindCreate, ProjectID: &pid, Phases: ops.PlanCreate()}))
-	want := "your host mac-mini runs as many machines at once as its cores allow, and alpha and beta are running there. Stopping one of them frees room, or `repose run --host repose` makes this one on repose's servers"
+	want := "your host mac-mini is running as many machines as it can. Stop alpha or beta there, or run it on repose's servers: repose run --host repose"
 	if op.Error["code"] != "insufficient_capacity" || op.Error["message"] != want {
 		t.Fatalf("create refused for cores: %+v\nwant message %q", op.Error, want)
 	}
@@ -125,8 +125,34 @@ func TestOwnedCPURefusalNamesTheHostAndTheWayOut(t *testing.T) {
 	h.Fake.SetFail("StartGuest", "insufficient_capacity")
 	h.Fake.SetFailMessage("StartGuest", "not enough free CPU: 6 of 6 vCPUs taken by running machines on this host, a machine starts with 2")
 	op = h.WaitOp(h.Enqueue(ops.NewOp{Kind: ops.KindStart, ProjectID: &qid, Phases: ops.PlanStart(false)}))
-	want = "your host mac-mini runs as many machines at once as its cores allow, and alpha and beta are running there. Stopping one of them frees room"
+	want = "your host mac-mini is running as many machines as it can. Stop alpha or beta there"
 	if op.Error["message"] != want {
 		t.Fatalf("start refused for cores: %+v\nwant message %q", op.Error, want)
+	}
+}
+
+// The owner's own run, 2026-11-27: "Could not start muqsit-labs: the
+// machines running on this host hold the memory it gives its machines;
+// stopping a running machine frees room (insufficient_capacity)." On a Mac
+// the refusal names the Mac, says it is full and names what to stop
+// (I-1724).
+func TestMacFullRefusalIsPlain(t *testing.T) {
+	h := apitest.New(t, apitest.Options{})
+	u := h.NewUser("owner")
+	if _, err := h.Pool.Exec(h.Ctx, "update hosts set name = 'e2e-d2lab', arch = 'aarch64', owner_account_id = $1 where id = $2", u.ID, h.HostID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.Pool.Exec(h.Ctx, `insert into projects (id, user_id, name, slug, class, state, host_id, volume_bytes, started_at)
+		values ($1, $2, 'api', 'api', 'large', 'running', $3, 1, now())`, store.NewID(), u.ID, h.HostID); err != nil {
+		t.Fatal(err)
+	}
+	h.Fake.SetFail("CreateGuest", "insufficient_capacity")
+	h.Fake.SetFailMessage("CreateGuest", "the machines running on this host hold 22528 of the 24576 MiB it gives its machines, and one starts with at least 2048 MiB: stop one first")
+	p := h.NewProject(u, "muqsit-labs", "small")
+	pid := p.ID
+	op := h.WaitOp(h.Enqueue(ops.NewOp{Kind: ops.KindCreate, ProjectID: &pid, Phases: ops.PlanCreate()}))
+	want := "your Mac e2e-d2lab is full. Stop api there, or run it on repose's servers: repose run --host repose"
+	if op.Error["code"] != "insufficient_capacity" || op.Error["message"] != want {
+		t.Fatalf("Mac full: %+v\nwant message %q", op.Error, want)
 	}
 }

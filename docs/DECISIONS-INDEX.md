@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1181 entries.
+1182 entries.
 
 ## Scope
 
@@ -236,7 +236,7 @@ pointer, not a summary.
 - **I-156** A destroy the user asked for always finishes; DELETE answers with the op to wait on — 2026-09-23; L3235
 - **I-157** `repose start` on a project in `error`, or on a running one whose guestd stopped answering, restarts it onto its newest built revision — 2026-09-23; partly amended by I-593; L3267
 - **I-158** Stop, resize and snapshot on a dead guestd — 2026-09-23; L3288
-- **I-159** An op's error message is a sentence; the host's wording is `detail` — 2026-09-23; L3305
+- **I-159** An op's error message is a sentence; the host's wording is `detail` — 2026-09-23; amended by I-1724; L3305
 - **I-160** A create reuses a closure the host already runs — 2026-09-23; amended by I-1454; L3317
 - **I-161** The guest boot's critical chain: no wait for Docker, the console or a mount rate limit — 2026-09-23; L3342
 - **I-162** mkfs leaves the inode tables to the guest's lazy init — 2026-09-23; L3387
@@ -1209,7 +1209,8 @@ pointer, not a summary.
 - **I-1710** A stop or destroy cut off by a plain hostd restart is neither stored nor sent, as one cut off by a host shutdown is: the api's resend after Hello runs it again on the next hostd, which finishes it; a boot cut off that way is still answered (d2-install, 2026-11-27) — L39866
 - **I-1712** On a Mac a machine resting as a save holds no memory in the commit, the screen lock reads back only the saved machines that fit with room for one more machine, a wake of one the locked Mac cannot read answers at once with what it waits for, MEMORY is what macOS gives up for a machine, and a destroyed machine keeps no clone of its disk (d2-core, review-mac's findings on the shipped build, 2026-11-27) — L39872
 - **I-1714** Agents open their own pull requests with `gh pr create --base integrated --label queued --title ... --body-file ...` and write the title; a `pr-record` check on the PR refuses a body or a title that breaks docs/PR.md; `release-queue` keeps the conductor's half, and `add` stays one release with a required `--title` (queue-prs, 2026-11-27) — L39880
-- **I-1716** A signed-in visitor to repose.run goes to the dashboard before the landing paints; the logo shows the landing on purpose (sweep-dash, 2026-11-27) — L39889
-- **I-1718** Dashboard sweep, batch 2: temporary machines' snapshots, Messages to the latest 3, a webhook route's deliveries, the browser view's paste and full screen, and the suite's per-file host reset (sweep-dash, 2026-11-27) — L39895
-- **I-1720** A `repose run` with no terminal, from a folder that is not a git repository, that would make a new machine and names none, is refused with exit 2 before anything is made; named, or with `--temp`, it makes the empty machine as before (sweep-cli, board sweep 2, 2026-11-27) — L39903
-- **I-1722** What the CLI tells a customer about money and about a host that cannot join: `repose login --status` names the next charge or the trial's end beside the plan, and an own host that never registered and whose join token has expired is "never finished installing", not "has not registered yet" (sweep-cli, board sweep 2, 2026-11-27) — L39909
+- **I-1724** Every refusal and failure a user reads is plain and short: it names the thing in the user's words ("your Mac e2e-d2lab", "your host box", the machine by its name), says what happened in everyday words, and gives the one action, on two lines at most; no error code or status is shown in brackets (owner, 2026-11-27; d2-install) — L39890
+- **I-1716** A signed-in visitor to repose.run goes to the dashboard before the landing paints; the logo shows the landing on purpose (sweep-dash, 2026-11-27) — L39897
+- **I-1718** Dashboard sweep, batch 2: temporary machines' snapshots, Messages to the latest 3, a webhook route's deliveries, the browser view's paste and full screen, and the suite's per-file host reset (sweep-dash, 2026-11-27) — L39903
+- **I-1720** A `repose run` with no terminal, from a folder that is not a git repository, that would make a new machine and names none, is refused with exit 2 before anything is made; named, or with `--temp`, it makes the empty machine as before (sweep-cli, board sweep 2, 2026-11-27) — L39911
+- **I-1722** What the CLI tells a customer about money and about a host that cannot join: `repose login --status` names the next charge or the trial's end beside the plan, and an own host that never registered and whose join token has expired is "never finished installing", not "has not registered yet" (sweep-cli, board sweep 2, 2026-11-27) — L39917

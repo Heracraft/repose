@@ -2329,11 +2329,11 @@ func createRefusal(apiErr *APIError, host string) string {
 	if reason != "no_own_host" {
 		return capacityRefusal(apiErr)
 	}
-	next := ""
+	alt := ""
 	if allowed, _ := apiErr.Detail["hosted_allowed"].(bool); allowed && host == "" {
-		next = "`repose run --host " + hostRepose + "` makes it on repose's servers instead."
+		alt = "run it on repose's servers: repose run --host " + hostRepose
 	}
-	return withNext(apiErr.Message, next)
+	return plainLines(apiErr.Message, alt)
 }
 
 // capacityRefusal is the sentence for a `capacity` refusal with no next
@@ -2342,9 +2342,9 @@ func createRefusal(apiErr *APIError, host string) string {
 // about repose's servers otherwise.
 func capacityRefusal(apiErr *APIError) string {
 	if reason, _ := apiErr.Detail["reason"].(string); reason == "no_own_host" && strings.TrimSpace(apiErr.Message) != "" {
-		return withNext(apiErr.Message, "")
+		return plainLines(apiErr.Message, "")
 	}
-	return "repose has no room for this machine. A machine holds its memory while it runs, so stopping one frees room for it."
+	return "Repose has no room for this machine right now.\nStop one of your running machines to make room."
 }
 
 // noRuntimeHost is the sentence for a 503 capacity whose reason is

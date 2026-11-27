@@ -165,9 +165,9 @@
 		const h = target;
 		if (!h || h.state !== 'ready') return '';
 		if (h.running_limit && h.running_projects >= h.running_limit)
-			return `${h.name} runs as many machines at once as its cores allow.`;
+			return `${h.name} is running as many machines as it can.`;
 		if (h.free_mem_bytes !== undefined && h.free_mem_bytes < START_FREE)
-			return `${h.name} has ${bytes(h.free_mem_bytes)} of memory free, and a machine starts there at 1 GB.`;
+			return `${h.name} is full.`;
 		return '';
 	});
 	/** What the host has, for the summary: "3.2 GB free · 2 of 3 running". */
@@ -359,7 +359,7 @@
 			<!-- The host would refuse it (I-1654): said before Create, with
 			     both ways out beside it. -->
 			<div class="nmroom" data-testid="nm-host-full">
-				<p>{hostFull} Stop one of its machines, or make this one on repose's servers.</p>
+				<p>{hostFull} Stop a machine there, or make this one on repose's servers.</p>
 				<div class="nmstops">
 					{#if onstop}
 						{#each hostRunning as m (m.id)}

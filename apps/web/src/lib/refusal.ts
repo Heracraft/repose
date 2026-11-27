@@ -19,8 +19,7 @@ export function withoutBillingURL(message: string): string {
  * (pass2-dash N2).
  */
 export function dashboardWords(message: string): string {
-	return message.replace(
-		/, or `repose run --host repose` makes this one on repose's servers/,
-		", or New project can make it on repose's servers"
-	);
+	return message
+		.replace(/, or run it on repose's servers: repose run --host repose/, ", or make it on repose's servers with New project")
+		.replace(/, or `repose run --host repose` makes this one on repose's servers/, ", or make it on repose's servers with New project");
 }

@@ -72,7 +72,7 @@ func TestCreateOnASharedOwnHost(t *testing.T) {
 		}
 	}
 	setOwnFree(t, e, 768<<20)
-	want := "your host " + name + " has 0.8 GB of memory free, and a machine starts there when it has at least 1 GB free. Stopping a machine frees the memory it uses"
+	want := "your host " + name + " is full. Stop a machine there"
 	for _, class := range []string{"large", "xl"} {
 		r := e.do(t, tok, "POST", "/projects", map[string]any{"name": "todo-" + class, "class": class})
 		if d := detailOf(t, r); r.status != 503 || d["reason"] != "no_own_host" || d["host"] != name {

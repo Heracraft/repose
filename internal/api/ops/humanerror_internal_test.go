@@ -18,7 +18,7 @@ func TestUnresponsiveBootSaysWhichPhaseRanOut(t *testing.T) {
 	if strings.Contains(noReady, "within a minute") {
 		t.Errorf("a five-minute wait is reported as a minute: %q", noReady)
 	}
-	if !strings.HasPrefix(noReady, "the machine did not answer while it was starting;") || !strings.Contains(noReady, "`repose start` tries again") {
+	if !strings.HasPrefix(noReady, "the machine did not answer while it was starting.") || !strings.Contains(noReady, "`repose start` tries again") {
 		t.Errorf("no Ready: %q", noReady)
 	}
 
@@ -27,12 +27,12 @@ func TestUnresponsiveBootSaysWhichPhaseRanOut(t *testing.T) {
 	// reports one is reporting something the next session can act on.
 	paths, _ := humanError(KindStart, PhaseStartGuest, codeGuestUnresponsive,
 		"create: step 10 (ready) failed: RegisterPaths: guestd: internal: register paths: run /run/current-system/sw/bin/nix-store: context deadline exceeded (the paths phase ran out of its 3m0s)", false)
-	if !strings.Contains(paths, "loading its system") || !strings.Contains(paths, "`repose start` tries again") {
+	if !strings.Contains(paths, "did not finish loading") || !strings.Contains(paths, "`repose start` tries again") {
 		t.Errorf("registration phase: %q", paths)
 	}
 	setup, _ := humanError(KindStart, PhaseStartGuest, codeGuestUnresponsive,
 		"create: step 10 (ready) failed: SetupProject: context deadline exceeded (the setup phase ran out of its 3m0s)", false)
-	if !strings.Contains(setup, "setting up the project") || !strings.Contains(setup, "`repose start` tries again") {
+	if !strings.Contains(setup, "setting up your project") || !strings.Contains(setup, "`repose start` tries again") {
 		t.Errorf("setup phase: %q", setup)
 	}
 	if paths == setup {
@@ -91,22 +91,22 @@ func TestCapacitySaysWhichKindAndWhatWorks(t *testing.T) {
 		lever bool // whether "stopping one frees room" is true here
 	}{
 		// internal/hostd/guest/create.go:89 and :637
-		{"create: not enough free memory for a large guest", "no free memory for a machine this size", true},
+		{"create: not enough free memory for a large guest", "its host is full. Stop a machine there", true},
 		// internal/hostd/guest/owned.go ownedCPURoom (I-1640)
-		{"not enough free CPU: 8 of 8 vCPUs taken by running machines on this host, a machine starts with 2", "as many machines running as its cores allow", true},
+		{"not enough free CPU: 8 of 8 vCPUs taken by running machines on this host, a machine starts with 2", "running as many machines as it can. Stop a machine there", true},
 		// internal/hostd/guest/commit.go commitSize (a Mac, I-1666)
-		{"the machines running on this host hold 22528 of the 24576 MiB it gives its machines, and one starts with at least 2048 MiB: stop one first", "hold the memory it gives its machines", true},
+		{"the machines running on this host hold 22528 of the 24576 MiB it gives its machines, and one starts with at least 2048 MiB: stop one first", "its host is full. Stop a machine there", true},
 		// internal/hostd/guest/create.go:105 and :645
-		{"create: thin pool 96% full", "disk pool is full", false},
+		{"create: thin pool 96% full", "out of disk space", false},
 		// internal/hostd/guest/manager.go:1033
-		{"build queue full", "building as many machines at once as it can", false},
+		{"build queue full", "busy building other machines", false},
 		// internal/hostd/guest/build.go:38
-		{"host store full", "no disk left to build new systems", false},
+		{"host store full", "no disk space left to build", false},
 		// internal/hostd/guest/create.go:76
 		{"host draining", "being emptied", false},
 		// create.go:165 and snapshot.go:260 wrap an LVM error in this
 		// code; its text is the host's own and stays with operators.
-		{"lvcreate: Volume group \"vg\" has insufficient free space", "no room for this project right now", false},
+		{"lvcreate: Volume group \"vg\" has insufficient free space", "no room right now", true},
 	} {
 		got, handled := humanError(KindStart, PhaseStartGuest, "insufficient_capacity", c.msg, false)
 		if !handled {
@@ -116,7 +116,7 @@ func TestCapacitySaysWhichKindAndWhatWorks(t *testing.T) {
 		if !strings.Contains(got, c.want) {
 			t.Errorf("%q\n got: %q\nwant it to contain: %q", c.msg, got, c.want)
 		}
-		if saysStopping := strings.Contains(got, "stopping a running machine frees room"); saysStopping != c.lever {
+		if saysStopping := strings.Contains(got, "Stop a machine there"); saysStopping != c.lever {
 			t.Errorf("%q: says stopping frees room = %v, want %v\n got: %q", c.msg, saysStopping, c.lever, got)
 		}
 		// I-623 removed "(We have been alerted.)" everywhere, and that
@@ -152,7 +152,7 @@ func TestAHostTheUserRemovedIsNotComingBack(t *testing.T) {
 	if !ok {
 		t.Fatal("host_unreachable is no longer mapped to a sentence")
 	}
-	if !strings.Contains(back, "once the host is back") {
+	if !strings.Contains(back, "when the host is back") {
 		t.Errorf("a host that may answer again should still say so: %q", back)
 	}
 	gone, ok := humanError(KindDestroy, PhaseStopGuest, "host_unreachable", "host unreachable", true)
@@ -179,12 +179,12 @@ func TestAHostTheUserRemovedIsNotComingBack(t *testing.T) {
 func TestSilentMenuApplySaysTheMachineStoppedAnswering(t *testing.T) {
 	got, ok := humanError(KindBuild, PhaseApplyConfig, codeGuestUnresponsive,
 		"the machine stopped answering while it applied the menu: nothing from it for 2 minutes", false)
-	if !ok || got != "the machine stopped answering while it applied the menu: nothing from it for 2 minutes; `repose start` restarts it" {
+	if !ok || got != "the machine stopped answering while it installed your tools. `repose start` restarts it" {
 		t.Fatalf("%q %v", got, ok)
 	}
 	// Any other guest_unresponsive in the phase keeps the guestd sentence.
 	other, _ := humanError(KindBuild, PhaseApplyConfig, codeGuestUnresponsive, "guestd unreachable for guest g", false)
-	if !strings.Contains(other, "service on the machine stopped answering") {
+	if !strings.Contains(other, "the machine stopped answering. `repose start` restarts it") {
 		t.Fatalf("%q", other)
 	}
 }

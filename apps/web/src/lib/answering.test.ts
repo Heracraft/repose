@@ -64,10 +64,10 @@ describe('dashboardWords (pass2-dash N2)', () => {
 		const { dashboardWords } = await import('./refusal');
 		expect(
 			dashboardWords(
-				"your host mac-mini runs as many machines at once as its cores allow, and a and b are running there. Stopping one of them frees room, or `repose run --host repose` makes this one on repose's servers"
+				"your Mac mac-mini is running as many machines as it can. Stop a or b there, or run it on repose's servers: repose run --host repose"
 			)
 		).toBe(
-			"your host mac-mini runs as many machines at once as its cores allow, and a and b are running there. Stopping one of them frees room, or New project can make it on repose's servers"
+			"your Mac mac-mini is running as many machines as it can. Stop a or b there, or make it on repose's servers with New project"
 		);
 	});
 });

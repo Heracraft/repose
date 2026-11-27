@@ -266,7 +266,7 @@ func TestFakePlacementWithSeveralOwnHosts(t *testing.T) {
 		} `json:"error"`
 	}
 	r.json(t, &body)
-	if want := "none of your hosts can start a machine: e2e-x86-1 never finished installing; e2e-x86-2 has not answered for 14m"; body.Error.Message != want {
+	if want := "none of your hosts has room: e2e-x86-1 never finished installing; e2e-x86-2 has not answered for 14m"; body.Error.Message != want {
 		t.Fatalf("message %q, want %q", body.Error.Message, want)
 	}
 
@@ -427,7 +427,7 @@ func TestFakeOwnHostFullNamesTheFigure(t *testing.T) {
 		} `json:"error"`
 	}
 	r.json(t, &body)
-	if want := "your host mac-mini has 0.9 GB of memory free, and a machine starts there when it has at least 1 GB free. Stopping a machine frees the memory it uses"; body.Error.Message != want {
+	if want := "your Mac mac-mini is full. Stop a machine there"; body.Error.Message != want {
 		t.Fatalf("message %q, want %q", body.Error.Message, want)
 	}
 	f.SetOwnedHostFree("mac-mini", 1<<30)
@@ -477,7 +477,7 @@ func TestFakeOldHostdPlacesByClass(t *testing.T) {
 		} `json:"error"`
 	}
 	r.json(t, &body)
-	if want := "your host mac-mini has 1 GB of memory free for machines, and a tiny machine needs 2 GB. A machine holds its memory while it runs, so stopping one frees room for it"; body.Error.Message != want {
+	if want := "your Mac mac-mini is full. Stop a machine there"; body.Error.Message != want {
 		t.Fatalf("message %q, want %q", body.Error.Message, want)
 	}
 }

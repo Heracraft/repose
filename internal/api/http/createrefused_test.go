@@ -26,7 +26,7 @@ func TestCreateRefusedByTheHostReadsAsNotCreated(t *testing.T) {
 	}
 	o := e.do(t, tok, "GET", "/projects/"+pid+"/ops/"+op.ID.String(), nil)
 	oe, _ := o.body["error"].(map[string]any)
-	if o.status != 200 || oe["code"] != "insufficient_capacity" || !strings.Contains(oe["message"].(string), "as many machines running as its cores allow") {
+	if o.status != 200 || oe["code"] != "insufficient_capacity" || !strings.Contains(oe["message"].(string), "running as many machines as it can") {
 		t.Fatalf("op read: %d %s", o.status, o.raw)
 	}
 	if l := e.do(t, tok, "GET", "/projects", nil); strings.Contains(string(l.raw), pid) {
@@ -36,7 +36,7 @@ func TestCreateRefusedByTheHostReadsAsNotCreated(t *testing.T) {
 	ge, _ := g.body["error"].(map[string]any)
 	det, _ := ge["detail"].(map[string]any)
 	if g.status != 404 || errCode(g) != "not_found" || det["reason"] != "create_refused" ||
-		ge["message"] != "pocketmail was not created: the host has as many machines running as its cores allow; stopping a running machine frees room" {
+		ge["message"] != "pocketmail was not created: its host is running as many machines as it can. Stop a machine there" {
 		t.Fatalf("project read: %d %s", g.status, g.raw)
 	}
 	e.h.Fake.SetFail("CreateGuest", "")

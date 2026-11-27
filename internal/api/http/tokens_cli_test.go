@@ -106,7 +106,7 @@ func TestAPITokensWithTheRealCLI(t *testing.T) {
 	}
 	_ = resp.Body.Close()
 	_, errOut, code = run(token, "stop", "pa")
-	if code == 0 || !strings.Contains(errOut, "token's scopes are read, triggers; this call needs projects (forbidden).") {
+	if code == 0 || !strings.Contains(errOut, "token's scopes are read, triggers; this call needs projects.\n") {
 		t.Fatalf("stop with a read token: %d %q", code, errOut)
 	}
 	_, errOut, code = run(token, "tokens")
