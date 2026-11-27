@@ -131,11 +131,11 @@ func TestStartWhoseSwitchFailsStaysRunning(t *testing.T) {
 		t.Fatalf("start: %s %+v", op.State, op.Error)
 	}
 	w, _ := op.Result["warning"].(map[string]any)
-	if w["code"] != "not_found" || !strings.Contains(w["message"].(string), "not in the machine's store") {
+	if w["code"] != "not_found" || !strings.Contains(w["message"].(string), "did not reach the machine") {
 		t.Fatalf("warning %v", op.Result["warning"])
 	}
 	p = h.Project(pid)
-	if p.State != "running" || p.LastError == nil || !strings.HasPrefix(*p.LastError, "not_found: the new system is not in the machine's store") {
+	if p.State != "running" || p.LastError == nil || !strings.HasPrefix(*p.LastError, "not_found: the new system did not reach the machine") {
 		t.Fatalf("project %s last_error %v", p.State, p.LastError)
 	}
 	if st, _ := revisionStatus(t, h, rid); st != "built" {
@@ -212,12 +212,12 @@ func TestApplyOfAHiddenSystemSaysStopAndStartRepairsIt(t *testing.T) {
 		t.Fatalf("apply: %s %+v", op.State, op.Error)
 	}
 	msg, _ := op.Error["message"].(string)
-	if op.Error["code"] != "store_path_hidden" || !strings.Contains(msg, "nix garbage collection inside the machine hid parts of the new system") ||
+	if op.Error["code"] != "store_path_hidden" || !strings.Contains(msg, "cleaned up part of the new system") ||
 		!strings.Contains(msg, "`repose stop` then `repose start`") {
 		t.Fatalf("error %v", op.Error)
 	}
 	p = h.Project(pid)
-	if p.State != "running" || p.LastError == nil || !strings.HasPrefix(*p.LastError, "store_path_hidden: a nix garbage collection") {
+	if p.State != "running" || p.LastError == nil || !strings.HasPrefix(*p.LastError, "store_path_hidden: the machine cleaned up part of the new system") {
 		t.Fatalf("project %s last_error %v", p.State, p.LastError)
 	}
 	if st, _ := revisionStatus(t, h, rid); st != "built" {

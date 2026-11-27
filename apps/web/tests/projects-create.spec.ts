@@ -484,7 +484,7 @@ test('Runs on lets a customer whose host is waiting make the machine on repose i
 		const error = form(page).getByTestId('new-machine-error');
 		// Hosts other files left behind make it the several-host form
 		// (I-1582), which names mac-mini the same way.
-		await expect(error).toContainText('mac-mini has not registered yet');
+		await expect(error).toContainText('mac-mini has not joined your account yet');
 		// Nothing was made: the form is still here with the name typed,
 		// and the api holds no such project.
 		await expect(form(page).getByLabel('Name')).toHaveValue(name);
@@ -534,8 +534,8 @@ test('Runs on lists every host and the one chosen is the one used', async ({ pag
 		await form(page).getByLabel('Name').fill(name);
 		await runsOn.selectOption({ label: 'box-b · waiting' });
 		await form(page).getByRole('button', { name: 'Create' }).click();
-		await expect(form(page).getByTestId('new-machine-error')).toHaveText(
-			'your host box-b has not registered yet'
+		await expect(form(page).getByTestId('new-machine-error')).toContainText(
+			'box-b has not joined your account yet'
 		);
 		expect(await fromApi(name)).toBeUndefined();
 		await shots(page, 'new-project-runs-on-several');

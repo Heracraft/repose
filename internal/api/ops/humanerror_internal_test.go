@@ -18,7 +18,7 @@ func TestUnresponsiveBootSaysWhichPhaseRanOut(t *testing.T) {
 	if strings.Contains(noReady, "within a minute") {
 		t.Errorf("a five-minute wait is reported as a minute: %q", noReady)
 	}
-	if !strings.HasPrefix(noReady, "the machine did not answer while it was starting;") || !strings.Contains(noReady, "`repose start` tries again") {
+	if !strings.HasPrefix(noReady, "the machine did not answer while it was starting.") || !strings.Contains(noReady, "`repose start` tries again") {
 		t.Errorf("no Ready: %q", noReady)
 	}
 
@@ -27,12 +27,12 @@ func TestUnresponsiveBootSaysWhichPhaseRanOut(t *testing.T) {
 	// reports one is reporting something the next session can act on.
 	paths, _ := humanError(KindStart, PhaseStartGuest, codeGuestUnresponsive,
 		"create: step 10 (ready) failed: RegisterPaths: guestd: internal: register paths: run /run/current-system/sw/bin/nix-store: context deadline exceeded (the paths phase ran out of its 3m0s)", false)
-	if !strings.Contains(paths, "loading its system") || !strings.Contains(paths, "`repose start` tries again") {
+	if !strings.Contains(paths, "did not finish loading") || !strings.Contains(paths, "`repose start` tries again") {
 		t.Errorf("registration phase: %q", paths)
 	}
 	setup, _ := humanError(KindStart, PhaseStartGuest, codeGuestUnresponsive,
 		"create: step 10 (ready) failed: SetupProject: context deadline exceeded (the setup phase ran out of its 3m0s)", false)
-	if !strings.Contains(setup, "setting up the project") || !strings.Contains(setup, "`repose start` tries again") {
+	if !strings.Contains(setup, "setting up your project") || !strings.Contains(setup, "`repose start` tries again") {
 		t.Errorf("setup phase: %q", setup)
 	}
 	if paths == setup {
@@ -152,7 +152,7 @@ func TestAHostTheUserRemovedIsNotComingBack(t *testing.T) {
 	if !ok {
 		t.Fatal("host_unreachable is no longer mapped to a sentence")
 	}
-	if !strings.Contains(back, "once the host is back") {
+	if !strings.Contains(back, "when the host is back") {
 		t.Errorf("a host that may answer again should still say so: %q", back)
 	}
 	gone, ok := humanError(KindDestroy, PhaseStopGuest, "host_unreachable", "host unreachable", true)
@@ -179,12 +179,12 @@ func TestAHostTheUserRemovedIsNotComingBack(t *testing.T) {
 func TestSilentMenuApplySaysTheMachineStoppedAnswering(t *testing.T) {
 	got, ok := humanError(KindBuild, PhaseApplyConfig, codeGuestUnresponsive,
 		"the machine stopped answering while it applied the menu: nothing from it for 2 minutes", false)
-	if !ok || got != "the machine stopped answering while it applied the menu: nothing from it for 2 minutes; `repose start` restarts it" {
+	if !ok || got != "the machine stopped answering while it installed your tools. `repose start` restarts it" {
 		t.Fatalf("%q %v", got, ok)
 	}
 	// Any other guest_unresponsive in the phase keeps the guestd sentence.
 	other, _ := humanError(KindBuild, PhaseApplyConfig, codeGuestUnresponsive, "guestd unreachable for guest g", false)
-	if !strings.Contains(other, "service on the machine stopped answering") {
+	if !strings.Contains(other, "the machine stopped answering. `repose start` restarts it") {
 		t.Fatalf("%q", other)
 	}
 }

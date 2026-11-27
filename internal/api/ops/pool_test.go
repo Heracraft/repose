@@ -27,7 +27,7 @@ func TestStartVolumeUnavailableLeavesProjectStopped(t *testing.T) {
 		t.Fatalf("start op %s %+v", op.State, op.Error)
 	}
 	msg, _ := op.Error["message"].(string)
-	if !strings.Contains(msg, "disk is intact") || !strings.Contains(msg, "`repose start`") {
+	if !strings.Contains(msg, "disk is safe") || !strings.Contains(msg, "`repose start`") {
 		t.Fatalf("message %q", msg)
 	}
 	p = h.Project(pid)
