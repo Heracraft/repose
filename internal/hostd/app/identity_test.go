@@ -61,9 +61,9 @@ func writeIdentity(t *testing.T, dir string) {
 // only ever see ErrNoToken after that.
 func TestEnsureIdentityTakesTheIdentityTheUnitWrote(t *testing.T) {
 	dir := t.TempDir()
-	prev := registerRetry
-	registerRetry = 10 * time.Millisecond
-	t.Cleanup(func() { registerRetry = prev })
+	prev, prevFirst := registerRetry, registerFirstRetry
+	registerRetry, registerFirstRetry = 10*time.Millisecond, 10*time.Millisecond
+	t.Cleanup(func() { registerRetry, registerFirstRetry = prev, prevFirst })
 
 	h := &waitHandler{Handler: slog.NewTextHandler(io.Discard, nil), msg: "waiting for join token", seen: make(chan struct{})}
 	o := Options{StateDir: dir, TokenPath: filepath.Join(dir, "join-token"), APIAddr: "127.0.0.1:1"}
@@ -98,5 +98,28 @@ func TestEnsureIdentityTakesTheIdentityTheUnitWrote(t *testing.T) {
 		t.Fatal(err)
 	case <-ctx.Done():
 		t.Fatal("hostd did not pick up the identity repose-register wrote")
+	}
+}
+
+// A host just added registers through an edge that peers its key within
+// 30 s: the first tries are short and 2 s apart, doubling to the old 30 s
+// wait and gRPC's 20 s connect timeout, never faster than one try every
+// 2 s (d2-install's join of 43-84 s, 2026-11-27).
+func TestRegisterBacksOffFromTwoSeconds(t *testing.T) {
+	want := []struct{ try, wait time.Duration }{
+		{3 * time.Second, 2 * time.Second},
+		{6 * time.Second, 4 * time.Second},
+		{12 * time.Second, 8 * time.Second},
+		{20 * time.Second, 16 * time.Second},
+		{20 * time.Second, 30 * time.Second},
+		{20 * time.Second, 30 * time.Second},
+	}
+	for n, w := range want {
+		if try, wait := registerBackoff(n); try != w.try || wait != w.wait {
+			t.Fatalf("try %d: %s then %s, want %s then %s", n, try, wait, w.try, w.wait)
+		}
+	}
+	if try, wait := registerBackoff(1000); try != registerMaxTry || wait != registerRetry {
+		t.Fatalf("far out: %s %s", try, wait)
 	}
 }
