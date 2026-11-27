@@ -108,17 +108,17 @@
 	<li>
 		<div class="mf-copy">
 			<p class="label num"><span class="n">3.5 </span>Snapshots</p>
-			<h4 class="item-title">Snapshot in under a second</h4>
+			<h4 class="item-title">Restore a snapshot in seconds</h4>
 		</div>
 		<div class="mf-fig">{@render chart(SNAPSHOT)}</div>
 	</li>
 	<li>
 		<div class="mf-copy">
 			<p class="label num"><span class="n">3.6 </span>Memory</p>
-			<h4 class="item-title">Idle sandboxes give memory back</h4>
+			<h4 class="item-title">Stopped sandboxes give memory back</h4>
 			<p class="copy">
-				{#if REST.unlocked}While your Mac is unlocked, an{:else}An{/if} idle one is saved to disk in
-				{seconds(REST.save)} and woken by your next command in {seconds(REST.wake)}.
+				An idle one is paused and keeps its memory; your next command wakes it in
+				{seconds(REST.wake)}.
 			</p>
 		</div>
 		<div class="mf-fig">{@render chart(REST.chart)}</div>
@@ -126,9 +126,10 @@
 	<li>
 		<div class="mf-copy">
 			<p class="label num"><span class="n">3.7 </span>Restart</p>
-			<h4 class="item-title">Restart through repose and keep memory</h4>
+			<h4 class="item-title">Restart and keep memory, when there is room</h4>
 			<p class="copy">
-				<code>repose host restart</code> saves each sandbox's memory; they are back once you log in.
+				<code>repose host restart</code> saves each sandbox's memory to disk, or refuses when the disk
+				has no room for it; they are back once you log in.
 			</p>
 		</div>
 		<div class="mf-fig">{@render chart(RESTART)}</div>
