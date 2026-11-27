@@ -18,7 +18,9 @@ import (
 const minIDPart = 4
 
 // matchID returns the ids that part names: the one equal to it, else
-// each that ends or starts with it.
+// each that ends or starts with it, or whose shown form (its last eight,
+// shortID) starts with it: a user types the start of what a table shows
+// (ENG-218).
 func matchID(ids []string, part string) []string {
 	part = strings.ToLower(strings.TrimSpace(part))
 	for _, id := range ids {
@@ -31,7 +33,7 @@ func matchID(ids []string, part string) []string {
 	}
 	var out []string
 	for _, id := range ids {
-		if strings.HasSuffix(id, part) || strings.HasPrefix(id, part) {
+		if strings.HasSuffix(id, part) || strings.HasPrefix(id, part) || strings.HasPrefix(shortID(id), part) {
 			out = append(out, id)
 		}
 	}

@@ -106,13 +106,26 @@ func ConfigMenuListCmd(ctx context.Context, e *Env) error {
 // ConfigAddCmd implements `repose config add <package>...`: each name is a
 // catalog id when the catalog has it, otherwise a nixpkgs attribute path.
 // The selection is PUT as the menu and the build streams as for apply.
+//
+// Since DECISIONS I-1698 it is hidden and refused on an Ubuntu machine,
+// where an agent's apt-get does what the menu did; it works on a Nix
+// machine for the rest of that runtime's life, because the Nix base's
+// command-not-found still names it.
 func ConfigAddCmd(ctx context.Context, e *Env, projectArg string, args []string) error {
+	project, err := requireProject(ctx, e, projectArg)
 	if len(args) == 0 {
+		// The menu's list is the menu's: on an Ubuntu machine, or with no
+		// project to tell, there is none to show.
+		if err != nil || isErofs(project) {
+			return exitf(ExitUsage, "%s", configAddGone)
+		}
 		return ConfigMenuListCmd(ctx, e)
 	}
-	project, err := requireProject(ctx, e, projectArg)
 	if err != nil {
 		return err
+	}
+	if isErofs(project) {
+		return exitf(ExitUsage, "%s", configAddGone)
 	}
 	// The two reads are independent: one round trip, not two (I-326).
 	type catalogRead struct {
@@ -210,6 +223,11 @@ func ConfigRemoveCmd(ctx context.Context, e *Env, projectArg string, args []stri
 			missing = append(missing, n)
 			delete(drop, n)
 		}
+	}
+	if len(missing) > 0 && isErofs(project) {
+		// An Ubuntu machine's menu only holds what an older CLI or
+		// dashboard put there (I-1698); anything else came from apt-get.
+		return exitf(ExitUsage, "%s %s not in %s's menu; take it off the machine with `sudo apt-get remove %s`.", joinNames(missing), isAre(len(missing)), project.Name, strings.Join(missing, " "))
 	}
 	if len(missing) > 0 {
 		_, _ = fmt.Fprintf(e.Out, "%s %s not in %s's menu.\n", joinNames(missing), isAre(len(missing)), project.Name)

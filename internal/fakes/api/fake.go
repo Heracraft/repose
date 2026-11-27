@@ -136,6 +136,10 @@ const (
 type Fake struct {
 	Server *httptest.Server
 
+	// createWaits makes create leave the project creating, unrun: a
+	// create waiting for its host (I-1700).
+	createWaits bool
+
 	// startOutcome is how the next start of a project ends, when set:
 	// the op fails with an error, or ends done with a warning the way a
 	// start whose new system did not boot does (DECISIONS I-590).

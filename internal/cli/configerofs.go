@@ -19,7 +19,12 @@ import (
 // api's own message when it has one; this copy is for the refusals the
 // CLI makes before it sends anything (an editor it would otherwise open
 // on an empty file, machine.nix on or off for one machine).
-const nixConfigRetired = "This machine runs the Ubuntu base; custom Nix files are not used, and `repose config add <item>` installs packages and services."
+const nixConfigRetired = "This machine runs the Ubuntu base; custom Nix files are not used. Install packages on the machine with apt-get."
+
+// configAddGone is `repose config add` on an Ubuntu machine since
+// DECISIONS I-1698: an agent's apt-get does what the menu did, and what
+// apt-get installs is installed again after every base update.
+const configAddGone = "`repose config add` is gone: install on the machine with `sudo apt-get install -y NAME`, or ask the agent. What apt-get installs is installed again after every base update."
 
 // isErofs reports whether the project's machine boots the Ubuntu base.
 // An api older than I-1462 sends no runtime, which is nix.

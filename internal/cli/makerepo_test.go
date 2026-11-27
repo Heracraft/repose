@@ -296,3 +296,35 @@ func TestTempNeverOffersARepository(t *testing.T) {
 		t.Fatalf("asked %d, stdout %q", *asked, out.buf.String())
 	}
 }
+
+// TestScriptedRunOutsideARepositoryCreatesNothingUnnamed is ENG-30: with
+// no terminal to ask on, a run from a folder that is not a repository
+// would build a machine with nothing synced to it, found out only after
+// it was up. Unnamed, it is refused before anything is made; named, the
+// empty machine is what was asked for (I-358).
+func TestScriptedRunOutsideARepositoryCreatesNothingUnnamed(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	f := newRunFixture(t, fake)
+	gitInitAnswers(t, false, false)
+	dir := filepath.Join(t.TempDir(), "downloads")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	e, _, _ := freshEnv(f.env, dir)
+	err := runRun(context.Background(), e, RunOptions{NoAttach: true}, false)
+	want := "downloads isn't a git repository, so a new machine would get nothing from it. Run from your checkout, or name the machine to make an empty one: `repose run NAME`."
+	if exitCodeOf(err) != ExitUsage || err == nil || err.Error() != want {
+		t.Fatalf("unnamed scripted run outside a repository: %v (exit %d), want exit 2 with %q", err, exitCodeOf(err), want)
+	}
+	if ps := listed(t, e); len(ps) != 0 {
+		t.Fatalf("it made %d machine(s)", len(ps))
+	}
+	e, out, _ := freshEnv(f.env, dir)
+	if err := runRun(context.Background(), e, RunOptions{Name: "scratch", NoAttach: true}, false); err != nil {
+		t.Fatalf("named: %v", err)
+	}
+	if bySlug(listed(t, e), "scratch") == nil || !strings.Contains(out.buf.String(), "Not a git repository, so nothing was synced.") {
+		t.Fatalf("named scripted run: stdout %q", out.buf.String())
+	}
+}

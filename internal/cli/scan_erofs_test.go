@@ -31,7 +31,9 @@ func TestScanOnUbuntuMachine(t *testing.T) {
 	if err := ScanCmd(&ubuntuOut, home, dir, false, scanPersonal{Has: true, Why: "your account has a machine.nix", Erofs: true}); err != nil {
 		t.Fatal(err)
 	}
-	got := ubuntuOut.buf.String()
+	// The scan's own words, not the paths it prints: a TMPDIR such as nix
+	// develop's /tmp/rt/nix-shell.* put "nix" in them (ENG-209).
+	got := strings.NewReplacer(dir, "CHECKOUT", home, "HOME").Replace(ubuntuOut.buf.String())
 	for _, never := range []string{"skipped:", "nix"} {
 		if strings.Contains(got, never) {
 			t.Fatalf("Ubuntu scan says %q:\n%s", never, got)

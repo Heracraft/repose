@@ -144,7 +144,7 @@ repose snapshots create
 repose snapshots list
 ```
 
-A snapshot holds the machine's own disk: the home directory with the checkout and logins made on the machine, Docker's data, the services' data, and the list of what you installed with `apt-get` and `repose config add`. The system itself comes from the base, so it isn't in the snapshot; a restore onto a newer base installs that list again, as a [base update](/docs/machine#base-updates) does. Secrets are kept in memory, and your [Claude Code login](/docs/agents#log-in) outside the machines, so a snapshot holds neither. Snapshots from the last 7 days are kept, and the newest one always. A machine on [hardware of your own](/docs/own-hardware#snapshots-stay-on-its-disk) keeps its snapshots on that host's disk, so removing the host deletes them.
+A snapshot holds the machine's own disk: the home directory with the checkout and logins made on the machine, Docker's data, the services' data, and the list of what you installed with `apt-get`. The system itself comes from the base, so it isn't in the snapshot; a restore onto a newer base installs that list again, as a [base update](/docs/machine#base-updates) does. Secrets are kept in memory, and your [Claude Code login](/docs/agents#log-in) outside the machines, so a snapshot holds neither. Snapshots from the last 7 days are kept, and the newest one always. A machine on [hardware of your own](/docs/own-hardware#snapshots-stay-on-its-disk) keeps its snapshots on that host's disk, so removing the host deletes them.
 
 To put a project back to a snapshot, stop it first:
 

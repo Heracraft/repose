@@ -51,6 +51,11 @@ var hiddenCommands = map[string]string{
 	// says those are config.toml keys (I-622).
 	"repose config set": "answers that the CLI's settings are config.toml keys",
 	"repose config get": "answers that the CLI's settings are config.toml keys",
+	// Gone on an Ubuntu machine (I-1698): add refuses and names apt-get,
+	// remove takes an older menu's item off for one release; both still
+	// work on a Nix machine, whose base names them.
+	"repose config add":    "refused on Ubuntu machines since I-1698; Nix machines only",
+	"repose config remove": "refused on Ubuntu machines since I-1698 but for an older menu's items",
 }
 
 // undocumentedFlags is "<command path> --<flag>" for any flag that is

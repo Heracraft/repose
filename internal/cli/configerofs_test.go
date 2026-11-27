@@ -33,14 +33,15 @@ func newErofsEnvWith(t *testing.T, opts fakeapi.Options) (*fakeapi.Fake, *Env, *
 	return fake, e, p, out, errOut
 }
 
-// `repose config add` on an erofs machine: the same first line as on a
+// A menu an older CLI sends to an erofs machine (I-1698 keeps it one
+// release), as `repose config add` sent it: the same first line as on a
 // Nix machine without "Building revision", and the same last line
 // (DECISIONS I-1488), with the machine's ApplyMenu lines streamed as the
 // steps between them.
 func TestConfigAddErofsStreamsApplyMenuLines(t *testing.T) {
 	_, e, p, out, errOut := newErofsEnvWith(t, fakeapi.Options{ConfigDelay: 300 * time.Millisecond})
 	ctx := context.Background()
-	if err := ConfigAddCmd(ctx, e, "", []string{"postgresql", "bun"}); err != nil {
+	if err := addAsOlderCLI(ctx, e, []string{"postgresql", "bun"}); err != nil {
 		t.Fatalf("add: %v\n%s", err, errOut.buf.String())
 	}
 	got := out.buf.String()
@@ -68,7 +69,7 @@ func TestConfigAddErofsStreamsApplyMenuLines(t *testing.T) {
 	// A package name is an apt name there; removing names the removal.
 	out.buf.Reset()
 	errOut.buf.Reset()
-	if err := ConfigAddCmd(ctx, e, "", []string{"python3.12-venv"}); err != nil {
+	if err := addAsOlderCLI(ctx, e, []string{"python3.12-venv"}); err != nil {
 		t.Fatalf("add apt name: %v", err)
 	}
 	if got := out.buf.String(); !strings.HasPrefix(got, "Added python3.12-venv to todo-app.\n") {
@@ -84,22 +85,12 @@ func TestConfigAddErofsStreamsApplyMenuLines(t *testing.T) {
 	}
 }
 
-// A nixpkgs attribute path is not a package name on an erofs machine,
-// and the refusal says what is.
-func TestConfigAddErofsRefusesNixAttribute(t *testing.T) {
-	_, e, _, _, _ := newErofsEnv(t)
-	err := ConfigAddCmd(context.Background(), e, "", []string{"python312Packages.black"})
-	if exitCode(err) != ExitUsage || !strings.Contains(err.Error(), `"python312Packages.black" is not an apt package name`) {
-		t.Fatalf("got %v (exit %d)", err, exitCode(err))
-	}
-}
-
 // An item that does not install fails the command with the machine's own
 // line, and says nothing about the previous revision, since the items
 // before it stay installed.
 func TestConfigAddErofsFailure(t *testing.T) {
 	_, e, _, out, errOut := newErofsEnvWith(t, fakeapi.Options{ConfigDelay: 300 * time.Millisecond})
-	err := ConfigAddCmd(context.Background(), e, "", []string{"bun", fakeapi.FailMenuPackage})
+	err := addAsOlderCLI(context.Background(), e, []string{"bun", fakeapi.FailMenuPackage})
 	if exitCode(err) != ExitBuildFailed {
 		t.Fatalf("got %v (exit %d)", err, exitCode(err))
 	}
@@ -153,7 +144,7 @@ func TestErofsRefusesNixFiles(t *testing.T) {
 func TestConfigShowErofs(t *testing.T) {
 	_, e, _, out, _ := newErofsEnv(t)
 	ctx := context.Background()
-	if err := ConfigAddCmd(ctx, e, "", []string{"postgresql", "ffmpeg"}); err != nil {
+	if err := addAsOlderCLI(ctx, e, []string{"postgresql", "ffmpeg"}); err != nil {
 		t.Fatal(err)
 	}
 	out.buf.Reset()
@@ -243,7 +234,7 @@ func TestConfigOpErofsShowsApplyMenuLines(t *testing.T) {
 func TestConfigRevisionsErofs(t *testing.T) {
 	_, e, _, out, _ := newErofsEnv(t)
 	ctx := context.Background()
-	if err := ConfigAddCmd(ctx, e, "", []string{"redis"}); err != nil {
+	if err := addAsOlderCLI(ctx, e, []string{"redis"}); err != nil {
 		t.Fatal(err)
 	}
 	out.buf.Reset()
@@ -288,25 +279,16 @@ func TestRunAndSyncSkipRepoConfigOnErofs(t *testing.T) {
 	}
 }
 
-// Council finding 15: a name past apt's length is told the length, not
-// the character rule it followed.
-func TestConfigAddErofsLongName(t *testing.T) {
-	_, e, _, _, _ := newErofsEnv(t)
-	err := ConfigAddCmd(context.Background(), e, "", []string{strings.Repeat("a", 129)})
-	if exitCode(err) != ExitUsage || !strings.Contains(err.Error(), "128 characters at most") {
-		t.Fatalf("got %v", err)
-	}
-}
-
-// Council finding 11: `config rm` on a new Ubuntu machine, whose menu is
-// empty, says the name is not in the menu and points at nothing refused.
+// Council finding 11, then I-1698: `config rm` on a new Ubuntu machine,
+// whose menu is empty, says the name is not in the menu and names
+// apt-get, the way off the machine now.
 func TestConfigRemoveEmptyUbuntuMenu(t *testing.T) {
 	_, e, _, out, _ := newErofsEnv(t)
 	err := ConfigRemoveCmd(context.Background(), e, "", []string{"redis"})
-	if exitCode(err) != ExitUsage || strings.Contains(err.Error(), "config edit") {
+	if exitCode(err) != ExitUsage || err.Error() != "redis is not in todo-app's menu; take it off the machine with `sudo apt-get remove redis`." {
 		t.Fatalf("got %v (exit %d)", err, exitCode(err))
 	}
-	if got := out.buf.String(); got != "redis is not in todo-app's menu.\n" {
+	if got := out.buf.String(); got != "" {
 		t.Fatalf("stdout %q", got)
 	}
 }
@@ -334,4 +316,38 @@ func TestBuildViewKeepsStepLinesInsideTheItem(t *testing.T) {
 	if strings.Contains(got, "✓ redis:") || !strings.Contains(got, "ffmpeg-typo failed: E: Unable to locate package ffmpeg-typo (apt-get exited 100)\n") {
 		t.Fatalf("view:\n%s", got)
 	}
+}
+
+// addAsOlderCLI is what `repose config add` did on an Ubuntu machine
+// before I-1698, which an older CLI or dashboard still sends for one
+// release: the names added to the menu, PUT, and the install streamed.
+func addAsOlderCLI(ctx context.Context, e *Env, names []string) error {
+	project, err := requireProject(ctx, e, "")
+	if err != nil {
+		return err
+	}
+	cfg, err := e.Client.GetConfig(ctx, project.ID)
+	if err != nil {
+		return err
+	}
+	sel, err := currentMenu(cfg)
+	if err != nil {
+		return err
+	}
+	cat, err := e.Client.Catalog(ctx)
+	if err != nil {
+		return err
+	}
+	inCatalog := map[string]bool{}
+	for _, c := range cat {
+		inCatalog[c.ID] = true
+	}
+	for _, n := range names {
+		if inCatalog[n] {
+			sel = append(sel, MenuItem{ID: n})
+		} else {
+			sel = append(sel, MenuItem{Package: n})
+		}
+	}
+	return putMenuAndRender(ctx, e, project, sel, "Added "+joinNames(names)+" to "+project.Name+".")
 }

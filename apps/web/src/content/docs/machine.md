@@ -39,7 +39,7 @@ and shows what it uses instead.
 - **Build tools:** gcc, g++, make, cmake and pkg-config, so cgo, node-gyp, Python extensions and Rust crates like `openssl-sys` build. pkg-config finds OpenSSL, zlib, SQLite, libffi, libyaml, libpq, libxml2, libxslt and the MySQL client, with `pg_config` and `mysql_config` on `PATH`, so native gems like `pg`, `mysql2` and `nokogiri` build too.
 - **Containers:** Docker with `docker compose`; neither needs `sudo`. Images, containers and volumes stay through a [base update](#base-updates).
 - **Browser:** Chromium, with fonts for Chinese, Japanese and Korean text and colour emoji. The [agents drive it](#browser).
-- **Everyday tools:** git with git-lfs, gh, tmux, just, curl, wget, jq, ripgrep, fd, bat, fzf, eza, zoxide, tree, htop, neovim (also as `vi` and `vim`), direnv, [mise](https://mise.jdx.dev), sqlite3, `psql`, `pg_dump` and `pg_restore` (no database server; [add one](/docs/config#the-menu)), openssl, gnupg, dig, lsof, killall, file, zip, unzip and zstd.
+- **Everyday tools:** git with git-lfs, gh, tmux, just, curl, wget, jq, ripgrep, fd, bat, fzf, eza, zoxide, tree, htop, neovim (also as `vi` and `vim`), direnv, [mise](https://mise.jdx.dev), sqlite3, `psql`, `pg_dump` and `pg_restore` (no database server; [run one in Docker](/docs/config#databases)), openssl, gnupg, dig, lsof, killall, file, zip, unzip and zstd.
 
 The shell is bash with the starship prompt. `man` has the pages of the installed tools. `ls` is GNU ls; `ll`, `la` and `lt` run eza. Ctrl-R searches history with fzf, and history keeps 100,000 lines.
 
@@ -78,7 +78,7 @@ sudo apt install ffmpeg
 
 Typing `repose` gets its own answer: the CLI runs on your laptop, and this machine's commands are `repose-ask`, `repose-notify` and `repose-checkout`.
 
-What you install with `apt-get` is recorded on the machine's disk and installed again after a [base update](#base-updates), as is everything added with [`repose config add`](/docs/config#add-a-package). What `mise`, npm, go, cargo and uv put in `/home/dev` stays as it is.
+What you install with `apt-get` is recorded on the machine's disk and installed again after a [base update](#base-updates). What `mise`, npm, go, cargo and uv put in `/home/dev` stays as it is.
 
 ## Your laptop's tools come along
 
@@ -266,7 +266,7 @@ A new base keeps:
 - Docker's images, containers and volumes;
 - the services' data under `/var/lib/repose/services`.
 
-The machine then installs again what you added with `repose config add` and what you installed with `apt-get`. Everything else outside those starts clean: files under `/usr/local` and `/opt`, and edits to `/etc`. Put what must stay in `/home/dev`, or install it with `repose config add`.
+The machine then installs again what you installed with `apt-get`. Everything else outside those starts clean: files under `/usr/local` and `/opt`, edits to `/etc`, and what a database server installed with `apt-get` keeps under `/var/lib` ([run one in Docker](/docs/config#databases)). Put what must stay in `/home/dev` or in Docker.
 
 ## Changing the size
 
@@ -278,4 +278,4 @@ While the machine runs, its size counts toward [the memory your plan runs at onc
 
 ## Older machines
 
-Projects created before the Ubuntu base run NixOS and keep working as before, their `repose.nix`, machine.nix and `repose config edit` included, until they are migrated.
+Projects created before the Ubuntu base run NixOS and keep working as before, their `repose.nix`, machine.nix, `repose config edit` and `repose config add` included, until they are migrated.

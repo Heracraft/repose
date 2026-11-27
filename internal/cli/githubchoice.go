@@ -67,7 +67,16 @@ func githubChoiceMenu(r io.Reader, w io.Writer) (githubChoice, error) {
 		case 'c', 'C', 't', 'T', 'n', 'N':
 			_, _ = fmt.Fprintf(w, "%c\r\n", c)
 			return githubChoice(c | 0x20), nil
-		case '\r', '\n', 'q', 'Q', 0x1b:
+		case 0x1b:
+			// An arrow, Insert or F-key sends ESC and the rest of its
+			// sequence in one read: skip it whole (ENG-192). An Esc with
+			// nothing after it is the key itself.
+			if br.Buffered() > 0 && skipEscapeSequence(br) {
+				continue
+			}
+			_, _ = io.WriteString(w, "\r\n")
+			return githubChoiceNone, nil
+		case '\r', '\n', 'q', 'Q':
 			_, _ = io.WriteString(w, "\r\n")
 			return githubChoiceNone, nil
 		case 0x03:
@@ -394,4 +403,30 @@ func ghExpiryLine(expires *time.Time, now time.Time) string {
 		return "Your GitHub token expires in " + humanDuration(left) + "."
 	}
 	return ""
+}
+
+// skipEscapeSequence reads the rest of an escape sequence after its ESC:
+// CSI (`[`, parameter and intermediate bytes, then one final byte in
+// 0x40-0x7e) or SS3 (`O` and one byte). It reports false, reading
+// nothing, when the next byte starts neither, so a bare Esc stays Esc.
+func skipEscapeSequence(br *bufio.Reader) bool {
+	next, err := br.Peek(1)
+	if err != nil {
+		return false
+	}
+	switch next[0] {
+	case 'O':
+		_, _ = br.ReadByte()
+		_, _ = br.ReadByte()
+		return true
+	case '[':
+		_, _ = br.ReadByte()
+		for {
+			c, err := br.ReadByte()
+			if err != nil || (c >= 0x40 && c <= 0x7e) {
+				return true
+			}
+		}
+	}
+	return false
 }

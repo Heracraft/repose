@@ -115,6 +115,8 @@ async function fromApi(name: string) {
 		remote_url: string;
 		expires_at?: string;
 		placement?: string;
+		state?: string;
+		host_id?: string;
 		host_name?: string;
 	}[];
 	return list.find((p) => p.name === name);
@@ -494,36 +496,39 @@ test('Runs on lets a customer whose host is waiting make the machine on repose i
 		await expect(runsOn.locator('option[value="own"]')).toHaveText('mac-mini · waiting');
 		await form(page).getByLabel('Name').fill(name);
 		await form(page).getByRole('button', { name: 'Create' }).click();
-		const error = form(page).getByTestId('new-machine-error');
-		// Hosts other files left behind make it the several-host form
-		// (I-1582), which names mac-mini the same way.
-		await expect(error).toContainText('mac-mini has not registered yet');
-		// Nothing was made: the form is still here with the name typed,
-		// and the api holds no such project.
-		await expect(form(page).getByLabel('Name')).toHaveValue(name);
-		expect(await fromApi(name)).toBeUndefined();
-		await shots(page, 'new-project-runs-on-refused');
-
-		await runsOn.selectOption('hosted');
-		await form(page).getByRole('button', { name: 'Create' }).click();
+		// The Mac is still installing: the project is made and waits for
+		// it (I-1700), and its page says so in the CLI's words.
 		await page.waitForURL(/\/projects\/[^/]+$/);
+		const waiting = await fromApi(name);
+		expect(waiting).toBeTruthy();
+		litter.push(waiting!.id);
+		expect(waiting!.state).toBe('creating');
+		await expect(page.getByTestId('waiting-for-host')).toHaveText(
+			/^Waiting for your (Mac \(mac-mini\)|host mac-mini) to finish installing\. This project starts there when it's ready\.$/
+		);
+		await shots(page, 'new-project-waits-for-host');
+
+		// It registers: the machine starts there and the line goes.
+		await ownedHost({ state_host: 'mac-mini', state: 'ready' });
+		await expect(page.getByTestId('waiting-for-host')).toHaveCount(0, { timeout: 15_000 });
 		const made = await fromApi(name);
-		expect(made).toBeTruthy();
-		litter.push(made!.id);
-		expect(made!.placement).toBe('hosted');
+		expect(made!.state).toBe('running');
+		expect(made!.host_name).toBe('mac-mini');
 	} finally {
-		// The host would refuse every other file's creates. A throw here
-		// would hide the failure that sent us here.
+		// The host would refuse every other file's creates, and a host
+		// with a machine on it is not removed, so the machine goes first.
+		// A throw here would hide the failure that sent us here.
+		while (litter.length) await destroyProject(api, litter.pop()!).catch(() => {});
 		await removeOwnedHosts(api).catch(() => {});
 	}
 });
 
 // Runs on with several hosts (DECISIONS I-1584): every host the account
 // owns is an option with its state, after "Any of your hosts", which is
-// the default and lets the api pick. Naming a host that is waiting is
-// refused as that host, not placed on the other; naming the online one
-// puts the machine there. The x86 pass of 2026-11-23 found the select
-// held one of two hosts.
+// the default and lets the api pick. Naming the online one puts the
+// machine there; naming a host that is waiting waits for that host, not
+// the other (I-1700; until it, refused as that host). The x86 pass of
+// 2026-11-23 found the select held one of two hosts.
 test('Runs on lists every host and the one chosen is the one used', async ({ page }) => {
 	const api = apiURLFromEnv();
 	await removeOwnedHosts(api);
@@ -545,14 +550,6 @@ test('Runs on lists every host and the one chosen is the one used', async ({ pag
 			"repose's servers"
 		]);
 		await form(page).getByLabel('Name').fill(name);
-		await runsOn.selectOption({ label: 'box-b · waiting' });
-		await form(page).getByRole('button', { name: 'Create' }).click();
-		await expect(form(page).getByTestId('new-machine-error')).toHaveText(
-			'your host box-b has not registered yet'
-		);
-		expect(await fromApi(name)).toBeUndefined();
-		await shots(page, 'new-project-runs-on-several');
-
 		await runsOn.selectOption({ label: 'box-a' });
 		await form(page).getByRole('button', { name: 'Create' }).click();
 		await page.waitForURL(/\/projects\/[^/]+$/);
@@ -560,9 +557,26 @@ test('Runs on lists every host and the one chosen is the one used', async ({ pag
 		expect(made).toBeTruthy();
 		madeId = made!.id;
 		expect(made!.host_name).toBe('box-a');
+
+		const second = unique('on-box-b');
+		await openForm(page);
+		await options(page);
+		await form(page).getByLabel('Name').fill(second);
+		await form(page).getByLabel('Runs on').selectOption({ label: 'box-b · waiting' });
+		await form(page).getByRole('button', { name: 'Create' }).click();
+		await page.waitForURL(/\/projects\/[^/]+$/);
+		const waiting = await fromApi(second);
+		expect(waiting).toBeTruthy();
+		litter.push(waiting!.id);
+		expect(waiting!.host_id ?? '').toBe('');
+		await expect(page.getByTestId('waiting-for-host')).toHaveText(
+			/^Waiting for your (Mac \(box-b\)|host box-b) to finish installing\./
+		);
+		await shots(page, 'new-project-runs-on-several');
 	} finally {
 		// A host with a machine on it is not removed, so the machine goes
 		// first; the hosts would refuse every other file's creates.
+		while (litter.length) await destroyProject(api, litter.pop()!);
 		if (madeId) await destroyProject(api, madeId);
 		await removeOwnedHosts(api).catch(() => {});
 	}

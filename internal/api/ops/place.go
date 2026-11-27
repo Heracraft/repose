@@ -37,9 +37,12 @@ func (r *PlacementRefusal) Error() string { return r.Code + ": " + r.Message }
 // is PickHost's contract: the placement lock is held until the commit,
 // so the next placement sees this one.
 //
-// A nil host with a nil error is the one case the op still places: no
-// host fits now but a guest being stopped is about to free the room
-// (I-408), and the row is written so the op can wait for it as before. A
+// A nil host with a nil error is one of the two cases the op still
+// places: no host fits now but a guest being stopped is about to free the
+// room (I-408), and the row is written so the op can wait for it as
+// before. The other is a *RegistrationWait: the only host that could take
+// it is one of the account's still installing, and the op waits for it to
+// register (I-1700). A
 // PlacementRefusal is the create refused, with the same code (`capacity`,
 // 503) and the same sentence the op would have failed with, so a client
 // that already handled the failed op reads the same words one step
@@ -86,6 +89,16 @@ func (e *Engine) PlaceNewOn(ctx context.Context, tx db.Tx, p *store.Project, hos
 		// ones included.
 		if ok, ferr := scheduler.Freeing(ctx, tx, t, p.Class, p.HeldBytes(), p.VolumeBytes, e.now()); ferr == nil && ok {
 			return nil, nil
+		}
+		// A host of the account's own that is still installing is
+		// waited for, not refused (ENG-131, I-1700): the create is
+		// written with no host and the op places it once the host
+		// registers.
+		if w := registrationWaitFor(ctx, tx, p.UserID, host, e.now()); w != nil {
+			e.m.ScheduleTotal.WithLabelValues("host_registering").Inc()
+			e.log.Info("create waits for the account's host to register", "event", "schedule_wait",
+				"project_id", p.ID.String(), "host_id", w.HostID.String(), "reason", "host_registering")
+			return nil, w
 		}
 		e.m.ScheduleTotal.WithLabelValues("no_own_host").Inc()
 		e.log.Warn("no host of the account's own has capacity", "event", "schedule_fail",
