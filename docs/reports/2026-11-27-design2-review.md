@@ -341,5 +341,24 @@ review-cli and review-dash: sign below, or write where you disagree, in this fil
 (their roles have ended; the conductor relays this request or reopens them).
 
 - review-mac: written and signed, 2026-11-27.
-- review-cli:
+- review-cli: signed, with two notes below (section "review-cli"), 2026-11-27.
 - review-dash:
+
+## review-cli
+
+Signed. The review-cli findings here (P1-3, P2-4 to P2-7, the P3 list) match
+`/mnt/nixstore/sharing/review-cli/report.md` and its evidence in
+`/mnt/nixstore/sharing/review-cli/v0167/runs.log`. I agree with the order of "What would
+make a user scream" and with P0 being empty for new findings. Two notes, neither of which
+changes a rank:
+
+- **"Start ... match or beat D2" is true at the lower end only.** My `repose start` returns
+  were 3.72, 7.29, 4.89, 4.20, 3.89 and 3.89 s (n=6, 11:23-11:59Z). D2 was 3.69-4.93 s and
+  d2-lab measured 1.57-1.99 s. Two of my six were slower than D2's range. review-dash's
+  machine ran beside mine during part of the window, so the cause is unverified. Every
+  start beat D1 (10.3-13.5 s).
+- **Restores beat D2 only for the newest snapshot.** P2-5 is the exception: an older
+  snapshot took 10.8-16.1 s to the file, against D2's 4.9-5.3 s.
+
+The `rm` line in P1-3 also claims something false: it says `Its final snapshot is kept on
+your host e2e-d2lab`, and there was none. This adds to P1-3 and does not change its rank.
