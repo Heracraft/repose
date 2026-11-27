@@ -57,7 +57,10 @@ func (m *Manager) commitSize(g *state.Guest) (uint64, *Error) {
 	size := min(want, left)
 	size -= size % 128
 	if size < MinCommitMiB {
-		return 0, errf(CodeInsufficientCapacity, "not enough free memory: the running machines hold %d of this host's %d MiB, and a machine starts with at least %d MiB; stop one first", used, m.cfg.CommitMemMiB, MinCommitMiB)
+		// Not the words "not enough free memory": the api turns those into
+		// its free-memory sentence, which would name macOS's free figure,
+		// not what the running machines hold.
+		return 0, errf(CodeInsufficientCapacity, "the machines running on this host hold %d of the %d MiB it gives its machines, and one starts with at least %d MiB: stop one first", used, m.cfg.CommitMemMiB, MinCommitMiB)
 	}
 	return size, nil
 }

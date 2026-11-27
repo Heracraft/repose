@@ -37,7 +37,7 @@ func TestCommitSizesAndRefusesStarts(t *testing.T) {
 	req := createReq(gidC4)
 	req.SystemClosure = h.closure
 	res := h.mustFail(cmd(req), CodeInsufficientCapacity)
-	if !strings.Contains(res.Error.Message, "stop one first") {
+	if !strings.Contains(res.Error.Message, "stop one first") || strings.Contains(res.Error.Message, "not enough free memory") {
 		t.Fatalf("message %q", res.Error.Message)
 	}
 	if g, _ := h.m.getGuest(gidC4); g != nil {
