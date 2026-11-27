@@ -1,6 +1,7 @@
 package guest
 
 import (
+	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
 	"github.com/heracraft/repose/internal/hostd/state"
 )
 
@@ -113,4 +114,26 @@ func (m *Manager) commitVCPUs(g *state.Guest, want uint32) uint32 {
 		left = m.cfg.CommitVCPUs - used
 	}
 	return max(min(want, left), MinCommitVCPUs)
+}
+
+// vmSize is what g's VM was booted with and what it gets with the host to
+// itself, on a host that sizes each start (DECISIONS I-1680); nil
+// elsewhere, where a machine is its class, and for a guest that is not
+// running.
+func (m *Manager) vmSize(g *state.Guest) *hostdv1.VmSize {
+	if m.cfg.CommitMemMiB == 0 && m.cfg.CommitVCPUs == 0 {
+		return nil
+	}
+	if g.State != StateRunning {
+		return nil
+	}
+	full := m.classOf(g.Class)
+	v := &hostdv1.VmSize{Vcpus: full.VCPUs, MemMib: full.MemMiB, FullVcpus: full.VCPUs, FullMemMib: full.MemMiB}
+	if m.cfg.CommitVCPUs > 0 && g.VCPUs > 0 {
+		v.Vcpus = g.VCPUs
+	}
+	if m.cfg.CommitMemMiB > 0 && g.MemMiB > 0 {
+		v.MemMib = g.MemMiB
+	}
+	return v
 }

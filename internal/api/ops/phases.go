@@ -1323,6 +1323,11 @@ func (e *Engine) onResult(ctx context.Context, op *store.Op, phase string, res *
 		if _, err := e.pool.Exec(ctx, "update projects set guest_ip = $2, vsock_cid = $3, host_unreachable = false, last_error = null where id = $1", p.ID, c.GuestIp, int32(c.VsockCid)); err != nil {
 			return err
 		}
+		if phase == PhaseCreateGuest {
+			if err := setVMSize(ctx, e.pool, p.ID, c.GetVm()); err != nil {
+				return err
+			}
+		}
 		if err := e.resignHostCert(ctx, p, u, c.GuestIp); err != nil {
 			return err
 		}
@@ -1397,6 +1402,9 @@ func (e *Engine) onResult(ctx context.Context, op *store.Op, phase string, res *
 			lastErr = c + ": " + m
 		}
 		if _, err := e.pool.Exec(ctx, "update projects set host_unreachable = false, last_error = $2 where id = $1", p.ID, lastErr); err != nil {
+			return err
+		}
+		if err := setVMSize(ctx, e.pool, p.ID, res.GetStart().GetVm()); err != nil {
 			return err
 		}
 		// StartResult is the only result of a start, and until I-720 it
@@ -1659,6 +1667,14 @@ func (e *Engine) onFail(ctx context.Context, op *store.Op, code, msg string, lin
 		// error with its host: freeing the placement would orphan hostd's
 		// record, and the scheduler already places nothing there.
 		_, _ = e.pool.Exec(ctx, "update projects set state = 'stopped', last_error = $2 where id = $1 and state <> 'destroyed'", p.ID, code+": "+short) // best effort; the op carries the error
+	case op.Kind == KindStart && phase == PhaseStartGuest && code == "insufficient_capacity":
+		// The host refused the start for room (its memory commit, free
+		// memory, cores or pool), every one of those checks answering
+		// before the boot, so the machine is as it was: stopped, its disk
+		// and host kept (ENG-265, DECISIONS I-1680). Left in error, `repose
+		// status` read "error: the host has no room ..." for a machine
+		// nothing had happened to. The op keeps the code and the sentence.
+		_, _ = e.pool.Exec(ctx, "update projects set state = 'stopped', last_error = $2 where id = $1 and state <> 'destroyed'", p.ID, code+": "+short) // best effort; the op carries the error
 	case op.Kind == KindCreate && phase == PhaseCreateGuest && code == "insufficient_capacity":
 		// The host refused the create for room (memory, CPU, its pool,
 		// its store) before it wrote a record or a volume, so there is
@@ -1683,6 +1699,22 @@ func (e *Engine) onFail(ctx context.Context, op *store.Op, code, msg string, lin
 	default:
 		_, _ = e.pool.Exec(ctx, "update projects set last_error = $2 where id = $1", p.ID, code+": "+short)
 	}
+}
+
+// setVMSize records what a booted machine's VM got (DECISIONS I-1680):
+// the size from a host that sizes each start, null from every other host,
+// so a machine moved or restarted where it is its class shows no size.
+func setVMSize(ctx context.Context, q store.Querier, id uuid.UUID, v *hostdv1.VmSize) error {
+	_, err := q.Exec(ctx, "update projects set vm_size = $2 where id = $1", id, vmSizeOf(v))
+	return err
+}
+
+// vmSizeOf is hostd's VmSize as the column stores it; nil for none.
+func vmSizeOf(v *hostdv1.VmSize) *store.VMSize {
+	if v == nil || v.Vcpus == 0 || v.MemMib == 0 {
+		return nil
+	}
+	return &store.VMSize{VCPUs: v.Vcpus, MemMiB: v.MemMib, FullVCPUs: max(v.FullVcpus, v.Vcpus), FullMemMiB: max(v.FullMemMib, v.MemMib)}
 }
 
 // CreateRefusedPrefix begins the last_error of a project whose create the

@@ -90,6 +90,10 @@ projects     (id pk, user_id fk, name text, slug text, remote_url text,
               checkout text null,  -- the checkout's name under /home/dev as the CLI last found it
                 -- (0053, I-1610): "" when the machine has none, null until a CLI has said;
                 -- checkoutname.Valid. Read by the dashboard's Open in Claude link (I-1606)
+              vm_size jsonb null,  -- what the running machine's VM was booted with and what it gets
+                -- with its host to itself (0055, I-1680): {vcpus, mem_mib, full_vcpus,
+                -- full_mem_mib}, from a host that sizes each start (a Mac without the appliance);
+                -- null on every other host and whenever the project is not running
               pending_base_version text null,  -- the erofs base the next start boots (0051, I-1462),
                 -- set by the base bump for an unheld erofs project behind the latest erofs
                 -- base for its host's arch, cleared (and base_version set to it) when a
@@ -250,6 +254,11 @@ meter_samples (ts timestamptz, project_id, host_id, state text, class text,
                 -- cores its class sells, counted per second by the host's controller. Null
                 -- from a hostd older than I-1126 and from every host without the `burst`
                 -- feature, which billing reads as no burst
+              parked_waiting_since timestamptz,  -- 0054, I-1672: when a machine parked on a Mac
+                -- was parked, while it waits for the Mac's user; null otherwise and from a fleet host
+              waits_for text,  -- 0055, I-1682: what a machine's memory, in a save file on a Mac,
+                -- waits for: 'unlock' (logged in, screen locked) or 'login'; null otherwise,
+                -- and from a fleet host
               primary key (project_id, ts))  -- partitioned by month, 90-day retention
 
 proc_samples (ts, project_id, comm text, cpu_ns bigint, rss bigint,

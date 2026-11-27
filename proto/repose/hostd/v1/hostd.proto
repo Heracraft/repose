@@ -545,7 +545,16 @@ message BootTimings { uint32 volume_ms = 1; uint32 prepare_ms = 2; uint32 ready_
 // menu_error (DECISIONS I-1458) is set when the guest booted and the
 // first boot's menu did not apply: the guest runs, and the error is the
 // ApplyMenu's code (menu_failed, invalid_argument) and last line.
-message CreateResult { string guest_ip = 1; uint32 vsock_cid = 2; BootTimings boot = 3; Error menu_error = 4; }
+// vm (DECISIONS I-1680) is what the booted guest's VM got, as on
+// StartResult.
+message CreateResult { string guest_ip = 1; uint32 vsock_cid = 2; BootTimings boot = 3; Error menu_error = 4; VmSize vm = 5; }
+// VmSize is the vCPUs and memory a guest's VM was booted with, and what it
+// gets with the host to itself, on a host that sizes each start to what
+// its running machines leave (a Mac without the appliance: DECISIONS
+// I-1666, I-1680). vcpus below full_vcpus, or mem_mib below full_mem_mib,
+// is a machine started smaller than it would be on its own. Absent from
+// every other hostd, where a machine is its class.
+message VmSize { uint32 vcpus = 1; uint64 mem_mib = 2; uint32 full_vcpus = 3; uint64 full_mem_mib = 4; }
 // base_version (I-1458): the erofs base the guest ran when the snapshot
 // was taken; empty for a Nix guest, and accepted empty for one release.
 // blob_path, bytes and sha256 when snapshot_first (I-26, I-462).
@@ -576,6 +585,9 @@ message StartResult {
   string booted_base_version = 7;
   // As CreateResult.menu_error: the guest runs, its menu replay failed.
   Error menu_error = 8;
+  // What the started guest's VM got (DECISIONS I-1680); absent where a
+  // machine is its class.
+  VmSize vm = 9;
 }
 message SnapshotResult { string snapshot_id = 1; string blob_path = 2; uint64 bytes = 3; string sha256 = 4; string base_version = 5; }  // sha256: hex SHA-256 of the uploaded blob (I-462); base_version as StopResult's (I-1458)
 // PauseResult answers a PauseGuest. paused is false with why_not set
@@ -694,6 +706,17 @@ message GuestSample {
   // again at the login. 0 from every other hostd, which the api reads as
   // "not waiting".
   int64 parked_waiting_since = 21;
+  // What the running guest's VM was booted with, as StartResult.vm
+  // (DECISIONS I-1680); absent from every hostd that does not size its
+  // starts, and while the guest is not running.
+  VmSize vm = 22;
+  // What the guest's memory waits for on a Mac (DECISIONS I-1682):
+  // "unlock" while it is in a save file (a rest by save, or a held park)
+  // and the Mac's user is logged in with the screen locked, "login" while
+  // it is in one and nobody is logged in; VZ reads a save only in the
+  // user's unlocked session (I-1662). Empty otherwise and from every other
+  // hostd.
+  string waits_for = 23;
 }
 message HostSample { uint64 mem_free = 1; uint64 pool_free = 2; double load1 = 3; uint32 builds_running = 4; }
 message Samples { int64 ts = 1; repeated GuestSample guests = 2; HostSample host = 3; }

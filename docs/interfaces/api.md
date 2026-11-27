@@ -200,7 +200,7 @@ Project { id, name, slug, remote_url, class, state, host_id?, host_name?, guest_
           running_seconds_today, running_seconds_month, -- what `repose status` shows (I-289)
           last_snapshot_at?, last_error?, host_unreachable, tz,
           idle?: {since, hourly_cents, memory_gb},     -- hourly_cents 0 since I-289, kept one release
-          resting?: {since},                           -- frozen while idle, state still running (I-818)
+          resting?: {since, waits_for?},               -- frozen while idle, state still running (I-818); waits_for: I-1682
           keep_awake,                                  -- kept out of the rest rule (I-820)
           expires_at?,                                 -- set while temporary (I-347)
           personal_opt_out,                            -- machine.nix kept off (I-490)
@@ -212,7 +212,8 @@ Project { id, name, slug, remote_url, class, state, host_id?, host_name?, guest_
           sized,                                       -- false on a host the account owns: class is no size there (I-1632)
           mem_used_bytes?,                             -- running only: memory in use, newest sample (I-1632)
           not_answering?: {since},                     -- running, guestd silent ~3 minutes (I-1652)
-          parked?: {since, waits_for} }                -- running, parked on a Mac until its user logs in (I-1672)
+          parked?: {since, waits_for},                 -- running, parked on a Mac until its user logs in (I-1672)
+          vm?: {vcpus, mem_bytes, full_vcpus, full_mem_bytes, sized_down} }  -- running, the size its VM got (I-1680)
                                                        -- host_name: the owned host's name beside host_id,
                                                        -- absent on a host repose runs (I-1392)
 
@@ -309,12 +310,28 @@ owns whose newest sample says the machine is parked and waits for the
 Mac's user to log in (hostd's `parked_waiting_since`, sent only by hostd
 on a Mac without the appliance, where Virtualization.framework restores a
 save file only in the user's unlocked session, I-1662): `since` is when it
-was parked, `waits_for` is `login`. Its memory is kept and it runs again
+was parked, `waits_for` is `login`, or `unlock` when the Mac's user is
+logged in with the screen locked (I-1682). Its memory is kept and it runs again
 at the login, so it is never `not_answering` though its guestd is silent,
 the `not_answering` event is not raised, and `POST /projects/:id/start`
 answers `409 conflict` as for any running machine, never the restart a
 silent guestd gets. A sample from a fleet host never sets it. An api older
 than I-1672 sends nothing, and says `not_answering` instead.
+
+`resting.waits_for` (I-1682) is set on a machine resting as a save file
+on a Mac that cannot read it now: `unlock` while the Mac's user is
+logged in with the screen locked, `login` while nobody is. A wake meanwhile
+is refused, and the machine wakes once the user unlocks or logs in; its
+memory is kept. Absent everywhere else and from an api older than I-1682.
+
+`vm` (I-1680) is set on a `running` project whose host sizes each start
+to what its running machines leave (a Mac without the appliance, I-1666):
+`vcpus` and `mem_bytes` are what its VM was booted with, `full_vcpus` and
+`full_mem_bytes` what it gets with the host to itself, and `sized_down`
+is true when it got less. A VM keeps its size until it stops, so a
+machine sized down gets all of it at a start after the machines beside it
+have stopped. Absent on every other host, on a project that is not
+running, and from an api older than I-1680.
 
 `guest_runtime` (DECISIONS I-1462) is `nix` (a NixOS machine built from
 its configuration, every project before I-1462) or `erofs` (a machine

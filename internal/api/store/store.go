@@ -138,6 +138,26 @@ type Project struct {
 	// found it on the machine (0053, DECISIONS I-1610): "" for none,
 	// nil until a CLI has said.
 	Checkout *string `db:"checkout"`
+	// VMSize is what the running machine's VM was booted with and what
+	// it gets with its host to itself, on a host that sizes each start
+	// (0055, DECISIONS I-1680); nil elsewhere, where a machine is its
+	// class. Written from the create's and the start's result and from
+	// samples; read only while the project is running.
+	VMSize *VMSize `db:"vm_size"`
+}
+
+// VMSize is projects.vm_size (DECISIONS I-1680).
+type VMSize struct {
+	VCPUs      uint32 `json:"vcpus"`
+	MemMiB     uint64 `json:"mem_mib"`
+	FullVCPUs  uint32 `json:"full_vcpus"`
+	FullMemMiB uint64 `json:"full_mem_mib"`
+}
+
+// SizedDown reports whether the VM got less than it gets with the host to
+// itself.
+func (v *VMSize) SizedDown() bool {
+	return v != nil && (v.VCPUs < v.FullVCPUs || v.MemMiB < v.FullMemMiB)
 }
 
 // HeldBytes is the bytes the plan's disk counts for p: the measured or
@@ -149,7 +169,7 @@ func (p *Project) HeldBytes() int64 {
 	return p.VolumeBytes
 }
 
-const projectCols = `id, user_id, name, slug, remote_url, class, state, host_id, guest_id, guest_ip, vsock_cid, agent_default, hold_base_updates, base_version, config_revision_id, volume_bytes, tz, host_unreachable, last_error, started_at, stopped_at, destroyed_at, created_at, updated_at, expires_at, personal_opt_out, multiplexer, placement, disk_held_bytes, disk_held_at, resting_since, keep_awake, guest_runtime, pending_base_version, checkout`
+const projectCols = `id, user_id, name, slug, remote_url, class, state, host_id, guest_id, guest_ip, vsock_cid, agent_default, hold_base_updates, base_version, config_revision_id, volume_bytes, tz, host_unreachable, last_error, started_at, stopped_at, destroyed_at, created_at, updated_at, expires_at, personal_opt_out, multiplexer, placement, disk_held_bytes, disk_held_at, resting_since, keep_awake, guest_runtime, pending_base_version, checkout, vm_size`
 
 // Host is a hosts row. Cores is the host's physical cores, which
 // placement counts committed guest vCPUs against (0027, DECISIONS I-735,
@@ -605,12 +625,14 @@ func SetProjectState(ctx context.Context, q Querier, id uuid.UUID, state string)
 	// stops, errors or is destroyed is not resting, and a marker left on
 	// it would show a frozen machine that no longer exists (I-818). This
 	// is the one place a project's state is written, so it is the one
-	// place the marker has to be cleared.
+	// place the marker has to be cleared. vm_size likewise: a machine
+	// that is not running has no VM (I-1680).
 	_, err := q.Exec(ctx, `update projects set state = $2,
 		started_at = case when $2 = 'running' and state <> 'running' then now() else started_at end,
 		stopped_at = case when $2 = 'stopped' then now() else stopped_at end,
 		destroyed_at = case when $2 = 'destroyed' then coalesce(destroyed_at, now()) else destroyed_at end,
-		resting_since = case when $2 = 'running' then resting_since else null end
+		resting_since = case when $2 = 'running' then resting_since else null end,
+		vm_size = case when $2 = 'running' then vm_size else null end
 		where id = $1`, id, state)
 	return err
 }

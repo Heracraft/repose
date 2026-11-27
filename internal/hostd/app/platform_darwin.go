@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -72,19 +71,34 @@ func platformFor(o Options) platform {
 					time.Sleep(100 * time.Millisecond)
 				}
 			}()
-			t := time.NewTicker(3 * time.Second)
+			// Every second: the session's lock is followed as it
+			// changes (a restore still works for a few seconds after the
+			// lock, never later: lockWatch); held parks are tried every
+			// third tick.
+			t := time.NewTicker(time.Second)
 			defer t.Stop()
 			var swept time.Time
-			for {
+			var lw lockWatch
+			awake := newKeepAwake()
+			defer awake.set(false, log)
+			for tick := 0; ; tick++ {
 				select {
 				case <-ctx.Done():
 					return
 				case <-t.C:
 				}
+				awake.set(mgr.AnyRunning(), log)
+				if r, ok := macSession.Load().(*sessionReader); ok && r != nil {
+					lw.step(ctx, r.read(ctx), time.Now(), mgr, log)
+				}
+				if tick%3 != 0 {
+					continue
+				}
 				if time.Since(swept) > 10*time.Minute && o.SnapshotDir != "" {
 					swept = time.Now()
 					mgr.SweepKeptClones(ctx, newestPerProject(storedSnapshots(o.SnapshotDir), keptPerProject))
 				}
+				mgr.ExpireRestSaves(ctx)
 				if _, err := mgr.RestoreHeld(ctx); err != nil {
 					log.Warn("held parked machines not restored", "event", "guest_unpark", "err", err.Error())
 				}
@@ -157,6 +171,31 @@ func adaptMac(ctx context.Context, o Options, m MacOptions, u macUser, r shell.R
 		return errors.New("hostd: VMs never run as root on a Mac; run hostd as the user, or as root with --mac-user (DECISIONS I-1662, I-1664)")
 	}
 	uid, gid := u.uid, u.gid
+	if os.Getuid() != uid {
+		// A root hostd: every VM runs as the user and opens its volume,
+		// its log and its sockets under these directories, so the user
+		// must be able to pass through them. hostd's own state, volume and
+		// switch directories are made 0711 (every file in them stays 0600,
+		// root's or the user's own); a VM whose
+		// volume sat under a 0700 one died at once with "Permission
+		// denied" (lab Mac, 2026-11-27).
+		for _, d := range []string{o.StateDir, m.VolumesDir, m.NetDir} {
+			if d == "" {
+				continue
+			}
+			if err := os.MkdirAll(d, 0o700); err != nil {
+				return fmt.Errorf("hostd: %s: %w", d, err)
+			}
+			if err := os.Chmod(d, 0o711); err != nil {
+				return fmt.Errorf("hostd: %s: %w", d, err)
+			}
+		}
+		for _, d := range []string{cfg.GuestsDir, m.VolumesDir, o.ImagesDir, m.NetDir} {
+			if blocked := unreachable(d, uid, gid); blocked != "" {
+				return fmt.Errorf("hostd: %s, where the machines' files are, is out of reach of the user %s: %s does not let them pass (it needs o+x, or the user or its group as owner)", d, u.name, blocked)
+			}
+		}
+	}
 	cfg.Lookup = func(string) (int, int, error) { return uid, gid, nil }
 	cfg.GuestUser, cfg.VirtiofsUser = u.name, u.name
 	// The login share is a directory VZ shares into each guest of the
@@ -236,8 +275,17 @@ func adaptMac(ctx context.Context, o Options, m MacOptions, u macUser, r shell.R
 	}
 	ld := &launchd.Launchd{
 		R: r, UID: uid, Dir: m.LaunchdDir, Launcher: m.Launcher,
-		HasSession:  func(ctx context.Context) bool { return session(ctx).LoggedIn },
-		ChownLog:    u.chown,
+		HasSession: func(ctx context.Context) bool { return session(ctx).LoggedIn },
+		ChownLog:   u.chown,
+		// launchd opens a job's log as the user, and a root hostd's
+		// launchd directory is under its 0700 state directory: a VM's log
+		// goes in its guest directory, which the VM already reaches.
+		LogFor: func(unit string) string {
+			if id, ok := strings.CutPrefix(unit, "guest@"); ok && id != "" && !strings.ContainsAny(id, "/.") {
+				return filepath.Join(cfg.GuestsDir, id, "vm.log")
+			}
+			return ""
+		},
 		ExitTimeOut: 60 * time.Second,
 		ExtraArgs: func(unit string, _ []string) []string {
 			// The volume's VZ caching and synchronization modes (I-1666).
@@ -253,31 +301,48 @@ func adaptMac(ctx context.Context, o Options, m MacOptions, u macUser, r shell.R
 	}
 	d.Systemd = ld
 	d.Park.CanRestore = func(ctx context.Context) bool { return session(ctx).Unlocked() }
-	// A park image is about the VM's footprint, not its configured size.
+	// A park image is the guest's touched memory: asked of the guest
+	// first, since after a restore the VM's footprint is its whole
+	// configured memory (ENG-263); the footprint when the guest does not
+	// answer.
+	d.Park.GuestTouched = true
 	d.Park.ImageEstimate = vmFootprint(r, ld)
-	// An idle machine rests by save, giving its memory back, only where
-	// the save can be restored at the wake: an agent job in an unlocked
-	// session. Otherwise it rests by pause (I-1666).
-	// And only where the screen cannot lock: a save cannot be restored on
-	// a locked screen, so on a Mac whose screen locks (by default, a few
-	// minutes after the display sleeps) a machine resting as a save would
-	// be out of reach of an ssh until someone unlocks it. There it rests
-	// by pause: its memory stays held, and any connection wakes it.
-	lockOff := cachedLockOff(r, uid, u.name)
-	// And only when macOS is short of memory: a rest by pause wakes on
-	// the first ssh in 1.19 s end to end, a rest by save in 2.8-2.95 s (a
-	// 12 GiB machine, its restore 1.44-1.47 s), so a machine gives its
-	// memory back only when the Mac needs it (I-1666).
-	memInfo := d.MemInfo
-	d.RestBySave = func(ctx context.Context, id string) bool {
-		return memoryTight(memInfo) && ld.Domain(ctx, guest.GuestUnit(id)) == "gui" && session(ctx).Unlocked() && lockOff(ctx)
+	// An idle machine rests by save, giving all its memory back to
+	// macOS, wherever the save can be read back at the wake: an agent job
+	// in an unlocked session (DECISIONS I-1682, the owner's ruling on
+	// ENG-266: idle machines give memory back). The lock is handled where
+	// it happens: the moment the screen locks, every machine resting as a
+	// save is restored and rests by pause through the lock (loop below,
+	// Manager.UnsaveRests), and a while after the unlock it is saved again.
+	// --mac-rest-by-save, off by default: the owner's call on the secrets
+	// promise (conductor 03:50Z); without it a rest is a pause.
+	if m.RestBySave {
+		d.RestBySave = func(ctx context.Context, id string) bool {
+			return ld.Domain(ctx, guest.GuestUnit(id)) == "gui" && session(ctx).Unlocked()
+		}
 	}
+	d.SessionState = func(ctx context.Context) string {
+		switch s := session(ctx); {
+		case !s.LoggedIn:
+			return guest.SessionNone
+		case !s.Unlocked():
+			return guest.SessionLocked
+		}
+		return guest.SessionUnlocked
+	}
+	macSession.Store(&sessionReader{read: session})
 	// A restart through repose parks every machine, then restarts the
 	// Mac (I-1690).
 	d.RestartHost = func(ctx context.Context) error {
 		return restartMac(ctx, r, os.Getuid() == 0, session(ctx).LoggedIn, uid, u.name)
 	}
 	d.Park.CanPark = func(ctx context.Context, id string) (bool, string) {
+		// A save while the screen is locked fails, and it can end the VM:
+		// "The virtual machine stopped unexpectedly" on the lab Mac's
+		// `repose host restart`, its memory lost (2026-11-27, I-1682).
+		if !session(ctx).Unlocked() {
+			return false, guest.SkipLocked
+		}
 		if ld.Domain(ctx, guest.GuestUnit(id)) == launchd.SystemDomain {
 			return false, "started with nobody logged in"
 		}
@@ -397,22 +462,6 @@ func (p ownedPorts) Detach(tap string) {
 	}
 }
 
-// cachedLockOff reads whether the user's screen lock is off at most once
-// a minute (sysadminctl takes a few hundred milliseconds).
-func cachedLockOff(r shell.Runner, uid int, name string) func(context.Context) bool {
-	var mu sync.Mutex
-	var at time.Time
-	var off bool
-	return func(ctx context.Context) bool {
-		mu.Lock()
-		defer mu.Unlock()
-		if time.Since(at) > time.Minute {
-			off, at = vzpark.ReadScreenLockOff(ctx, r, uid, name), time.Now()
-		}
-		return off
-	}
-}
-
 // macGuestMemMiB is each machine's configured memory: the flag when set,
 // else half the Mac's memory up to 8 GiB: restore (every wake from a rest
 // by save, every unpark) 1.70 s at 8 GiB against 2.08 at 12, and three
@@ -479,17 +528,25 @@ func macGuestVCPUs(flag uint, cores uint32) uint32 {
 	return max(cores/2, 2)
 }
 
-// memoryTight reports whether macOS has less than a quarter of its memory
-// free (vm_stat's free, inactive, speculative and purgeable pages), the
-// point from which a resting machine gives its memory back. An unreadable
-// figure is tight: the save returns memory, which is never wrong.
-func memoryTight(memInfo func() (uint64, uint64, error)) bool {
-	if memInfo == nil {
-		return true
+// unreachable is the first directory on the way to path (path included,
+// where it exists) that uid, whose group is gid, cannot pass through; ""
+// when every one lets it, or path is empty. A directory not made yet is
+// hostd's to make, and is not checked.
+func unreachable(path string, uid, gid int) string {
+	if path == "" {
+		return ""
 	}
-	total, avail, err := memInfo()
-	if err != nil || total == 0 {
-		return true
+	p := filepath.Clean(path)
+	for {
+		if st, err := os.Stat(p); err == nil && st.IsDir() {
+			if !canPass(st, uid, gid) {
+				return p
+			}
+		}
+		parent := filepath.Dir(p)
+		if parent == p {
+			return ""
+		}
+		p = parent
 	}
-	return avail < total/4
 }

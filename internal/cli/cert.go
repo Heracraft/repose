@@ -496,11 +496,13 @@ func refreshSSHAccess(ctx context.Context, e *Env, slug string) {
 
 // controlPersist is how long a project's ssh master outlives its last
 // command. An idle master is an ssh session in the guest, and a machine on
-// a host the account owns rests when nobody uses it (on a Mac it gives
-// back its memory, DECISIONS I-1666): there a minute, which covers the
-// connections one command makes; ten on repose's servers.
+// a Mac without the appliance rests when nobody uses it (and may give its
+// memory back, DECISIONS I-1666, I-1682): there a minute, which covers the
+// connections one command makes. Such a machine is the one the api gives
+// a `vm` size (I-1680). Everywhere else, x86 hosts of the account's own
+// included (they do not rest machines), ten minutes, as before.
 func controlPersist(p Project) string {
-	if p.HostName != "" {
+	if p.HostName != "" && p.VM != nil {
 		return "1m"
 	}
 	return "10m"

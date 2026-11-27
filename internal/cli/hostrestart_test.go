@@ -102,3 +102,35 @@ func TestHostRestartOffAMac(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 }
+
+// On a Mac whose screen is locked hostd saves nothing (a save there fails
+// and can end the VM, I-1682): every machine comes back skipped as locked,
+// and the answer says to unlock and run it again, naming no guest id and
+// asking for no unpark.
+func TestHostRestartOnALockedMac(t *testing.T) {
+	sock, calls := fakeHostd(t, []map[string]any{
+		{"guest_id": "g-a", "project": "e2e-a", "outcome": "skipped", "reason": "this Mac's screen is locked"},
+		{"guest_id": "g-b", "project": "e2e-b", "outcome": "skipped", "reason": "this Mac's screen is locked"},
+	}, nil)
+	restarted := restartWith(t, sock)
+	err := HostRestartCmd(context.Background(), &Env{ErrOut: &bytes.Buffer{}}, false)
+	if err == nil || *restarted || strings.Join(*calls, ",") != "park operator" {
+		t.Fatalf("err %v restarted %v calls %v", err, *restarted, *calls)
+	}
+	if want := "This Mac's screen is locked, and a locked Mac cannot save a machine's memory. Nothing restarted; unlock it and run `repose host restart` again."; err.Error() != want {
+		t.Fatalf("answer %q", err.Error())
+	}
+}
+
+// A machine that could not be parked is named by its project, not its
+// guest id, which its user has never seen.
+func TestHostRestartNamesTheMachine(t *testing.T) {
+	sock, _ := fakeHostd(t, []map[string]any{
+		{"guest_id": "g-b", "project": "e2e-b", "outcome": "failed", "reason": "pause failed"},
+	}, nil)
+	restartWith(t, sock)
+	err := HostRestartCmd(context.Background(), &Env{ErrOut: &bytes.Buffer{}}, false)
+	if err == nil || !strings.Contains(err.Error(), "(e2e-b)") || strings.Contains(err.Error(), "g-b") {
+		t.Fatalf("answer %v", err)
+	}
+}

@@ -459,7 +459,9 @@ GuestSample { string guest_id; string state; string class; uint64 cpu_ns_delta;
               optional uint64 net_egress_bytes_delta;              // I-1063
               optional uint64 burst_cpu_ns_delta;                  // I-1126
               uint32 burst_cap_millicores;                         // I-1126
-              int64 parked_waiting_since; }                        // I-1672
+              int64 parked_waiting_since;                          // I-1672
+              VmSize vm;                                           // I-1680
+              string waits_for; }                                  // I-1682
 GuestSignals { uint32 ssh_sessions; uint32 tmux_clients; repeated AgentProc agents;
                uint32 docker_containers; bool guestd_ok;
                uint64 last_input_unix; }                             // I-1272
@@ -645,6 +647,26 @@ appliance sets it (Virtualization.framework restores a save file only in
 the user's unlocked session, I-1662); its `guestd_ok` is false, since no
 guest runs, and the api reads the field before that. The api keeps it only
 from a host an account owns. 0 from every other hostd.
+
+What a Mac's saved memory waits for (DECISIONS I-1682). `waits_for`
+(field 23) is `unlock` while the guest's memory is in a save file (it
+rests as a save, or it is a held park) and the Mac's user is logged in
+with the screen locked, `login` while it is in one and nobody is logged
+in, and empty otherwise: VZ reads a save only in the user's unlocked
+session (I-1662). Only hostd on a Mac without the appliance sets it; the
+api keeps it only from a host an account owns.
+
+The size a VM got (DECISIONS I-1680). `VmSize {uint32 vcpus; uint64
+mem_mib; uint32 full_vcpus; uint64 full_mem_mib}` is what a running
+guest's VM was booted with and what it gets with the host to itself. Only
+a host that sizes each start to what its running machines leave sends it
+(hostd on a Mac without the appliance, I-1666): on `GuestSample.vm`
+(field 22) while the guest runs, on `CreateResult.vm` (field 5) and on
+`StartResult.vm` (field 9). `vcpus` below `full_vcpus`, or `mem_mib`
+below `full_mem_mib`, is a machine started smaller than it would be on its
+own; a VM's size is fixed until it stops. Absent from every other hostd,
+where a machine is its class; an api older than I-1680 ignores it. The api
+keeps it only from a host an account owns.
 
 Resting (DECISIONS I-818). A resting guest's sample keeps `guestd_ok`
 **true** and repeats the last guest-written figures (`signals`,

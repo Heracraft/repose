@@ -214,15 +214,32 @@ func (i *Ingest) insertGuest(ctx context.Context, hostID uuid.UUID, ts time.Time
 		t := time.Unix(u, 0).UTC()
 		parked = &t
 	}
-	batch.Queue(`insert into meter_samples (ts, project_id, host_id, state, class, cpu_ns, mem_rss, net_tx, net_rx, disk_alloc, disk_used, ssh_sessions, tmux_clients, agents, docker_containers, guestd_ok, cpu_pressure_us, host_cpu_wait_us, mem_used, root_used, root_size, resting, net_egress, burst_cpu_ns, last_input_at, parked_waiting_since)
+	// waits_for (DECISIONS I-1682): what a machine's memory, in a save
+	// file on a Mac, waits for: "unlock" or "login"; null otherwise. Kept,
+	// as parked is, only from a host an account owns, and only the two
+	// words hostd sends.
+	var waits *string
+	if w := g.GetWaitsFor(); w == "unlock" || w == "login" {
+		waits = &w
+	}
+	batch.Queue(`insert into meter_samples (ts, project_id, host_id, state, class, cpu_ns, mem_rss, net_tx, net_rx, disk_alloc, disk_used, ssh_sessions, tmux_clients, agents, docker_containers, guestd_ok, cpu_pressure_us, host_cpu_wait_us, mem_used, root_used, root_size, resting, net_egress, burst_cpu_ns, last_input_at, parked_waiting_since, waits_for)
 			values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,
-				(select $26::timestamptz from hosts where id = $3 and owner_account_id is not null)) on conflict do nothing`,
+				(select $26::timestamptz from hosts where id = $3 and owner_account_id is not null),
+				(select $27::text from hosts where id = $3 and owner_account_id is not null)) on conflict do nothing`,
 		ts, pid, hostID, g.State, g.Class, int64(g.CpuNsDelta), int64(g.MemRssBytes), int64(g.NetTxBytesDelta), int64(g.NetRxBytesDelta), int64(g.DiskAllocBytes), int64(g.DiskUsedBytes),
-		int32(sig.SshSessions), int32(sig.TmuxClients), aj, int32(sig.DockerContainers), sig.GuestdOk, pressure, int64(min(g.HostCpuWaitUsDelta, maxPressureUs)), memUsed, rootUsed, rootSize, g.Resting, egress, burst, lastInput, parked)
+		int32(sig.SshSessions), int32(sig.TmuxClients), aj, int32(sig.DockerContainers), sig.GuestdOk, pressure, int64(min(g.HostCpuWaitUsDelta, maxPressureUs)), memUsed, rootUsed, rootSize, g.Resting, egress, burst, lastInput, parked, waits)
 	if held, ok := heldBytes(g); ok {
 		// The plan's disk counts this figure (DECISIONS I-585); a sample
 		// older than the one already recorded leaves it.
 		batch.Queue("update projects set disk_held_bytes = $2, disk_held_at = $3 where id = $1 and (disk_held_at is null or disk_held_at < $3)", pid, held, ts)
+	}
+	if v := g.GetVm(); v != nil && v.Vcpus > 0 && v.MemMib > 0 && g.State == "running" {
+		// What the running machine's VM got (DECISIONS I-1680), as the
+		// start's result said it; a sample corrects a result the api
+		// missed. Kept only from a host an account owns, as parked is.
+		vj, _ := json.Marshal(store.VMSize{VCPUs: v.Vcpus, MemMiB: v.MemMib, FullVCPUs: max(v.FullVcpus, v.Vcpus), FullMemMiB: max(v.FullMemMib, v.MemMib)})
+		batch.Queue(`update projects set vm_size = $2::jsonb where id = $1 and state = 'running' and vm_size is distinct from $2::jsonb
+			and exists (select 1 from hosts where id = $3 and owner_account_id is not null)`, pid, string(vj), hostID)
 	}
 	if guestFields {
 		seen := map[string]bool{}
@@ -288,14 +305,17 @@ type Latest struct {
 	// ParkedWaitingSince is when the machine was parked, while it waits
 	// for its Mac's user to log in (I-1672); nil when it is not.
 	ParkedWaitingSince *time.Time
+	// WaitsFor is what the machine's memory, in a save file on a Mac,
+	// waits for: "unlock" or "login" (I-1682); "" when nothing.
+	WaitsFor string
 }
 
 // LatestSample reads the newest sample; ok=false when there is none.
 func LatestSample(ctx context.Context, q store.Querier, projectID uuid.UUID) (*Latest, bool, error) {
 	var l Latest
 	var agents []byte
-	err := q.QueryRow(ctx, "select ts, state, ssh_sessions, tmux_clients, agents, docker_containers, disk_used, guestd_ok, root_used, root_size, resting, mem_used, parked_waiting_since from meter_samples where project_id = $1 order by ts desc limit 1", projectID).
-		Scan(&l.TS, &l.State, &l.SSHSessions, &l.TmuxClients, &agents, &l.DockerContainers, &l.DiskUsed, &l.GuestdOK, &l.RootUsed, &l.RootSize, &l.Resting, &l.MemUsed, &l.ParkedWaitingSince)
+	err := q.QueryRow(ctx, "select ts, state, ssh_sessions, tmux_clients, agents, docker_containers, disk_used, guestd_ok, root_used, root_size, resting, mem_used, parked_waiting_since, coalesce(waits_for, '') from meter_samples where project_id = $1 order by ts desc limit 1", projectID).
+		Scan(&l.TS, &l.State, &l.SSHSessions, &l.TmuxClients, &agents, &l.DockerContainers, &l.DiskUsed, &l.GuestdOK, &l.RootUsed, &l.RootSize, &l.Resting, &l.MemUsed, &l.ParkedWaitingSince, &l.WaitsFor)
 	if err != nil {
 		if db.IsNoRows(err) {
 			return nil, false, nil

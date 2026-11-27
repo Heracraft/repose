@@ -112,8 +112,11 @@ func prepareMacNet(ctx context.Context, o Options, log *slog.Logger) (Options, e
 			CounterFile: filepath.Join(o.StateDir, "unet-counters.json"),
 			Reconnect:   unet.LauncherReconnect(func(id string) string { return filepath.Join(guests, id, "ch.sock") }),
 			// A connection for a machine resting as a save file wakes it
-			// (I-1666); the edge waits for its NIC.
-			OnWake: func(tap string) { go MacWake(tap) },
+			// (I-1666), and the edge dials the guest once the wake is done:
+			// the NIC comes back while the restored VM is still paused, and
+			// a SYN sent then waited for TCP's one-second retransmit (first
+			// exec 3.6-3.7 s against a 2.0 s wake, lab Mac 2026-11-27).
+			OnWake: MacWake,
 		})
 		if err != nil {
 			return o, err

@@ -70,6 +70,10 @@ func StartCmd(ctx context.Context, e *Env, projectArg string) error {
 	}
 	pr.Fail()
 	_, _ = fmt.Fprintf(e.Out, "%s is running%s, ready in %s.\n", project.Slug, classNote(project), fmtElapsed(pr.Total()))
+	if l := sizedDownLine(project); l != "" {
+		// Started smaller than it would be on its own (I-1680).
+		_, _ = fmt.Fprintf(e.Out, "It %s\n", l)
+	}
 	return nil
 }
 

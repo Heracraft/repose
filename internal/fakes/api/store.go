@@ -62,6 +62,9 @@ type Project struct {
 	// Parked is set on a machine parked on a Mac that waits for the
 	// Mac's user to log in (DECISIONS I-1672). SetParked sets it.
 	Parked *Parked `json:"parked,omitempty"`
+	// VM is what a running machine's VM got on a host that sizes each
+	// start (DECISIONS I-1680). SetVM sets it.
+	VM *VM `json:"vm,omitempty"`
 	// KeepAwake keeps this machine out of the rest rule (I-820).
 	KeepAwake bool `json:"keep_awake"`
 	// ExpiresAt is set on a temporary project (DECISIONS I-347).
@@ -108,6 +111,7 @@ func (f *Fake) out(p *project) Project {
 	}
 	if o.State != "running" {
 		o.Parked = nil // projects.go sends it on a running machine only
+		o.VM = nil     // and vm (I-1680)
 	}
 	if o.Parked != nil {
 		o.NotAnswering = nil // never both (I-1672)
@@ -167,6 +171,33 @@ func (f *Fake) SetNotAnswering(projectID string, since *time.Time) {
 	p.Signals.GuestdOK = false
 }
 
+// VM is Project.vm (DECISIONS I-1680).
+type VM struct {
+	VCPUs        uint32 `json:"vcpus"`
+	MemBytes     int64  `json:"mem_bytes"`
+	FullVCPUs    uint32 `json:"full_vcpus"`
+	FullMemBytes int64  `json:"full_mem_bytes"`
+	SizedDown    bool   `json:"sized_down"`
+}
+
+// SetVM says what a running machine's VM got, as a Mac's hostd reports it
+// (DECISIONS I-1680); nil clears it. sized_down follows the figures, as
+// the api's does.
+func (f *Fake) SetVM(projectID string, vm *VM) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	p := f.projects[projectID]
+	if p == nil {
+		return
+	}
+	if vm != nil {
+		c := *vm
+		c.SizedDown = c.VCPUs < c.FullVCPUs || c.MemBytes < c.FullMemBytes
+		vm = &c
+	}
+	p.VM = vm
+}
+
 // Parked is Project.parked.
 type Parked struct {
 	Since    time.Time `json:"since"`
@@ -193,9 +224,34 @@ func (f *Fake) SetParked(projectID string, since *time.Time) {
 	p.Signals.GuestdOK = false
 }
 
+// SetWaitsFor says what a resting or parked machine on a Mac waits for,
+// "unlock" or "login", as the api says it from hostd's sample (DECISIONS
+// I-1682); "" clears it on a resting one and is "login" on a parked one,
+// as the api's is.
+func (f *Fake) SetWaitsFor(projectID, waits string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	p := f.projects[projectID]
+	if p == nil {
+		return
+	}
+	if p.Resting != nil {
+		p.Resting.WaitsFor = waits
+	}
+	if p.Parked != nil {
+		if waits != "unlock" {
+			waits = "login"
+		}
+		p.Parked.WaitsFor = waits
+	}
+}
+
 // Resting is Project.resting.
 type Resting struct {
 	Since time.Time `json:"since"`
+	// WaitsFor is what a machine resting as a save on a Mac waits for,
+	// unlock or login (DECISIONS I-1682); SetWaitsFor sets it.
+	WaitsFor string `json:"waits_for,omitempty"`
 }
 
 // DestroyedProject is one row of GET /projects/destroyed (I-167).

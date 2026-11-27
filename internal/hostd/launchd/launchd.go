@@ -51,8 +51,15 @@ type Launchd struct {
 	HasSession func(ctx context.Context) bool
 	// ChownLog gives a new job log to the user, who writes it.
 	ChownLog func(path string) error
-	// Dir holds the jobs' plists and their stdout/stderr logs.
+	// Dir holds the jobs' plists and, unless LogFor names another place,
+	// their stdout/stderr logs.
 	Dir string
+	// LogFor is where a unit's stdout and stderr go when not in Dir. A
+	// job's log is opened by launchd as the job's user, so it must sit
+	// under directories that user can reach: a root hostd keeps Dir under
+	// its 0700 state directory, and there every VM's job ended with status
+	// 78 before repose-vm ran (lab Mac, 2026-11-27). Nil keeps Dir.
+	LogFor func(unit string) string
 	// Launcher replaces argv[0] "cloud-hypervisor".
 	Launcher string
 	// ExtraArgs returns flags appended to a launcher argv for a unit
@@ -109,7 +116,14 @@ func Label(unit string) string { return Prefix + strings.TrimSuffix(unit, ".serv
 func (l *Launchd) PlistPath(unit string) string { return filepath.Join(l.Dir, Label(unit)+".plist") }
 
 // LogPath is a unit's stdout and stderr.
-func (l *Launchd) LogPath(unit string) string { return filepath.Join(l.Dir, Label(unit)+".log") }
+func (l *Launchd) LogPath(unit string) string {
+	if l.LogFor != nil {
+		if p := l.LogFor(unit); p != "" {
+			return p
+		}
+	}
+	return filepath.Join(l.Dir, Label(unit)+".log")
+}
 
 // notFound is launchctl's "Could not find service" (exit 113), bootout's
 // "No such process" (exit 3), and "Domain does not support specified

@@ -45,15 +45,27 @@ func HostRestartCmd(ctx context.Context, e *Env, force bool) error {
 	if err != nil {
 		return exitf(ExitGeneric, "The machines were not parked: %v. Nothing restarted.", err)
 	}
-	parked, lost := 0, []string{}
+	parked, lost, locked := 0, []string{}, 0
 	for _, r := range res {
 		switch {
 		case r.Outcome == "parked", r.Outcome == "skipped" && r.Reason == control.ParkSkippedParked:
 			parked++
 		case r.Outcome == "skipped" && r.Reason == control.ParkSkippedStopped:
 		default:
-			lost = append(lost, r.GuestID)
+			if r.Reason == control.ParkSkippedLocked {
+				locked++
+			}
+			name := r.Project
+			if name == "" {
+				name = r.GuestID
+			}
+			lost = append(lost, name)
 		}
+	}
+	if locked > 0 && locked == len(lost) && parked == 0 && !force {
+		// Nothing was saved, so nothing needs to run again: a save on a
+		// locked Mac fails and can end the machine (I-1682).
+		return exitf(ExitGeneric, "This Mac's screen is locked, and a locked Mac cannot save a machine's memory. Nothing restarted; unlock it and run `repose host restart` again.")
 	}
 	if len(lost) > 0 && !force {
 		back, err := c.Unpark(pctx)
