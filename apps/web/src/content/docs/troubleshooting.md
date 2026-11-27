@@ -53,7 +53,11 @@ For more detail on any command, add `-v`; its request IDs are what support looks
 
 **`repose gateway: gateway busy`.** The gateway is at its limit for connections being set up, which has nothing to do with your account or your certificate. Connect again.
 
-**`todo-app is running but did not answer ssh in 15 s.`** `repose stop` and then `repose start` restart it. A command that has just started or created the machine waits 60 s instead. If the line under it says the machine is frozen, read the frozen entry below first: a stop there ends processes that are still running.
+**`todo-app is resting and wakes once you unlock mac-mini; its memory is kept.`** `repose exec`, `repose attach` and plain `ssh` say this at once for a machine your Mac keeps saved while its screen is locked. Unlock the Mac and run the command again.
+
+**`Your Mac mac-mini is offline.`**, then `Wake it or turn it on; todo-app answers again once it is back.` The Mac is asleep, turned off or off the network; the machine is kept as it was.
+
+**`todo-app did not answer in 15 s.`** `repose stop` and then `repose start` restart it. A command that has just started or created the machine waits 60 s instead. If the line under it says the machine is frozen, read the frozen entry below first: a stop there ends processes that are still running.
 
 ## Machine state
 

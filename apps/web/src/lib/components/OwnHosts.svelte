@@ -661,8 +661,10 @@
 						Run this on the machine you are adding. It is not shown again, and it works once.
 					</p>
 					{#if x86Step}<h3 class="hdlg-where">On a Mac</h3>{/if}
-					{#if !made?.install?.command}
-						<!-- The step is a repose command (review-dash P2 #3). -->
+					{#if step.startsWith('repose ')}
+						<!-- The step is a repose command (review-dash P2 #3), whether
+						     the api composed it or this page did (review-dash-2 P2 2:
+						     the live api sends the command, and the line was gone). -->
 						<p class="hdlg-facts hdlg-first" data-testid="host-mac-cli">
 							The Mac needs the repose CLI and <code>repose login</code> first:
 							<a class="hk-link" href={resolve('/docs/[slug]', { slug: 'cli' })}>Install</a>.

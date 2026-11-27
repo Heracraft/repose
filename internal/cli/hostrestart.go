@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"net/url"
 	"fmt"
 	"os"
 	"os/exec"
@@ -36,6 +37,13 @@ func HostRestartCmd(ctx context.Context, e *Env, force bool) error {
 	sock := hostdControlSock()
 	if _, err := os.Stat(sock); err != nil {
 		return exitf(ExitGeneric, "No repose host that can park its machines runs on this Mac (%s is missing).", sock)
+	}
+	// Through the api when it answers, as the dashboard's Restart does, so
+	// `repose ls`, `repose status` and the dashboard say the machines are
+	// parked while the Mac restarts (I-1690's amendment); the control
+	// socket alone left the api to call them broken (review pass 2, P2-1).
+	if done, err := hostRestartViaAPI(ctx, e, force); done {
+		return err
 	}
 	c := control.NewClient(sock)
 	pctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
@@ -97,4 +105,63 @@ func HostRestartCmd(ctx context.Context, e *Env, force bool) error {
 		return exitf(ExitGeneric, "The machines are parked, but the Mac did not restart: %v. Restart it from the Apple menu; they come back at your login.", err)
 	}
 	return nil
+}
+
+// hostRestartViaAPI restarts this Mac through the api's host_restart op,
+// which has hostd park every machine and restart the Mac. done is false
+// when the api cannot be used (no login, no network, an api from before
+// I-1690, or a Mac the account does not list), and the caller restarts
+// through the control socket instead.
+func hostRestartViaAPI(ctx context.Context, e *Env, force bool) (done bool, err error) {
+	rec := macRecord()
+	if e == nil || e.Client == nil || rec == nil || rec.Host == "" {
+		return false, nil
+	}
+	hosts, err := e.Client.ListHosts(ctx)
+	if err != nil {
+		return false, nil
+	}
+	var id string
+	for _, h := range hosts {
+		if h.Name == rec.Host && h.State != "retired" {
+			id = h.ID
+		}
+	}
+	if id == "" {
+		return false, nil
+	}
+	t0 := time.Now()
+	var started struct {
+		OpID string `json:"op_id"`
+	}
+	if err := e.Client.post(ctx, "/hosts/"+url.PathEscape(id)+"/restart", map[string]any{"force": force}, &started); err != nil || started.OpID == "" {
+		return false, nil
+	}
+	deadline := time.Now().Add(10 * time.Minute)
+	for {
+		var op Op
+		if err := e.Client.get(ctx, "/hosts/"+url.PathEscape(id)+"/ops/"+url.PathEscape(started.OpID), &op); err != nil {
+			return true, exitf(ExitGeneric, "The restart of %s was asked for, and its answer could not be read: %v.", rec.Host, err)
+		}
+		switch op.State {
+		case "done":
+			parked := detailInt(op.Result["parked"])
+			_, _ = fmt.Fprintf(e.ErrOut, "Parked %d machines in %.1fs; restarting this Mac.\n", parked, time.Since(t0).Seconds())
+			return true, nil
+		case "error":
+			msg := strings.TrimSuffix(strings.TrimSpace(op.Error.Message), ".")
+			if msg == "" {
+				msg = "the machines were not parked"
+			}
+			return true, exitf(ExitGeneric, "%s.", capitalFirst(msg))
+		}
+		if time.Now().After(deadline) {
+			return true, exitf(ExitGeneric, "%s has not answered the restart after 10 minutes. Nothing more is asked of it.", rec.Host)
+		}
+		select {
+		case <-ctx.Done():
+			return true, ctx.Err()
+		case <-time.After(time.Second):
+		}
+	}
 }

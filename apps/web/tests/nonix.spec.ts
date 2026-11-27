@@ -4,7 +4,7 @@
 // nav lists machine.nix only for an account with a Nix project; the add
 // host dialog shows the x86 installer beside the Mac's step.
 import { test, expect, type Page, type Locator } from '@playwright/test';
-import { signIn, apiURLFromEnv, pruneProjects, ownedHost } from './helpers';
+import { signIn, apiURLFromEnv, pruneProjects, ownedHost, removeOwnedHosts } from './helpers';
 
 const auth = { Authorization: 'Bearer playwright', 'Content-Type': 'application/json' };
 
@@ -141,6 +141,26 @@ test('settings lists machine.nix only for an account with a Nix project', async 
 	await page.goto('/projects');
 	await page.goto('/settings');
 	await expect(nav.getByRole('link', { name: 'machine.nix' })).toBeVisible();
+});
+
+// review-dash-2 P2 2: the live api sends the Mac step as an install
+// command, and the CLI-first line showed only when it did not.
+test('the Mac step says the CLI comes first when the api composes the command', async ({ page }) => {
+	await ownedHost({ limit: 1, set_install: true, install_line: 'repose host add --join %s' });
+	try {
+		await page.goto('/settings/hosts');
+		await page.getByRole('button', { name: 'Add a host' }).click();
+		const dialog = page.getByTestId('host-dialog');
+		await dialog.getByLabel('Name', { exact: true }).fill('box-cmd');
+		await dialog.getByRole('button', { name: 'Add', exact: true }).click();
+		await expect(dialog.getByTestId('host-install')).toContainText('repose host add --join ');
+		await expect(dialog.getByTestId('host-mac-cli')).toHaveText(
+			'The Mac needs the repose CLI and repose login first: Install.'
+		);
+	} finally {
+		await removeOwnedHosts(apiURLFromEnv());
+		await ownedHost({ limit: 1, set_install: false });
+	}
 });
 
 test('adding a host shows the Mac step with its size and the x86 installer', async ({ page }) => {
