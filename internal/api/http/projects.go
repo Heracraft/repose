@@ -231,6 +231,18 @@ func (s *Server) projectJSON(ctx context.Context, p *store.Project, u *store.Use
 			r["waits_for"] = x.latest.WaitsFor
 		}
 		parked := p.State == "running" && x.latest.ParkedWaitingSince != nil && !sampleBeforeStart(p, x.latest)
+		if !parked && p.State == "running" && onShared && p.HostID != nil {
+			// Parked by a restart through repose while the Mac reboots
+			// (I-1690 amendment): its last sample predates the restart.
+			since, err := s.hostRestartingSince(ctx, *p.HostID)
+			if err != nil {
+				return nil, err
+			}
+			if since != nil && !x.latest.TS.After(*since) {
+				parked = true
+				out["parked"] = map[string]any{"since": since.UTC(), "waits_for": "restart"}
+			}
+		}
 		if parked {
 			// Parked on a Mac, waiting for its user to log in (I-1672):
 			// its memory is kept and it runs again at the login. Silent
@@ -241,7 +253,9 @@ func (s *Server) projectJSON(ctx context.Context, p *store.Project, u *store.Use
 			if x.latest.WaitsFor == "unlock" {
 				waits = "unlock"
 			}
-			out["parked"] = map[string]any{"since": x.latest.ParkedWaitingSince.UTC(), "waits_for": waits}
+			if _, set := out["parked"]; !set {
+				out["parked"] = map[string]any{"since": x.latest.ParkedWaitingSince.UTC(), "waits_for": waits}
+			}
 		}
 		if !parked && !x.latest.GuestdOK && !x.latest.Resting && !sampleBeforeStart(p, x.latest) {
 			// Its guestd has not answered for about three minutes

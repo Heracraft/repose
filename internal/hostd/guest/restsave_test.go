@@ -263,5 +263,42 @@ func TestLockRestoresOnlyWhatFits(t *testing.T) {
 	res := fh.mustOK(cmd(&hostdv1.WakeGuest{GuestId: left, Reason: "connect"}))
 	if w := res.GetWake(); w.GetWaitsFor() != WaitsForUnlock || fh.unitActive(left) {
 		t.Fatalf("locked wake: %+v, active %v", w, fh.unitActive(left))
+// A machine resting as a save holds none of the Mac's memory, so its
+// sample carries no memory in use; paused, it repeats its last figure
+// (review-dash P2 #4).
+func TestRestSaveSampleHoldsNoMemory(t *testing.T) {
+	fh := newParkHarness(t, nil)
+	fh.m.d.CH = saveCH{parkCH{Fake: fh.chc, h: fh.harness}}
+	fh.m.d.RestBySave = func(context.Context, string) bool { return true }
+	fh.m.d.RestSaveAfter = 30 * time.Minute
+	fh.m.d.MemoryTight = func() bool { return false }
+	fh.create(gid1)
+	fh.m.curMu.Lock()
+	f := fh.m.lastGuest[gid1]
+	f.memUsed, f.signals = 355<<20, &hostdv1.GuestSignals{}
+	fh.m.lastGuest[gid1] = f
+	fh.m.curMu.Unlock()
+	fh.pauseOK(gid1)
+	mem := func() uint64 {
+		for _, gs := range fh.m.CollectSamples(context.Background()).Guests {
+			if gs.GuestId == gid1 {
+				return gs.GuestMemUsedBytes
+			}
+		}
+		return 1
+	}
+	if m := mem(); m != 355<<20 {
+		t.Fatalf("paused: %d, want the last figure", m)
+	}
+	g := fh.guest(gid1)
+	g.Resting.Since = fh.m.d.Now().Add(-31 * time.Minute)
+	if err := fh.st.PutGuest(g); err != nil {
+		t.Fatal(err)
+	}
+	if n := fh.m.SaveRests(context.Background()); n != 1 {
+		t.Fatalf("saved %d", n)
+	}
+	if m := mem(); m != 0 {
+		t.Fatalf("saved: %d, want 0", m)
 	}
 }

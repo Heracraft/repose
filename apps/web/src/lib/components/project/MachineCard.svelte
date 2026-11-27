@@ -65,6 +65,9 @@
 	let diskSize = $derived(project.root_size_bytes || project.volume_bytes);
 	let full = $derived(diskFullPercent(project));
 	let frozen = $derived(frozenSince(project));
+	// A Mac machine resting as a save reports no memory in use (hostd,
+	// I-1690 amendment): it holds none of the Mac's.
+	let givenBack = $derived(!!frozen && !!project.vm && !project.mem_used_bytes);
 	// "Memory in use" beside "2.4 GB of e2e-mac's 11.7 GB" wrapped at 1440
 	// (review-dash 9): on an owned machine the figure carries the host's
 	// name, so the label is the one word (I-1654).
@@ -77,7 +80,15 @@
 	</div>
 
 	<div class="meters">
-		{#if memUsed !== undefined}
+		{#if givenBack}
+			<!-- Resting as a save on a Mac: its VM has ended and the Mac has
+			     its memory back; the next connection reads it back first
+			     (review-dash P2 #4). -->
+			<div class="line" data-testid="memory-given-back">
+				<span class="line-label">{memLabel}</span>
+				<span class="line-value line-value--off">given back while it rests</span>
+			</div>
+		{:else if memUsed !== undefined}
 			<!-- A frozen machine's memory is what is frozen: the bar fills in
 			     ice ink with a lit top edge (lib/hk/frost.css). -->
 			<div class:hk-meter-ice={!!frozen}>
@@ -91,7 +102,9 @@
 						? 'parked, kept'
 						: notAnsweringSince(project)
 							? 'not answering'
-							: 'not running'}</span
+							: project.state === 'running'
+								? 'no reading yet'
+								: 'not running'}</span
 				>
 			</div>
 		{/if}

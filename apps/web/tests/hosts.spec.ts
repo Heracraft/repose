@@ -285,7 +285,8 @@ test('a host that has registered shows its size, its machines and when it last a
 	await expect(row).toContainText('online');
 	await expect(row).toContainText('24 GB · 8 cores');
 	await expect(row).toContainText('1 machine, 1 running');
-	await expect(row).toContainText('aarch64');
+	await expect(row).toContainText('Mac');
+	await expect(row).not.toContainText('aarch64');
 	await shots(page, 'hosts-list');
 
 	// A host still holding a machine is not removed, and the refusal
@@ -437,7 +438,7 @@ test('a Mac that parks its machines restarts from the Hosts page', async ({ page
 	await row.getByRole('button', { name: 'Restart mac-mini…' }).click();
 	const confirm = page.getByTestId('confirm-restart-host');
 	await expect(confirm).toContainText(
-		'Its running machine is parked with its memory, then the Mac restarts; the machine runs again when you log in to the Mac.'
+		"Its running machine is parked with its memory, then the Mac restarts; the machine runs again when you log in to the Mac. Save your work in the Mac's own apps first: it may restart without waiting for them."
 	);
 	await shots(page, 'hosts-restart-confirm');
 	await confirm.getByRole('button', { name: 'Restart mac-mini now' }).click();
@@ -469,6 +470,31 @@ test('a Mac that parks its machines restarts from the Hosts page', async ({ page
 		"This Mac's screen is locked, and a locked Mac cannot save a machine's memory. Nothing restarted; unlock it and restart again."
 	);
 	await confirm.getByRole('button', { name: 'Cancel' }).click();
+
+	// While the Mac restarts through repose: the host reads restarting,
+	// offers no Restart, and its machine reads parked (review-dash P2 #2).
+	await ownedHost({ state_host: 'mac-mini', restart: true, restarting: true });
+	await page.reload();
+	await expect(row).toContainText('restarting');
+	await expect(row.getByRole('button', { name: 'Restart mac-mini…' })).toHaveCount(0);
+	await shots(page, 'hosts-restarting');
+	await page.goto(`/projects/${p.id}`);
+	await expect(page.getByTestId('parked')).toHaveText(
+		'Parked: mac-mini is restarting; its memory is kept'
+	);
+	await ownedHost({ state_host: 'mac-mini', restart: true, restarting: false });
+
+	// Remove on a Mac names its machine and says repose stays on the Mac
+	// until `repose host rm --local` there (review-dash P2 #5).
+	await page.goto('/settings/hosts');
+	await row.getByRole('button', { name: 'Remove mac-mini…' }).click();
+	await expect(page.getByTestId('confirm-remove-host')).toContainText(
+		`Remove mac-mini? It still holds ${p.name}, and a host is removed only once its machines are: remove it first.`
+	);
+	await expect(page.getByTestId('host-uninstall-mac')).toBeVisible();
+	await expect(page.getByTestId('confirm-remove-host')).toContainText('repose host rm --local');
+	await shots(page, 'hosts-remove-mac');
+	await page.getByTestId('confirm-remove-host').getByRole('button', { name: 'Keep it' }).click();
 
 	// Offline: no Restart, since there is nothing to ask.
 	await ownedHost({ id: hostId, quiet_minutes: 14 });

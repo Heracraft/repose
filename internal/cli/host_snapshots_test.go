@@ -43,14 +43,14 @@ func TestOwnHostSnapshotsGoWithTheHost(t *testing.T) {
 	if err := DestroyedCmd(ctx, e, false); err != nil {
 		t.Fatal(err)
 	}
-	if got := out.buf.String(); !strings.Contains(got, "gone with host mac-mini") {
+	if got := out.buf.String(); !strings.Contains(got, "gone with removed host mac-mini") {
 		t.Fatalf("ls --destroyed:\n%s", got)
 	}
 	out.buf.Reset()
 	if err := snapshotsListAll(ctx, e); err != nil {
 		t.Fatal(err)
 	}
-	if got := out.buf.String(); !strings.Contains(got, "gone with host mac-mini") {
+	if got := out.buf.String(); !strings.Contains(got, "gone with removed host mac-mini") {
 		t.Fatalf("snapshots list:\n%s", got)
 	}
 

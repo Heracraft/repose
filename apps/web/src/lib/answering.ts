@@ -30,11 +30,22 @@ export function sizedDownText(p: Pick<Project, 'state' | 'vm'>): string {
 	return `Runs with ${cpus} and ${bytes(v.mem_bytes)} of its ${v.full_vcpus} and ${bytes(v.full_mem_bytes)}: the machines running beside it held the rest when it started. A start after one of them stops gives it all.`;
 }
 
+/** A short form of the sized-down fact for a row or a header (I-1680,
+ * review-dash P3 #8): "2 of 5 vCPUs · 3.9 of 8 GB". */
+export function sizedDownShort(p: Pick<Project, 'state' | 'vm'>): string {
+	const v = p.vm;
+	if (p.state !== 'running' || !v || !v.sized_down) return '';
+	return `${v.vcpus} of ${v.full_vcpus} vCPUs · ${bytes(v.mem_bytes)} of ${bytes(v.full_mem_bytes)}`;
+}
+
 /** The words for a machine parked on a Mac that waits for its user to
  * log in (I-1672): its memory is kept, so nothing here offers a restart. */
 export function parkedText(p: Pick<Project, 'state' | 'parked' | 'host_name'>): string {
 	if (p.state !== 'running' || !p.parked) return '';
 	const mac = p.host_name || 'its Mac';
+	// Parked by a restart through repose while the Mac reboots (I-1690
+	// amendment, review-dash P2 #2).
+	if (p.parked.waits_for === 'restart') return `Parked: ${mac} is restarting; its memory is kept`;
 	// A Mac that is logged in but locked waits for the unlock (I-1682).
 	if (p.parked.waits_for === 'unlock')
 		return `Parked: waits for you to unlock ${mac}; its memory is kept`;

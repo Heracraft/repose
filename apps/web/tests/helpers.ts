@@ -459,6 +459,8 @@ export async function ownedHost(body: {
 	not_parked?: string[];
 	/** With restart: the Mac's screen is locked, so its restart parks nothing. */
 	locked?: boolean;
+	/** With state_host: the host is restarting through repose (I-1690 amendment). */
+	restarting?: boolean;
 }): Promise<string> {
 	const res = await fetch(`${adminURL()}/owned-host`, {
 		method: 'POST',
