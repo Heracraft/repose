@@ -574,8 +574,6 @@ func (f *Fake) SetProjectHost(projectID, hostID string) {
 	}
 }
 
-// ownedHostName is the name of an owned host by id, "" for a host
-// repose runs (I-1392): what Project.host_name carries.
 // MacLiveGrowRefusal is hostd's answer on a Mac to a disk grow of a
 // running machine (internal/hostd/guest/stop.go, I-1666).
 const MacLiveGrowRefusal = "a machine on this host gets a bigger disk while it is stopped: stop it, resize, and start it again"
@@ -591,6 +589,8 @@ func (f *Fake) ownedHostProvider(hostID string) string {
 	return ""
 }
 
+// ownedHostName is the name of an owned host by id, "" for a host
+// repose runs (I-1392): what Project.host_name carries.
 func (f *Fake) ownedHostName(hostID string) string {
 	for _, h := range f.ownedHosts {
 		if h.ID == hostID {
