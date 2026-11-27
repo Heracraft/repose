@@ -721,6 +721,11 @@ type Manager struct {
 	// (I-1682).
 	wakeAtUnlock sync.Map // guest id -> true
 	rebindDue    sync.Map // guest id -> true
+	// commitMu makes one boot's sizing at a time; reserved holds each
+	// boot's share until its record counts it (commit.go, I-1712).
+	commitMu sync.Mutex
+	resMu    sync.Mutex
+	reserved map[string]reservation
 	// onDestroyed is SetOnDestroyed's hook (Deps.OnDestroyed wins).
 	onDestroyed atomic.Pointer[func()]
 

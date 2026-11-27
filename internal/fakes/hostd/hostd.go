@@ -148,6 +148,9 @@ type Fake struct {
 	// poolDown is the host's thin pool unavailable (DECISIONS I-644):
 	// Hello and Heartbeat carry the flag and zero pool bytes, as hostd does.
 	poolDown bool
+	// wakeWaits makes a wake of a resting guest answer waits_for (a Mac
+	// whose locked session cannot read its save, DECISIONS I-1712).
+	wakeWaits string
 	// vmSize is what a create or start reports its VM got (DECISIONS
 	// I-1680), as a Mac's hostd does; nil, every other host, reports none.
 	vmSize *hostdv1.VmSize
@@ -437,6 +440,15 @@ func unresponsive(id string, g *Guest) *hostdv1.Result {
 func (f *Fake) SetPoolUnavailable(down bool) {
 	f.mu.Lock()
 	f.poolDown = down
+	f.mu.Unlock()
+}
+
+// SetWakeWaits makes every wake of a resting guest answer that it waits
+// for waits ("unlock" or "login") and wake nothing, as hostd on a locked
+// Mac does (DECISIONS I-1712); "" wakes as before.
+func (f *Fake) SetWakeWaits(waits string) {
+	f.mu.Lock()
+	f.wakeWaits = waits
 	f.mu.Unlock()
 }
 
@@ -1142,6 +1154,14 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 		if !g.Resting {
 			return ok(func(r *hostdv1.Result) {
 				r.Payload = &hostdv1.Result_Wake{Wake: &hostdv1.WakeResult{WasResting: false}}
+			})
+		}
+		if f.wakeWaits != "" {
+			// Resting as a save its locked Mac cannot read (I-1712):
+			// nothing wakes, and the answer says what it waits for.
+			w := f.wakeWaits
+			return ok(func(r *hostdv1.Result) {
+				r.Payload = &hostdv1.Result_Wake{Wake: &hostdv1.WakeResult{WasResting: true, WaitsFor: w}}
 			})
 		}
 		g.Resting, g.RestingAt = false, time.Time{}

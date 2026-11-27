@@ -576,3 +576,25 @@ func TestWakeRouteWakesAFrozenMachine(t *testing.T) {
 		t.Fatalf("another user's wake: %d %s", res.status, res.raw)
 	}
 }
+
+// DECISIONS I-1712: a wake of a machine resting as a save its locked Mac
+// cannot read is answered at once, 409 with what it waits for, and the
+// machine stays resting.
+func TestWakeRouteSaysWhatAHeldMachineWaitsFor(t *testing.T) {
+	r := newRestingEnv(t, "heldm")
+	r.e.h.Fake.SetResting(r.p.GuestID.String(), true)
+	r.e.h.Fake.SetWakeWaits("unlock")
+	if _, err := r.e.h.Pool.Exec(r.e.h.Ctx, "update projects set resting_since = now() where id = $1", r.p.ID); err != nil {
+		t.Fatal(err)
+	}
+	res := r.e.do(t, r.tok, "POST", "/projects/"+r.p.ID.String()+"/wake", nil)
+	if res.status != 409 || detailOf(t, res)["reason"] != "waits_for_unlock" {
+		t.Fatalf("held wake: %d %s", res.status, res.raw)
+	}
+	if msg, _ := res.body["error"].(map[string]any)["message"].(string); msg != r.p.Slug+" is resting and wakes once you unlock its Mac; its memory is kept" {
+		t.Fatalf("message %q", msg)
+	}
+	if p := r.e.h.Project(r.p.ID); p.RestingSince == nil {
+		t.Fatal("a held wake cleared resting")
+	}
+}

@@ -296,18 +296,29 @@ func (m *Manager) boot(ctx context.Context, g *state.Guest, firstStep int, op st
 	bootStart := m.d.Now()
 	m.setMenuErr(g.GuestID, nil)
 	class := m.classOf(g.Class)
-	if m.cfg.CommitMemMiB > 0 {
+	if m.cfg.CommitMemMiB > 0 || m.cfg.CommitVCPUs > 0 {
 		// Sized to what the running machines leave of the host's memory
-		// (commit.go); refused when that is too little.
-		mib, e := m.commitSize(g)
-		if e != nil {
-			return m.fail(g, firstStep, e)
+		// and cores (commit.go); refused when the memory is too little.
+		// One sizing at a time, each holding its share until its record
+		// says starting: three machines booted together after a restart
+		// each read the others as not yet started and took 8 GiB each,
+		// 24 GiB on a 24 GB Mac (lab Mac, 2026-11-27; DECISIONS I-1712).
+		m.commitMu.Lock()
+		if m.cfg.CommitMemMiB > 0 {
+			mib, e := m.commitSize(g)
+			if e != nil {
+				m.commitMu.Unlock()
+				return m.fail(g, firstStep, e)
+			}
+			g.MemMiB, class.MemMiB = mib, mib
 		}
-		g.MemMiB, class.MemMiB = mib, mib
-	}
-	if m.cfg.CommitVCPUs > 0 {
-		v := m.commitVCPUs(g, class.VCPUs)
-		g.VCPUs, class.VCPUs, class.CeilingVCPUs, class.MilliVCPUs = v, v, v, v*1000
+		if m.cfg.CommitVCPUs > 0 {
+			v := m.commitVCPUs(g, class.VCPUs)
+			g.VCPUs, class.VCPUs, class.CeilingVCPUs, class.MilliVCPUs = v, v, v, v*1000
+		}
+		m.reserve(g.GuestID, g.MemMiB, g.VCPUs)
+		m.commitMu.Unlock()
+		defer m.reserve(g.GuestID, 0, 0)
 	}
 	dir := m.guestDir(g.GuestID)
 	if err := m.prepareGuestDir(dir); err != nil {

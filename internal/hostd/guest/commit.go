@@ -27,9 +27,15 @@ func (m *Manager) committedMiB(except string) uint64 {
 	if err != nil {
 		return 0
 	}
+	res := m.reservations()
 	var n uint64
+	for id, r := range res {
+		if id != except {
+			n += r.mib
+		}
+	}
 	for _, g := range gs {
-		if g.GuestID == except {
+		if _, held := res[g.GuestID]; g.GuestID == except || held {
 			continue
 		}
 		if m.restSaved(g) {
@@ -95,9 +101,15 @@ func (m *Manager) committedVCPUs(except string) uint32 {
 	if err != nil {
 		return 0
 	}
+	res := m.reservations()
 	var n uint32
+	for id, r := range res {
+		if id != except {
+			n += r.vcpus
+		}
+	}
 	for _, g := range gs {
-		if g.GuestID == except {
+		if _, held := res[g.GuestID]; g.GuestID == except || held {
 			continue
 		}
 		if m.restSaved(g) {
@@ -162,3 +174,34 @@ func (m *Manager) restoreRoom(g *state.Guest, spare uint64) bool {
 // fit back: the machines running on the host hold the memory it would
 // take (DECISIONS I-1712).
 var ErrNoRoomToRestore = errors.New("the machines running on this host hold the memory this machine comes back with; stopping one of them frees room")
+
+// reservation is the share of the commit a boot holds while it runs,
+// before its record says starting (DECISIONS I-1712).
+type reservation struct {
+	mib   uint64
+	vcpus uint32
+}
+
+// reserve sets a boot's share; zero for both removes it.
+func (m *Manager) reserve(id string, mib uint64, vcpus uint32) {
+	m.resMu.Lock()
+	defer m.resMu.Unlock()
+	if m.reserved == nil {
+		m.reserved = map[string]reservation{}
+	}
+	if mib == 0 && vcpus == 0 {
+		delete(m.reserved, id)
+		return
+	}
+	m.reserved[id] = reservation{mib: mib, vcpus: vcpus}
+}
+
+func (m *Manager) reservations() map[string]reservation {
+	m.resMu.Lock()
+	defer m.resMu.Unlock()
+	out := make(map[string]reservation, len(m.reserved))
+	for k, v := range m.reserved {
+		out[k] = v
+	}
+	return out
+}
