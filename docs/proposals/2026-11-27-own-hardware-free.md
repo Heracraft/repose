@@ -15,19 +15,15 @@ Related documents and board items:
 1. **Value first, money after — never cripple a machine.**
    - Bringing your own hardware starts at **$0 with no credit card at sign-up**.
    - Every core capability of a `repose` machine — persistent sandboxes, snapshots, port forwards, webhooks/triggers, `ntfy`/web/CLI notifications, and **remote browser viewing (`repose browser` and the dashboard's Browser tab, `I-292`, `I-1216`)** — works in full on the free tier. Gating remote browser or machine features would break the "value first, money after" rule.
-2. **Payment starts only when a user scales out (more hosts) or hands off hardware (hosted cloud).**
-   - **Free ($0, no card):** Up to `N` user-owned hosts (Mac or Linux), unlimited sandboxes bounded only by that hardware's memory and disk (`I-1626`, `I-1630`), 100-project account abuse cap (`I-569`).
-   - **Paid multi-host BYOH ($10/month):** Adding past the free host count upgrades to the **$10/month `Own hardware` plan** (`I-1364`, `I-1594`: any number of user-owned hosts, no fleet compute). Nobody is on `Own hardware` today, so changing its free baseline requires no customer migration or refunds.
+2. **Payment starts only when a user scales out (2+ hosts) or hands off hardware (hosted cloud).**
+   - **Free ($0, no card):** **1 user-owned host** (`FreeOwnHosts = 1`, Mac or Linux), unlimited sandboxes bounded only by that host's memory and disk (`I-1626`, `I-1630`), 100-project account abuse cap (`I-569`).
+   - **Paid multi-host BYOH ($10/month, confirmed by owner 2026-11-27):** Adding a **2nd host** upgrades to the **$10/month `Own hardware` plan** (`I-1364`, `I-1594`: 2+ / any number of user-owned hosts, no fleet compute; supersedes the earlier 2-free-hosts draft). Nobody is on `Own hardware` today, so changing its free baseline requires no customer migration or refunds.
    - **Hosted cloud plans (`Solo` $49 / $39 intro, `Plus` $89, `Pro` $169):** Unchanged, and continue to include any number of user-owned hosts at no extra cost (`I-1704`).
    - **No per-seat / team pricing yet:** Single-user accounts for launch until users ask for teams (`R5-6`).
 
-### 1.1 One threshold to confirm in the `DECISIONS.md` entry before coding: `N = 1` vs `N = 2` free hosts
+### 1.1 Single source of truth for the free-host constant
 
-Both variants surfaced across today's two owner notes and use the exact same code (`billing.FreeOwnHosts`):
-- **Option A (`FreeOwnHosts = 2`, third host starts $10/month):** Earlier ticket ruling — covers a developer with both a laptop/Mac mini and a second Linux box for free; charges $10/month starting on the 3rd host (homelabs, multi-box setups) or $49+/month when moving to `repose`'s cloud.
-- **Option B (`FreeOwnHosts = 1`, second host starts $10/month):** Evening session discussion — 100% of newcomers start free on 1 Mac or 1 Linux server, and adding a 2nd machine (`I-1594`'s multi-box power user) is the natural conversion line for the $10/month `Own hardware` plan instead of leaving $10/month reachable only at 3+ boxes.
-
-**Implementation rule:** Define one constant `billing.FreeOwnHosts` (and report it in `GET /me` as `limits.hosts` for an account with no subscription, mirrored in `GET /public/...` or `apps/web/src/lib/plans.ts` via `TestPlansMatchPricingDoc` `I-764`) so switching between `1` and `2` is one constant, never scattered literals.
+Define one constant `billing.FreeOwnHosts = 1` (reported in `GET /me` as `limits.hosts` for an account with no subscription, and mirrored in `apps/web/src/lib/plans.ts` via `TestPlansMatchPricingDoc` `I-764`) so CLI, API, fake API, dashboard, and docs read one source rather than scattered literals.
 
 ---
 
@@ -91,7 +87,7 @@ Both variants surfaced across today's two owner notes and use the exact same cod
 
 ## 4. Definition of done
 
-- [ ] `DECISIONS.md` entry (reserved id) settling `FreeOwnHosts` (`1` or `2`), keeping `$10/month Own hardware` (no trial) for `FreeOwnHosts + 1`..unlimited owned hosts, preserving `I-1704` on cloud plans, and recording the cancelled-over-limit rule.
+- [ ] `DECISIONS.md` entry (reserved id) recording `FreeOwnHosts = 1`, `$10/month Own hardware` (no trial) starting at the 2nd host for any number of owned hosts, preserving `I-1704` on cloud plans, and recording the cancelled-over-limit rule.
 - [ ] `ENG-215` resolved and merged first (address pool widened / `/26` owned-host CIDRs, `503` instead of `500`, 70% utilization alert).
 - [ ] `internal/api/billing` & `internal/api/http`: Free (`sub == nil`, `BILLING_ENFORCE=true`) allows up to `FreeOwnHosts` owned hosts and all lifecycle/wake/restore/browser/agent ops on them; refuses `FreeOwnHosts + 1` with `host_limit` and refuses cloud fleet ops with `subscription_required`.
 - [ ] `internal/fakes/api` updated in lockstep with parity tests.

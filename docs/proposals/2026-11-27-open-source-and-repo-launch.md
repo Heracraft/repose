@@ -34,8 +34,9 @@ Today `Heracraft/repose` on GitHub is `PUBLIC` with no `LICENSE` file (`licenseI
 3. **Internal agent orchestration logs, incident timelines, and unmitigated risk notes**
    - `docs/DECISIONS.md` (~39,900 lines), `docs/ops/RESTART.md`, `docs/ops/CONDUCTOR-HANDOFF.md`, `docs/ops/RUNBOOK.md`, `docs/ops/LAUNCH.md`, `docs/workstreams/`, `docs/reports/`, and `docs/proposals/` narrate past incidents (`I-643`, `I-920`, `I-954`), open P0/P1 defects, and internal owner transcripts.
    - `docs/SECURITY.md` ("Not mitigated in the first release") enumerates known fleet trade-offs (shared `hostd` UID across taps, shared snapshot Blob identity across hosts, single edge VM carrying `:22` and `:443` without upstream DDoS protection).
-4. **Git history hygiene and SaaS anti-abuse constants**
-   - Commit `b1a5915e` (`I-193`) committed a `.env` key (since rotated) alongside a personal email in git metadata; `ENG-5` tracks 28 commits on `main` with an unverified git identity; `I-194` names unrelated repositories; `context/portless` holds early scratch files.
+4. **Git history hygiene, author identity, and SaaS anti-abuse constants**
+   - Commit `b1a5915e` (`I-193`) committed a `.env` key (since rotated) alongside the owner's private email in git metadata; `ENG-5` tracks 28 commits on `main` with an unverified git identity; `I-194` names unrelated repositories; `context/portless` holds early scratch files.
+   - At the squashed root commit for the public repository (and across the owner's git config going forward), switch `user.email` off the private email address to either GitHub's anonymized `users.noreply.github.com` address or `nehemia@repose.run`, and add the old private email to the public export's CI deny-grep.
    - `internal/guestd/sample/watch.go` and `internal/abuse` hardcode exact miner binary names in source, allowing an abuser who reads the repo to rename binaries around static checks.
 
 ---
@@ -64,11 +65,13 @@ Today `Heracraft/repose` on GitHub is `PUBLIC` with no `LICENSE` file (`licenseI
 
 ---
 
-## 4. Self-hosting gaps to close (making Option 1 actually run in 5 minutes)
+## 4. Self-hosting turnkey stack (separate post-launch project, ~1 week after launch)
+
+**Sequencing ruling (owner, 2026-11-27):** Do **not** block the `repose.run` launch or the Apache 2.0 repo cutover on swapping out Azure Key Vault or Logto. Launch first with the clean Apache 2.0 repository and Free 1-host BYOH on `repose.run`, gauge real self-hosting demand, and bring in turnkey control-plane self-hosting as its own project roughly one week after launch. Until then, the public `README.md` can state plainly that full control-plane self-hosting packaging is coming shortly and point users to the free 1-host BYOH tier on `repose.run`.
 
 Most of `repose` already works without SaaS services: `API_MIGRATE=1` bootstraps the Postgres schema and platform CAs automatically (`I-90`), `BILLING_ENFORCE=false` disables Polar gates cleanly (`I-1396`), and user-owned Linux/Mac hosts store snapshots locally without Azure Blob (`I-1372`, `I-1636`).
 
-Three concrete gaps block a non-Azure user from running `docker compose up` today:
+When the post-launch self-hosting project runs, three concrete gaps close a non-Azure `docker compose up`:
 
 1. **Azure Key Vault hard requirement (`internal/api/app/config.go:160`)**
    - *Today:* `api` refuses to start unless `KEYVAULT_URL` is set or `REPOSE_DEV=1` is passed. `REPOSE_DEV=1` uses an in-memory key vault that loses every wrapped secret DEK when the container restarts.
@@ -135,17 +138,18 @@ Kernel/KVM boundaries, nftables bridge drop rules, 24-hour Ed25519 SSH certifica
 
 ## 8. Execution order (checklist for future workstreams)
 
-1. **Stage 1 — Private mirror & Coolify repoint (ops, zero user-visible change)**
+1. **Stage 1 — Private mirror & Coolify repoint (pre-launch ops, zero user-visible change)**
    - Create private `Heracraft/repose-internal`, push `--mirror`, move Coolify (`api`, `api-grpc`, `web`) and conductor tooling to `repose-internal`, verify deploy and `release-assets`.
-2. **Stage 2 — Self-hosting & auth decoupling (`api`, `cli`, `compose`)**
-   - Build `SECRET_MASTER_KEY` `KeyVault` implementation + unit tests.
-   - Add `GET /public/auth-config` so `repose login --api-url <url>` auto-discovers OIDC/gateway settings on self-hosted servers.
-   - Write and E2E-test `docker-compose.yml` + `SELF-HOSTING.md` on a clean non-Azure Linux VM.
-3. **Stage 3 — Security & abuse-config pass**
+2. **Stage 2 — Pre-launch security, Free BYOH, & fleet readiness**
    - Move extra `watch.go` / `internal/abuse` patterns to runtime config on `repose.run`.
    - Complete adversarial boundary review (gateway, webhook ingest, SSRF dialers, token scopes, foreign-host bounds).
-   - Ship Free BYOH + `ENG-215` address-pool expansion ([2026-11-27-own-hardware-free.md](2026-11-27-own-hardware-free.md)) and `ENG-271` (`host-02` back to `Standard_D64s_v7`).
-4. **Stage 4 — Public tree export, tag sanitization, and contributor docs**
+   - Ship Free BYOH (`FreeOwnHosts = 1`, `$10/month` starting at 2 hosts) + `ENG-215` address-pool expansion ([2026-11-27-own-hardware-free.md](2026-11-27-own-hardware-free.md)) and `ENG-271` (`host-02` back to `Standard_D64s_v7`).
+3. **Stage 3 — Public tree export, git author email switch, tag sanitization, and contributor docs (launch)**
+   - Switch git author `user.email` off the owner's private email to GitHub's `users.noreply.github.com` address or `nehemia@repose.run` for the squashed root commit and future commits.
    - Add `LICENSE` (`Apache-2.0`), `NOTICE`, public `README.md`, `CONTRIBUTING.md`, and public `SECURITY.md`; enable GitHub Private Vulnerability Reporting.
-   - Build `ops/dev/public-export` with automated leak-grep + clean-checkout `go test ./...` + `pnpm check`.
+   - Build `ops/dev/public-export` with automated leak-grep (including private email deny-check) + clean-checkout `go test ./...` + `pnpm check`.
    - Export clean orphan commit to `Heracraft/repose`, re-point release tags without losing Release assets, verify `git clone --mirror` has zero historical leaks, and verify `ops/dev/release-assets` passes 100%.
+4. **Stage 4 — Turnkey control-plane self-hosting (~1 week post-launch, once demand is seen)**
+   - Build `SECRET_MASTER_KEY` `KeyVault` implementation + unit tests.
+   - Add `GET /public/auth-config` and OIDC decoupling so `repose login --api-url <url>` works with zero flags.
+   - Write and E2E-test `docker-compose.yml` + `SELF-HOSTING.md` on a clean non-Azure Linux VM.
