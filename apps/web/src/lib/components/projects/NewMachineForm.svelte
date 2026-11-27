@@ -147,6 +147,8 @@
 	 * size and shares the host's memory (I-1630, I-1632): no Size field,
 	 * no size in the summary, and the plan's memory does not apply. */
 	let onOwnHost = $derived(hosts.length > 0 && runsOn !== 'hosted');
+	/** The plan would refuse this size now (I-1612). */
+	let tooBig = $derived(!!room && !onOwnHost && !fits(room, cls));
 
 	/** The one host of the account's own this would go to, when that is
 	 * known before Create: the only host, or the one chosen. */
@@ -193,7 +195,11 @@
 	let summary = $derived(
 		[
 			onOwnHost ? '' : sizeLabel(cls),
-			room && !onOwnHost ? `${free} GB of your plan's ${room.limitGB} GB free` : '',
+			// The plan's room is said once: here, or in the note under
+			// the line when this size does not fit (ENG-233).
+			room && !onOwnHost && fits(room, cls)
+				? `${free} GB of your plan's ${room.limitGB} GB free`
+				: '',
 			whereWords,
 			hostRoom,
 			agent ? `starts ${agentName(agent)}` : 'no agent',
@@ -296,7 +302,11 @@
 				oninput={() => (nameIsOurs = false)}
 			/>
 			<div class="nmacts">
-				<button type="submit" class="hk-btn" aria-disabled={saving || hostFull ? 'true' : undefined}
+				<!-- Not the primary action while the plan would refuse it (ENG-233). -->
+				<button
+					type="submit"
+					class={tooBig ? 'hk-btn-secondary' : 'hk-btn'}
+					aria-disabled={saving || hostFull ? 'true' : undefined}
 					>{saving ? 'Creating…' : 'Create'}</button
 				>
 				<button type="button" class="hk-btn-ghost" onclick={oncancel}>Cancel</button>
@@ -331,7 +341,7 @@
 				<p>
 					{full
 						? `Your plan's ${room.limitGB} GB is in use. Stop a machine to make one here.`
-						: `A ${cls} machine needs ${classMemoryGB(cls)} GB; ${free} GB is free.`}
+						: `${cls === 'xl' ? 'An' : 'A'} ${cls} machine needs ${classMemoryGB(cls)} GB; ${free} GB is free.`}
 				</p>
 				{#if full && onstop}
 					<div class="nmstops">

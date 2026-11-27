@@ -3,7 +3,9 @@
 // retention." The account is a section of Settings (DECISIONS I-578), and
 // Settings is four tabs: General, Notifications, Secrets, machine.nix (I-841).
 import { test, expect, type Page } from '@playwright/test';
-import { apiURLFromEnv, fail, failNext, signIn, unfail } from './helpers';
+import { apiURLFromEnv, fail, failNext, signIn, unfail, cleanSlate } from './helpers';
+
+cleanSlate();
 
 /**
  * The viewport at 1440 and 390 in both schemes, at 1x, for the review

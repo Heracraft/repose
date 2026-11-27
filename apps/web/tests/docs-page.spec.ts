@@ -1,4 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
+import { cleanSlate } from './helpers';
+
+cleanSlate();
 
 // The page inside the docs frame (DocPage, I-660): the text and the rail at
 // fixed x, one measure for prose and code, the rail's h2s and h3s, and the

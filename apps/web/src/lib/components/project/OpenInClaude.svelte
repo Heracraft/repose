@@ -70,7 +70,8 @@
 	</div>
 {:else if platform === 'windows'}
 	<!-- eslint-disable svelte/no-navigation-without-resolve -- resolve() with a fragment appended -->
-	<p class="oic-need oic">
+	<!-- Not .oic: its flex gap split the sentence round the link (ENG-233). -->
+	<p class="oic-need oic-line">
 		Claude Desktop on Windows can't reach a machine yet:
 		<a class="hk-link" href={resolve('/docs/[slug]', { slug: 'ssh-and-editors' }) + '#windows'}
 			>Windows</a
@@ -89,6 +90,9 @@
 	.oic-need code {
 		white-space: nowrap;
 		margin-inline: 0;
+	}
+	.oic-line {
+		margin-bottom: 1rem;
 	}
 	.oic-need {
 		margin: 0;

@@ -294,6 +294,9 @@ export const deleteSecret = (id: string, name: string) =>
 
 // Webhook routes: a public URL into the machine (DECISIONS I-1110).
 export const listWebhooks = (id: string) => request<WebhookRoute[]>(`/projects/${id}/webhooks`);
+/** One route with its newest 20 deliveries (api.md, ENG-56). */
+export const getWebhook = (id: string, name: string) =>
+	request<WebhookRoute>(`/projects/${id}/webhooks/${encodeURIComponent(name)}`);
 export const putWebhook = (id: string, name: string, target: string, allowStart: boolean) =>
 	request<WebhookRoute>(`/projects/${id}/webhooks`, {
 		method: 'POST',

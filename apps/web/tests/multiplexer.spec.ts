@@ -6,7 +6,9 @@
 // base gate opens, so the project's answer is rewritten on its way to the
 // page.
 import { test, expect, type Page } from '@playwright/test';
-import { signIn, createProject, apiURLFromEnv } from './helpers';
+import { signIn, createProject, apiURLFromEnv, cleanSlate } from './helpers';
+
+cleanSlate();
 
 test.beforeEach(async ({ page }) => {
 	await signIn(page);

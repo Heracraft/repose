@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1174 entries.
+1176 entries.
 
 ## Scope
 
@@ -377,7 +377,7 @@ pointer, not a summary.
 - **I-296** `repose browser bridge` lends the guest's browser tools the laptop's own Chrome, through Chrome's DevTools switch, a front that answers `/json/version`, and a reverse tunnel whose remote command holds the guest's endpoint switched — 2026-09-27; L8016
 - **I-297** The user docs have a Tutorials section: one job per page, in the order a new user meets them — 2026-09-27; partly amended by I-316; L8075
 - **I-298** The Vercel CLI's login stays on the laptop — 2026-09-27; L8095
-- **I-330** A signed-in visitor can read the landing page — 2026-09-28; L8135
+- **I-330** A signed-in visitor can read the landing page — 2026-09-28; amended by I-1716; L8135
 - **I-331** Sign-out leaves the page alone until the browser goes, and no page paints before its stylesheet — 2026-09-28; partly amended by I-370; amended by I-837; L8149
 - **I-332** Settings save as they change; the ntfy URL keeps a Save — 2026-09-28; L8169
 - **I-333** "Recently destroyed" shows ten rows, then more on request — 2026-09-28; L8188
@@ -1001,7 +1001,7 @@ pointer, not a summary.
 - **I-1212** The landing's hero is the Orbit, with its copy centred over it (hero-loop, 2026-11-15) — amended by I-1452; L34001
 - **I-1214** Google Tag Manager on repose.run, gated on the hostname, and the privacy policy says so (analytics, 2026-11-15) — L34038
 - **I-1220** Two acts the dashboard was missing, and three the page already answered (dash-acts, 2026-11-16) — amended by I-1604; L34089
-- **I-1216** The dashboard watches the machine's browser: a relay on the edge, VncAuth at the relay, a 15-minute cookie ticket per connect, and the page draws noVNC itself (browser-view, 2026-11-16) — partly amended by I-1258; partly amended by I-1642; L34133
+- **I-1216** The dashboard watches the machine's browser: a relay on the edge, VncAuth at the relay, a 15-minute cookie ticket per connect, and the page draws noVNC itself (browser-view, 2026-11-16) — partly amended by I-1258; partly amended by I-1642; amended by I-1718; L34133
 - **I-1218** `:6081` at the edge stops being a port every guest can reach, and the view's bytes are an operator metric, not the tenant's egress (browser-view, 2026-11-16) — L34314
 - **I-1228** hostd does not dial a resting guest, and a wake whose session ends under it tries the next one (wake-backlog, 2026-11-16) — L34350
 - **I-1230** The rest rule's CPU line is 15 s a minute, a quarter of a core — 2026-11-16; L34414
@@ -1206,3 +1206,5 @@ pointer, not a summary.
 - **I-1702** The dashboard starts agents: a machine made there starts its agent, the form asks which when the account has none to go by, and a running machine's page has Start agent with Claude Code's Remote Control as an option (sweep-dash, 2026-11-27) — L39839
 - **I-1710** A stop or destroy cut off by a plain hostd restart is neither stored nor sent, as one cut off by a host shutdown is: the api's resend after Hello runs it again on the next hostd, which finishes it; a boot cut off that way is still answered (d2-install, 2026-11-27) — L39848
 - **I-1712** On a Mac a machine resting as a save holds no memory in the commit, the screen lock reads back only the saved machines that fit with room for one more machine, a wake of one the locked Mac cannot read answers at once with what it waits for, MEMORY is what macOS gives up for a machine, and a destroyed machine keeps no clone of its disk (d2-core, review-mac's findings on the shipped build, 2026-11-27) — L39854
+- **I-1716** A signed-in visitor to repose.run goes to the dashboard before the landing paints; the logo shows the landing on purpose (sweep-dash, 2026-11-27) — L39862
+- **I-1718** Dashboard sweep, batch 2: temporary machines' snapshots, Messages to the latest 3, a webhook route's deliveries, the browser view's paste and full screen, and the suite's per-file host reset (sweep-dash, 2026-11-27) — L39868

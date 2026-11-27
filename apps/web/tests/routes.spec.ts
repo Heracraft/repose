@@ -1,6 +1,8 @@
 // Checklist: "Every route in 5.2 exists and renders with the fake API."
 import { test, expect } from '@playwright/test';
-import { signIn, createProject, apiURLFromEnv, setAgents } from './helpers';
+import { signIn, createProject, apiURLFromEnv, setAgents, cleanSlate } from './helpers';
+
+cleanSlate();
 
 let projectId: string;
 let projectName: string;

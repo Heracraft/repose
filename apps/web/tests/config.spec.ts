@@ -3,7 +3,9 @@
 // editor with Nix highlighting, Apply, build log streams, a failing
 // fragment shows the error block with the line highlighted."
 import { test, expect } from '@playwright/test';
-import { signIn, createProject, destroyProject, apiURLFromEnv } from './helpers';
+import { signIn, createProject, destroyProject, apiURLFromEnv, cleanSlate } from './helpers';
+
+cleanSlate();
 
 test.beforeEach(async ({ page }) => {
 	await signIn(page);

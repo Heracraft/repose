@@ -152,7 +152,10 @@
 		void onStop();
 	}
 
-	let stopSnapshotFirst = $state(true);
+	// Off by default on a temporary machine, whose snapshots go when it
+	// does (ENG-69); a click is the user's choice either way.
+	let snapChoice = $state<boolean | undefined>(undefined);
+	let stopSnapshotFirst = $derived(snapChoice ?? !project?.expires_at);
 
 	async function onStop() {
 		if (ctx.opBusy) return;
@@ -297,7 +300,7 @@
 			</button>
 		{:else if project?.state === 'running'}
 			<label class="hk-check snap-check">
-				<input type="checkbox" bind:checked={stopSnapshotFirst} />
+				<input type="checkbox" bind:checked={() => stopSnapshotFirst, (v) => (snapChoice = v)} />
 				Snapshot on stop
 			</label>
 			<button

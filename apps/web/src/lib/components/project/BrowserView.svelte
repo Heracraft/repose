@@ -99,10 +99,48 @@
 	 */
 	function send() {
 		if (!toSend || !rfb) return;
-		rfb.clipboardPasteFrom(toSend);
+		pasteToMachine(toSend);
 		sent = true;
 		clearTimeout(sentTimer);
 		sentTimer = setTimeout(() => (sent = false), 1200);
+	}
+
+	/** The one way text reaches the machine's clipboard: Send, or the
+	 * watcher's own paste on the view. */
+	function pasteToMachine(text: string) {
+		rfb?.clipboardPasteFrom(text);
+	}
+
+	let frame: HTMLDivElement | undefined;
+	let full = $state(false);
+	/** Full screen on the view alone (ENG-241); Esc, or the button, leaves. */
+	async function toggleFull() {
+		if (document.fullscreenElement) await document.exitFullscreen();
+		else await frame?.requestFullscreen();
+	}
+
+	/**
+	 * Ctrl+V or Cmd+V on the view pastes what the watcher pasted (ENG-241).
+	 * The paste is the watcher's own gesture: the browser hands the page
+	 * the text only for it, so this reads no clipboard on its own (I-1216).
+	 * The key itself is held back from noVNC, which would send it before
+	 * the text arrives and paste what the machine had; once the text is in
+	 * the machine's clipboard, Ctrl+V is sent there, the machine's own key.
+	 */
+	function onKeydownCapture(e: KeyboardEvent) {
+		if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'v') {
+			e.stopPropagation();
+		}
+	}
+	function onPaste(e: ClipboardEvent) {
+		const text = e.clipboardData?.getData('text/plain') ?? '';
+		if (!text || !rfb) return;
+		e.preventDefault();
+		pasteToMachine(text);
+		rfb.sendKey(0xffe3, 'ControlLeft', true);
+		rfb.sendKey(0x76, 'KeyV', true);
+		rfb.sendKey(0x76, 'KeyV', false);
+		rfb.sendKey(0xffe3, 'ControlLeft', false);
 	}
 
 	/** Stops with a line, and the Resume view button beside it. */
@@ -241,12 +279,25 @@
 	});
 </script>
 
+<svelte:document onfullscreenchange={() => (full = document.fullscreenElement === frame)} />
+
 <section class="hk-section" aria-labelledby="browser-title">
 	<!-- The tab says Browser; the heading names the region for a screen reader. -->
 	<h2 id="browser-title" class="hk-sr">Browser</h2>
-	<div class="frame">
+	<div
+		class="frame"
+		bind:this={frame}
+		onkeydowncapture={onKeydownCapture}
+		onpaste={onPaste}
+		data-testid="view-frame"
+	>
 		<!-- noVNC adds its canvas here and sizes it to this box. -->
 		<div class="screen" bind:this={screen} data-testid="view-screen"></div>
+		{#if phase === 'watching'}
+			<button type="button" class="fullbtn" onclick={() => void toggleFull()}
+				>{full ? 'Exit full screen' : 'Full screen'}</button
+			>
+		{/if}
 		{#if phase !== 'watching'}
 			<div class="over">
 				<p class="line" role="status">
@@ -282,10 +333,8 @@
 				<div class="half">
 					<span class="hk-field-label" id="view-copied-label">Copied in the machine</span>
 					<div class="row">
-						<output
-							class="clipout"
-							aria-labelledby="view-copied-label"
-							data-testid="view-copied">{copied}</output
+						<output class="clipout" aria-labelledby="view-copied-label" data-testid="view-copied"
+							>{copied}</output
 						>
 						<CopyButton text={() => copied} size="sm" ariaLabel="Copy what the machine copied" />
 					</div>
@@ -305,7 +354,8 @@
 		display: grid;
 		background: var(--hk-code-bg);
 		border: 1px solid var(--hk-code-border);
-		border-radius: var(--hk-radius);
+		/* A screen's corners, not a card's (ENG-241). */
+		border-radius: var(--hk-radius-sm);
 		aspect-ratio: 16 / 10;
 		max-height: calc(100vh - 18rem);
 		min-height: 15rem;
@@ -314,6 +364,32 @@
 	.screen {
 		position: absolute;
 		inset: 0;
+	}
+	.frame:fullscreen {
+		max-height: none;
+		aspect-ratio: auto;
+		border: 0;
+		border-radius: 0;
+	}
+	/* Over the picture's corner, in the pane's own ink. */
+	.fullbtn {
+		position: absolute;
+		top: 0.5rem;
+		right: 0.5rem;
+		z-index: 1;
+		height: 1.75rem;
+		padding: 0 0.5rem;
+		border: 1px solid var(--hk-code-border);
+		border-radius: var(--hk-radius-sm);
+		background: var(--hk-code-bg);
+		color: var(--hk-code-text);
+		font: inherit;
+		font-size: 0.8125rem;
+		opacity: 0.85;
+	}
+	.fullbtn:hover,
+	.fullbtn:focus-visible {
+		opacity: 1;
 	}
 	/* The state sits over the pane, centred, so the picture never moves
 	   when it arrives or goes. */

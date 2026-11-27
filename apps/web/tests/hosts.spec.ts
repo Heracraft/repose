@@ -3,7 +3,9 @@
 // (the dashboard parity rule). The join token reaches the DOM once, in
 // the dialog, and never in the list.
 import { test, expect, type Page } from '@playwright/test';
-import { signIn, createProject, apiURLFromEnv, ownedHost } from './helpers';
+import { signIn, createProject, apiURLFromEnv, ownedHost, cleanSlate } from './helpers';
+
+cleanSlate();
 
 /**
  * The viewport at 1440 and 390 in both schemes, at 1x, for the review

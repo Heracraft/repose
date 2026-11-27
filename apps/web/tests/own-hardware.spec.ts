@@ -4,7 +4,16 @@
 // first day: it names the machine, says how long it has been quiet, and
 // stops.
 import { test, expect, type Page } from '@playwright/test';
-import { signIn, createProject, apiURLFromEnv, destroyProject, setOfflineOwnHost } from './helpers';
+import {
+	signIn,
+	createProject,
+	apiURLFromEnv,
+	destroyProject,
+	setOfflineOwnHost,
+	cleanSlate
+} from './helpers';
+
+cleanSlate();
 
 test.beforeEach(async ({ page }) => {
 	await signIn(page);

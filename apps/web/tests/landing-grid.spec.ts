@@ -2,6 +2,9 @@
 // ScrollWheel across 3 beats on desktop (and stacked on phones), left-to-right
 // Safety Wreck layout, and flush PlanCells on thirds.
 import { test, expect } from '@playwright/test';
+import { cleanSlate } from './helpers';
+
+cleanSlate();
 
 const HEADS = [
 	'Pick where each sandbox runs',

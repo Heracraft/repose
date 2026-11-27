@@ -26,13 +26,20 @@
 		AGENT_KINDS,
 		THREAD_READ,
 		THREAD_SHOWN,
+		THREAD_MORE,
 		agentVerb,
 		mergeThread,
 		pickWindow,
 		sayLine,
 		type ThreadItem
 	} from '$lib/thread';
-	import { noTerminal, type AgentSignal, type Project, type ProjectEvent, type Say } from '$lib/api/types';
+	import {
+		noTerminal,
+		type AgentSignal,
+		type Project,
+		type ProjectEvent,
+		type Say
+	} from '$lib/api/types';
 
 	let {
 		project,
@@ -54,7 +61,7 @@
 	let events = $state<ProjectEvent[]>(initial.events);
 	/** A message whose POST is still out, drawn as `sending`. */
 	let pending = $state<{ id: string; text: string; window: string; at: string } | undefined>();
-	let showAll = $state(false);
+	let shownCount = $state(THREAD_SHOWN);
 
 	let thread = $derived.by((): ThreadItem[] => {
 		const items = mergeThread(says, events);
@@ -70,7 +77,7 @@
 		}
 		return items;
 	});
-	let drawn = $derived(showAll ? thread : thread.slice(-THREAD_SHOWN));
+	let drawn = $derived(thread.slice(-shownCount));
 
 	let running = $derived(project.state === 'running');
 	let agents = $derived<AgentSignal[]>(running ? (project.signals?.agents ?? []) : []);
@@ -214,7 +221,7 @@
 				<button
 					type="button"
 					class="hk-btn-ghost hk-btn-sm earlier"
-					onclick={() => (showAll = true)}>Earlier messages</button
+					onclick={() => (shownCount += THREAD_MORE)}>Earlier messages</button
 				>
 			{/if}
 			<ol class="thread" aria-label="Messages">

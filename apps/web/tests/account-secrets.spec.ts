@@ -3,8 +3,10 @@
 // project's Config tab shows the ones that reach it and marks the one its
 // own replaces. Values never reach the DOM.
 import { test, expect } from '@playwright/test';
-import { signIn, createProject, apiURLFromEnv } from './helpers';
+import { signIn, createProject, apiURLFromEnv, cleanSlate } from './helpers';
 import type { Locator } from '@playwright/test';
+
+cleanSlate();
 
 /** The Add secret dialog, over the page (I-929). */
 const dlg = (section: Locator) => section.page().getByRole('dialog');
