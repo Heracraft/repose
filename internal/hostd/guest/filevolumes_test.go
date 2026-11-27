@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
 )
@@ -79,5 +80,20 @@ func TestSnapshotClonesRestoreWithoutTheStore(t *testing.T) {
 	h.m.SweepKeptClones(context.Background(), nil)
 	if _, ok := h.lvm.Volumes[kept]; ok {
 		t.Fatal("an unlisted snapshot's clone was kept")
+	}
+}
+
+// A destroy tells the platform, which sweeps the machine's kept snapshot
+// clones at once (DECISIONS I-1712).
+func TestDestroyRunsTheHook(t *testing.T) {
+	h := newHarness(t, nil)
+	done := make(chan struct{}, 1)
+	h.m.SetOnDestroyed(func() { done <- struct{}{} })
+	h.create(gid1)
+	h.mustOK(cmd(&hostdv1.DestroyGuest{GuestId: gid1}))
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the destroy hook did not run")
 	}
 }

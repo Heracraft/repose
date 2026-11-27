@@ -806,6 +806,11 @@ func classNote(p *Project) string {
 // usedCell is the memory an unsized machine uses while it runs, "1.4 GB
 // used", or "" when it is not running or the api has no sample yet.
 func usedCell(p *Project) string {
+	if p.State == "running" && p.VM != nil {
+		// A Mac (I-1712): what macOS gives up for the machine, 0 while it
+		// rests as a save.
+		return humanBytes(max(p.MemUsedBytes, 0)) + " held"
+	}
 	if p.State != "running" || p.MemUsedBytes <= 0 {
 		return ""
 	}

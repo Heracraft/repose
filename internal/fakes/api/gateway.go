@@ -112,6 +112,15 @@ func (f *Fake) Wakes() int {
 	return f.wakes
 }
 
+// SetWakeWaits makes every POST /internal/wake of a resting machine
+// answer 409 with sentence, as the api does when the machine rests as a
+// save its locked Mac cannot read (DECISIONS I-1712); "" undoes it.
+func (f *Fake) SetWakeWaits(sentence string) {
+	f.mu.Lock()
+	f.wakeWaits = sentence
+	f.mu.Unlock()
+}
+
 // SetWakeDelay makes every POST /internal/wake take d, as a Mac restoring
 // a machine from its rest save takes tens of seconds (DECISIONS I-1696).
 func (f *Fake) SetWakeDelay(d time.Duration) {

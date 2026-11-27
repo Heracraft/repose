@@ -400,3 +400,22 @@ func TestLockedMacSaysWhatTheMachineWaitsFor(t *testing.T) {
 		t.Fatalf("repose ls parked, restarting:\n%s", got)
 	}
 }
+
+// DECISIONS I-1712: on a Mac MEMORY is what macOS gives up for a machine
+// (its VM's footprint), 0 while it rests as a save, not what the guest
+// uses.
+func TestMacMemoryCellIsWhatTheMacHolds(t *testing.T) {
+	p := &Project{State: "running", MemUsedBytes: 3864 << 20, VM: &ProjectVM{VCPUs: 5, MemBytes: 8 << 30, FullVCPUs: 5, FullMemBytes: 8 << 30}}
+	if got := usedCell(p); got != "3.8 GB held" {
+		t.Fatalf("cell %q", got)
+	}
+	p.MemUsedBytes = 0
+	if got := usedCell(p); got != "0 B held" {
+		t.Fatalf("saved cell %q", got)
+	}
+	p.VM = nil
+	p.MemUsedBytes = 1400 << 20
+	if got := usedCell(p); got != "1.4 GB used" {
+		t.Fatalf("x86 cell %q", got)
+	}
+}

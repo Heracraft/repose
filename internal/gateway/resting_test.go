@@ -161,3 +161,27 @@ func TestDialWaitsForASlowWake(t *testing.T) {
 		t.Fatalf("first command after a slow wake: %q %q %d", out, errb, status)
 	}
 }
+
+// DECISIONS I-1712: a machine resting as a save its locked Mac cannot
+// read is not woken, and the user reads what it waits for, at once.
+func TestDialOfAMachineThatWaitsForTheUnlock(t *testing.T) {
+	h := newHarness(t, harnessOpts{})
+	_, key := genKey(t)
+	cert := h.userCert(t, key, []string{h.project.ID}, time.Hour)
+	since := time.Now().Add(-20 * time.Minute)
+	if err := h.api.SetResting(h.project.ID, &since); err != nil {
+		t.Fatal(err)
+	}
+	const sentence = "todo-app is resting and wakes once you unlock mac-mini; its memory is kept"
+	h.api.SetWakeWaits(sentence)
+	c, banner, err := h.dial(h.login, cert)
+	if err != nil {
+		t.Fatalf("dial: %v (banner %q)", err, banner)
+	}
+	defer func() { _ = c.Close() }()
+	t0 := time.Now()
+	_, errb, status := run(t, c, "true")
+	if !strings.Contains(errb, sentence) || status != 255 || time.Since(t0) > 5*time.Second {
+		t.Fatalf("stderr %q status %d after %s", errb, status, time.Since(t0))
+	}
+}

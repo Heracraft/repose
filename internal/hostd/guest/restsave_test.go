@@ -213,6 +213,59 @@ func TestRestPausesFirstAndSavesLater(t *testing.T) {
 	}
 }
 
+// DECISIONS I-1712: at the lock a machine resting as a save is read back
+// only while it fits in the memory commit with room for a new machine
+// left; a restore takes its whole configured size (three machines that
+// held 10.0 GB before their rest held 20.5 GB after the lock's restore,
+// and three new machines were refused, review-mac 12:22Z). A machine at
+// rest as a save holds no commit, and a wake of one the locked Mac
+// cannot read answers at once with what it waits for.
+func TestLockRestoresOnlyWhatFits(t *testing.T) {
+	fh := newParkHarness(t, nil)
+	fh.cfg.CommitMemMiB = 20480
+	fh.m.cfg.CommitMemMiB = 20480
+	fh.m.d.CH = saveCH{parkCH{Fake: fh.chc, h: fh.harness}}
+	fh.m.d.RestBySave = func(context.Context, string) bool { return true }
+	for _, id := range []string{gid1, gid2, gidC3} {
+		fh.create(id)
+	}
+	for _, id := range []string{gid1, gid2, gidC3} {
+		fh.pauseOK(id)
+		if !fh.m.restSaved(fh.guest(id)) {
+			t.Fatalf("%s not saved", id)
+		}
+	}
+	if n := fh.m.committedMiB(""); n != 0 {
+		t.Fatalf("machines resting as saves hold %d MiB of the commit, want 0", n)
+	}
+	if n := fh.m.UnsaveRests(context.Background()); n != 2 {
+		t.Fatalf("restored %d at the lock, want 2 (4096 and one 8192, leaving 8192 for a new machine)", n)
+	}
+	if fh.m.restSaved(fh.guest(gidC3)) {
+		t.Fatal("the smallest machine was left saved")
+	}
+	var left string
+	for _, id := range []string{gid1, gid2} {
+		if fh.m.restSaved(fh.guest(id)) {
+			left = id
+		}
+	}
+	if left == "" {
+		t.Fatal("every machine was restored; no room is left for a new one")
+	}
+	fh.create(gidC4)
+	if got := fh.guest(gidC4).MemMiB; got != 8192 {
+		t.Fatalf("a new machine after the lock got %d MiB, want 8192", got)
+	}
+	// Locked: the one still saved answers its wake at once.
+	fh.m.d.Park.CanRestore = func(context.Context) bool { return false }
+	fh.m.d.SessionState = func(context.Context) string { return SessionLocked }
+	res := fh.mustOK(cmd(&hostdv1.WakeGuest{GuestId: left, Reason: "connect"}))
+	if w := res.GetWake(); w.GetWaitsFor() != WaitsForUnlock || fh.unitActive(left) {
+		t.Fatalf("locked wake: %+v, active %v", w, fh.unitActive(left))
+	}
+}
+
 // A machine resting as a save holds none of the Mac's memory, so its
 // sample carries no memory in use; paused, it repeats its last figure
 // (review-dash P2 #4).

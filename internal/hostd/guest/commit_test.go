@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
@@ -113,5 +114,35 @@ func TestUnsizedHostSendsNoVMSize(t *testing.T) {
 		if g.Vm != nil {
 			t.Fatalf("sample vm %+v", g.Vm)
 		}
+	}
+}
+
+// Three machines booted at once (a host's restart) each read the others
+// as not started and took 8 GiB each, 24 GiB on a 24 GB Mac (lab Mac,
+// 2026-11-27): sizing is one boot at a time, each holding its share
+// until its record counts it (DECISIONS I-1712).
+func TestConcurrentStartsStayWithinTheCommit(t *testing.T) {
+	h := newHarness(t, func(c *Config) { c.CommitMemMiB = 20480 })
+	var cmds []*hostdv1.Command
+	for _, id := range []string{gid1, gid2, gidC3} {
+		req := createReq(id)
+		req.SystemClosure = h.closure
+		cmds = append(cmds, cmd(req)) // cmd numbers commands; not from goroutines
+	}
+	var wg sync.WaitGroup
+	for _, c := range cmds {
+		wg.Add(1)
+		go func(c *hostdv1.Command) {
+			defer wg.Done()
+			h.run(c)
+		}(c)
+	}
+	wg.Wait()
+	var total uint64
+	for _, id := range []string{gid1, gid2, gidC3} {
+		total += h.guest(id).MemMiB
+	}
+	if total > 20480 {
+		t.Fatalf("three machines started together hold %d MiB of a 20480 MiB commit", total)
 	}
 }

@@ -305,6 +305,9 @@ type Latest struct {
 	// ParkedWaitingSince is when the machine was parked, while it waits
 	// for its Mac's user to log in (I-1672); nil when it is not.
 	ParkedWaitingSince *time.Time
+	// MemRss is what the host gives up for the machine: on a Mac its VM's
+	// footprint, 0 while it rests as a save (I-1712).
+	MemRss int64
 	// WaitsFor is what the machine's memory, in a save file on a Mac,
 	// waits for: "unlock" or "login" (I-1682); "" when nothing.
 	WaitsFor string
@@ -314,8 +317,8 @@ type Latest struct {
 func LatestSample(ctx context.Context, q store.Querier, projectID uuid.UUID) (*Latest, bool, error) {
 	var l Latest
 	var agents []byte
-	err := q.QueryRow(ctx, "select ts, state, ssh_sessions, tmux_clients, agents, docker_containers, disk_used, guestd_ok, root_used, root_size, resting, mem_used, parked_waiting_since, coalesce(waits_for, '') from meter_samples where project_id = $1 order by ts desc limit 1", projectID).
-		Scan(&l.TS, &l.State, &l.SSHSessions, &l.TmuxClients, &agents, &l.DockerContainers, &l.DiskUsed, &l.GuestdOK, &l.RootUsed, &l.RootSize, &l.Resting, &l.MemUsed, &l.ParkedWaitingSince, &l.WaitsFor)
+	err := q.QueryRow(ctx, "select ts, state, ssh_sessions, tmux_clients, agents, docker_containers, disk_used, guestd_ok, root_used, root_size, resting, mem_used, parked_waiting_since, coalesce(waits_for, ''), mem_rss from meter_samples where project_id = $1 order by ts desc limit 1", projectID).
+		Scan(&l.TS, &l.State, &l.SSHSessions, &l.TmuxClients, &agents, &l.DockerContainers, &l.DiskUsed, &l.GuestdOK, &l.RootUsed, &l.RootSize, &l.Resting, &l.MemUsed, &l.ParkedWaitingSince, &l.WaitsFor, &l.MemRss)
 	if err != nil {
 		if db.IsNoRows(err) {
 			return nil, false, nil

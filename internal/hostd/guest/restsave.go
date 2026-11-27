@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -121,6 +122,9 @@ func (m *Manager) restResume(ctx context.Context, g *state.Guest, sock string) e
 // still stopped: afterwards it rests by pause, its memory held, and the
 // save is removed. It returns how long the restore took.
 func (m *Manager) restoreRest(ctx context.Context, g *state.Guest, sock string) (time.Duration, error) {
+	if !m.restoreRoom(g, 0) {
+		return 0, ErrNoRoomToRestore
+	}
 	t0 := m.d.Now()
 	dir := m.guestDir(g.GuestID)
 	for _, s := range []string{"ch.sock", "vsock.sock"} {
@@ -182,12 +186,37 @@ func (m *Manager) UnsaveRests(ctx context.Context) int {
 	if err != nil {
 		return 0
 	}
-	var n atomic.Int32
-	var wg sync.WaitGroup
+	// Only while each fits with room for a new machine left (DECISIONS
+	// I-1712): a restore takes the VM's whole configured memory, so three
+	// machines that held 10.0 GB before their rest held 20.5 GB after
+	// the lock's restore, and three new machines were refused. Smallest
+	// first; the others stay saved and wait for the unlock.
+	var saved []*state.Guest
 	for _, g := range gs {
-		if !m.restSaved(g) {
+		if m.restSaved(g) {
+			saved = append(saved, g)
+		}
+	}
+	sort.Slice(saved, func(i, j int) bool { return m.guestMemMiB(saved[i]) < m.guestMemMiB(saved[j]) })
+	// Room for one more machine of the size a start gets here (on a Mac
+	// every class is the host's one size, ownedClass).
+	var spare uint64
+	if len(saved) > 0 {
+		spare = m.classOf(saved[0].Class).MemMiB
+	}
+	var take []*state.Guest
+	var planned uint64
+	for _, g := range saved {
+		if m.cfg.CommitMemMiB > 0 && m.committedMiB("")+planned+m.guestMemMiB(g)+spare > m.cfg.CommitMemMiB {
+			m.log(g).Info("rest save kept at the lock: no room to restore it and start another machine", "event", "guest_resting")
 			continue
 		}
+		planned += m.guestMemMiB(g)
+		take = append(take, g)
+	}
+	var n atomic.Int32
+	var wg sync.WaitGroup
+	for _, g := range take {
 		wg.Add(1)
 		go func(id string) {
 			defer wg.Done()

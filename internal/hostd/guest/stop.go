@@ -264,6 +264,11 @@ func (m *Manager) destroy(ctx context.Context, c *hostdv1.DestroyGuest) *Error {
 	m.mu.Unlock()
 	m.forgetBurst(g.GuestID)
 	m.refreshGuestGauge()
+	if f := m.d.OnDestroyed; f != nil {
+		go f()
+	} else if p := m.onDestroyed.Load(); p != nil {
+		go (*p)()
+	}
 	return nil
 }
 

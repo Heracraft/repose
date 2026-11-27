@@ -582,6 +582,13 @@ func (s *Service) wake(ctx context.Context, projectID uuid.UUID, reason string) 
 	if wr == nil {
 		wr = &hostdv1.WakeResult{} // a host that answered ok without the payload
 	}
+	if wr.GetWaitsFor() != "" {
+		// Still resting, as a save its Mac cannot read now (DECISIONS
+		// I-1712): nothing woke, so the marker stays and the caller says
+		// what it waits for.
+		s.log.Info("wake held", "event", "guest_wake", "project_id", projectID.String(), "reason", reason, "waits_for", wr.GetWaitsFor())
+		return wr, nil
+	}
 	s.clear(ctx, projectID)
 	if wr.WasResting {
 		s.log.Info("machine woken", "event", "guest_wake", "project_id", projectID.String(), "reason", reason,

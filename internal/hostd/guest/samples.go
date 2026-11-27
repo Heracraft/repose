@@ -383,6 +383,14 @@ func (m *Manager) CollectSamples(ctx context.Context) *hostdv1.Samples {
 					m.d.Metrics.BurstCPUSecondsTotal.WithLabelValues(g.Class).Add(float64(bd) / 1e9)
 				}
 			}
+			if hb := m.d.HeldBytes; hb != nil {
+				gsm.MemRssBytes = 0
+				if !m.restSaved(g) {
+					if b, ok := hb(ctx, g.GuestID); ok {
+						gsm.MemRssBytes = b
+					}
+				}
+			}
 			gsm.Vm = m.vmSize(g)
 			gsm.WaitsFor = m.waitsFor(ctx, g)
 			if since := m.heldSince(g.GuestID); since > 0 {

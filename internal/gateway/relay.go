@@ -319,6 +319,12 @@ func dialFailure(err error) (reason, msg string) {
 	}
 	switch de.reason {
 	case "wake":
+		// A machine resting as a save its Mac cannot read now: the api
+		// says what it waits for, in its own words (DECISIONS I-1712).
+		var ae *APIError
+		if errors.As(de.err, &ae) && ae.Code == "conflict" && ae.Message != "" {
+			return "wake_waits", ae.Message
+		}
 		// A failure, not a machine that is not ready: the processes are
 		// all still there and the machine did not resume (I-818).
 		return "wake_failed", MsgWakeFailed

@@ -588,6 +588,23 @@ func (m *Manager) keptClone(ctx context.Context, blobPath string) string {
 	return name
 }
 
+// SetOnDestroyed sets Deps.OnDestroyed once the manager exists (the
+// platform's loop, which has the snapshot store's path).
+func (m *Manager) SetOnDestroyed(f func()) { m.onDestroyed.Store(&f) }
+
+// LiveProjects is the project ids that have a guest on this host.
+func (m *Manager) LiveProjects() map[string]bool {
+	out := map[string]bool{}
+	gs, err := m.d.State.ListGuests()
+	if err != nil {
+		return nil
+	}
+	for _, g := range gs {
+		out[g.ProjectID] = true
+	}
+	return out
+}
+
 // SweepKeptClones removes every kept clone whose snapshot is not among
 // present, the store paths the store holds (expired or removed snapshots
 // are not), so a clone never outlives its snapshot. It is given the

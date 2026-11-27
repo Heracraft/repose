@@ -2477,6 +2477,9 @@ func (f *Fake) internalWake(w http.ResponseWriter, r *http.Request) *apiError {
 	if f.wakeFails {
 		return errf("internal", "%s did not wake", p.Slug)
 	}
+	if f.wakeWaits != "" && p.Resting != nil {
+		return errf("conflict", "%s", f.wakeWaits)
+	}
 	was := p.State == "running" && p.Resting != nil
 	p.Resting = nil
 	writeJSON(w, http.StatusOK, map[string]any{"was_resting": was, "wake_ms": 40})
