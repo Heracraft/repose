@@ -263,7 +263,14 @@ func TestUDPIsForwarded(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = u.Close() }()
-	_ = u.SetDeadline(time.Now().Add(3 * time.Second))
+	// Three round trips. Under the race detector on a 3-core macOS CI
+	// runner the first one took more than 3 s (3 of 3 runs, d2-int
+	// 2026-11-27) and passed 3 of 3 there without it, and on the lab Mac.
+	wait := 3 * time.Second
+	if raceOn {
+		wait = 30 * time.Second
+	}
+	_ = u.SetDeadline(time.Now().Add(wait))
 	for i := 0; i < 3; i++ {
 		if _, err := u.Write([]byte("query")); err != nil {
 			t.Fatal(err)

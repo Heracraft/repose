@@ -44,11 +44,13 @@ jobs:
       - run: go build ./cmd/hostd ./cmd/repose
       - run: go vet ./internal/hostd/... ./cmd/hostd ./internal/parkkey/...
       - run: go test -race -p 2 -timeout 30m ./internal/hostd/... ./cmd/hostd ./internal/parkkey/...
+      # The CLI's tests drive a stub machine that runs tmux on this host.
+      - run: brew install tmux
       # The CLI as a Mac user runs it (host add, host restart, the Keychain).
-      - run: go test -p 2 -timeout 40m ./internal/cli/... ./cmd/repose
+      - run: go test -p 2 -timeout 25m ./internal/cli/... ./cmd/repose
         if: ${{ !cancelled() }}
-      # TEMP d2-int: TestUDPIsForwarded red on this runner, green on the lab Mac.
-      - run: go test -count=3 -v -run 'TestUDPIsForwarded' ./internal/hostd/unet
+      # TEMP d2-int: TestUDPIsForwarded under -race, timed.
+      - run: go test -race -count=3 -v -run 'TestUDPIsForwarded' ./internal/hostd/unet
         if: ${{ !cancelled() }}
       # An exact version, as ci.yml's lint (DECISIONS I-429).
       - run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
