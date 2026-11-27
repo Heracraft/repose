@@ -61,6 +61,9 @@ func StartCmd(ctx context.Context, e *Env, projectArg string) error {
 		_, _ = fmt.Fprintf(e.Out, "%s is already running.\n", project.Slug)
 		return nil
 	}
+	// The time is the command's own: with --json there is no progress
+	// line, so its clock read 0.0s (review-cli, 2026-11-27).
+	started := time.Now()
 	pr := e.newProgress()
 	defer pr.Fail()
 	// requireProject read the project a moment ago: acted on without a
@@ -69,7 +72,7 @@ func StartCmd(ctx context.Context, e *Env, projectArg string) error {
 		return err
 	}
 	pr.Fail()
-	_, _ = fmt.Fprintf(e.Out, "%s is running%s, ready in %s.\n", project.Slug, classNote(project), fmtElapsed(pr.Total()))
+	_, _ = fmt.Fprintf(e.Out, "%s is running%s, ready in %s.\n", project.Slug, classNote(project), fmtElapsed(time.Since(started)))
 	if l := sizedDownLine(project); l != "" {
 		// Started smaller than it would be on its own (I-1680).
 		_, _ = fmt.Fprintf(e.Out, "It %s\n", l)

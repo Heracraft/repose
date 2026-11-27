@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1169 entries.
+1170 entries.
 
 ## Scope
 
@@ -711,7 +711,7 @@ pointer, not a summary.
 - **I-643** One unit activates the guest pool after boot; the initrd has no LVM (host-pool, 2026-10-11) — L19003
 - **I-644** `volume_unavailable` and the pool's health reach hostd, the api and the user (host-pool, 2026-10-11) — L19065
 - **I-649** Host hardening every Azure VM gets: `mana_ib`, NVMe timeout, ethtool, a 10 s boot menu (host-pool, 2026-10-11) — L19109
-- **I-650** A host shutdown powers its guests off cleanly, and hostd records nothing as failed while the host goes down (host-pool, 2026-10-11) — L19125
+- **I-650** A host shutdown powers its guests off cleanly, and hostd records nothing as failed while the host goes down (host-pool, 2026-10-11) — amended by I-1710; L19125
 - **I-654** The root password is for the serial console only, from a file placed by hand (host-pool, 2026-10-11) — L19173
 - **I-645** Running machines start again after a host reboot (host-resume, 2026-10-11) — L19192
 - **I-652** Guests are frozen across a host restart and restored where they were (guest-freeze, 2026-10-11) — amended by I-685; amended by I-686; amended by I-796; L19296
@@ -1201,3 +1201,4 @@ pointer, not a summary.
 - **I-1688** hostd's darwin paths are tested against vzfake, a stand-in for the Mac's launcher that answers Cloud Hypervisor's API with repose-vm's bodies and refuses what Virtualization.framework refuses, through hostd's real client; a restore VZ refuses because the session cannot restore at that moment holds the machine for the unlock instead of throwing its image away; and a macOS CI job runs the darwin Go tests and builds the launcher (d2-int, design 2 build, 2026-11-27) — L39796
 - **I-1692** The api reads a Mac without the appliance as what it is, not as D1's nested Mac: no `running_limit` for it, so the dashboard's New project form never holds Create at D1's count (d2-surface, design 2 build, 2026-11-27) — L39806
 - **I-1694** Design 2 is built for customers and replaces design 1 on the Mac, with no migration; idle machines on a Mac give their memory back by rest by save (conductor, design 2 build, 2026-11-27) — L39815
+- **I-1710** A stop or destroy cut off by a plain hostd restart is neither stored nor sent, as one cut off by a host shutdown is: the api's resend after Hello runs it again on the next hostd, which finishes it; a boot cut off that way is still answered (d2-install, 2026-11-27) — L39823

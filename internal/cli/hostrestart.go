@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/heracraft/repose/internal/hostd/control"
+	"github.com/heracraft/repose/internal/hostd/guest"
 )
 
 // hostdControlSock is where hostd on a Mac listens (design 2, DECISIONS
@@ -83,6 +84,15 @@ func HostRestartCmd(ctx context.Context, e *Env, force bool) error {
 			return exitf(ExitGeneric, "%d machines could not be parked and would start fresh (%s). Nothing restarted; the parked machines run again once this Mac's screen is unlocked. --force restarts anyway.", len(lost), strings.Join(lost, ", "))
 		}
 		return exitf(ExitGeneric, "%d machines could not be parked and would start fresh (%s). Nothing restarted; --force restarts anyway.", len(lost), strings.Join(lost, ", "))
+	}
+	if e.JSON {
+		// Every machine's park, before the Mac goes down (review-cli).
+		if res == nil {
+			res = []guest.ParkResult{}
+		}
+		if err := writeJSONOut(e.Out, res); err != nil {
+			return err
+		}
 	}
 	_, _ = fmt.Fprintf(e.ErrOut, "Parked %d machines in %.1fs; restarting this Mac.\n", parked, time.Since(t0).Seconds())
 	if err := macRestart(ctx); err != nil {

@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -92,5 +93,142 @@ func TestHostRmWaitsForADestroyUnderWay(t *testing.T) {
 		if h.Name == "mac-mini" && h.State != "retired" {
 			t.Errorf("mac-mini is still %s", h.State)
 		}
+	}
+}
+
+// review-cli 2026-11-27 P3: `repose restore` of a destroyed Mac machine
+// ended "(large)", as `snapshots restore --as` did (#240).
+func TestRestoreLineNamesNoSizeOnOwnHardware(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	fake.AddOwnedHost("mac-mini")
+	e := newLifecycleEnv(t, fake)
+	var out strings.Builder
+	e.Out = &out
+	ctx := context.Background()
+	p, err := e.Client.CreateProject(ctx, CreateProjectRequest{Name: "macbox", Class: "large"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := DestroyCmd(ctx, e, p.ID, true, false, nil); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if err := RestoreCmd(ctx, e, "macbox", "", "", nil); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.String(), "(large)") || !strings.HasPrefix(out.String(), "Restored macbox") {
+		t.Errorf("restore on own hardware said %q", out.String())
+	}
+}
+
+// review-cli 2026-11-27 P3: `repose start --json` said "ready in 0.0s"
+// after 4-5 s: with --json there is no progress line, and its clock was
+// the one the time came from.
+func TestStartJSONSaysTheRealTime(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{StartDelay: 400 * time.Millisecond})
+	defer fake.Close()
+	e := newLifecycleEnv(t, fake)
+	var out strings.Builder
+	e.Out = &out
+	ctx := context.Background()
+	p, err := e.Client.CreateProject(ctx, CreateProjectRequest{Name: "timed", Class: "small"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Client.StopProject(ctx, p.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	e.JSON = true
+	if err := StartCmd(ctx, e, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.String(), "ready in 0.0s") || !strings.Contains(out.String(), "ready in") {
+		t.Errorf("start --json said %q", out.String())
+	}
+}
+
+// review-cli 2026-11-27 R3: a restore said "it is running" up to 8 s
+// before the machine answered. It now says so once the machine answers,
+// and says it has not when it does not within the wait.
+func TestRestoreSaysRunningOnceItAnswers(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	e := newLifecycleEnv(t, fake)
+	var out strings.Builder
+	e.Out = &out
+	ctx := context.Background()
+	p, err := e.Client.CreateProject(ctx, CreateProjectRequest{Name: "slow", Class: "small"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := DestroyCmd(ctx, e, p.ID, true, false, nil); err != nil {
+		t.Fatal(err)
+	}
+	probes := 0
+	e.readGuest = func(context.Context, string, []string, time.Duration) guestStatus {
+		probes++
+		if probes < 3 {
+			return guestStatus{probeErr: "ssh_timeout"}
+		}
+		return guestStatus{mux: "tmux"}
+	}
+	out.Reset()
+	if err := RestoreCmd(ctx, e, "slow", "", "", nil); err != nil {
+		t.Fatal(err)
+	}
+	if probes < 3 || !strings.Contains(out.String(), "; it is running") || strings.Contains(out.String(), "not answered") {
+		t.Errorf("after %d probes, restore said %q", probes, out.String())
+	}
+	restoreAnswerWait = 200 * time.Millisecond
+	defer func() { restoreAnswerWait = 30 * time.Second }()
+	e.readGuest = func(context.Context, string, []string, time.Duration) guestStatus {
+		return guestStatus{probeErr: "ssh_timeout"}
+	}
+	if err := DestroyCmd(ctx, e, "slow", true, false, nil); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if err := RestoreCmd(ctx, e, "slow", "", "", nil); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "it is running and has not answered yet") {
+		t.Errorf("a machine that never answers: %q", out.String())
+	}
+}
+
+// review-cli 2026-11-27 P3: a refusal capitalised the machine's name,
+// "E2e-rc-f2 has no usable volume".
+func TestRefusalKeepsAMachineNameAsWritten(t *testing.T) {
+	got := apiRefusal(&APIError{Code: "conflict", Message: "e2e-rc-f2 has no usable volume because the restore into it did not finish"})
+	if !strings.HasPrefix(got, "e2e-rc-f2 has no usable volume") {
+		t.Errorf("refusal %q", got)
+	}
+	if got := apiRefusal(&APIError{Code: "invalid", Message: "the name is too long"}); !strings.HasPrefix(got, "The name") {
+		t.Errorf("a sentence lost its capital: %q", got)
+	}
+}
+
+// review-cli 2026-11-27 P3: `snapshots ls` showed TAKEN to the minute,
+// and seven snapshots of one minute read alike.
+func TestSnapshotsListTellsSnapshotsOfOneMinuteApart(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	e := newLifecycleEnv(t, fake)
+	var out strings.Builder
+	e.Out = &out
+	ctx := context.Background()
+	p, err := e.Client.CreateProject(ctx, CreateProjectRequest{Name: "snappy", Class: "small"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Client.CreateSnapshot(ctx, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := SnapshotsListCmd(ctx, e, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	if !regexp.MustCompile(`\d{4}-\d\d-\d\d \d\d:\d\d:\d\d`).MatchString(out.String()) {
+		t.Errorf("TAKEN has no seconds:\n%s", out.String())
 	}
 }

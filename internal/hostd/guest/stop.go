@@ -174,6 +174,13 @@ func (m *Manager) stopGuest(ctx context.Context, g *state.Guest, timeoutS uint32
 				escalated = "kill"
 				m.log(g).Warn("killing hypervisor", "event", "guest_stop")
 				if err := m.d.Systemd.Kill(ctx, unit); err != nil {
+					if ctx.Err() != nil {
+						// hostd itself is going down (a restart, an
+						// update): the kill never ran. Not a failure of
+						// the stop; the api resends it to the next hostd
+						// (review-cli R2).
+						return interrupted("stop")
+					}
 					return errf(CodeInternal, "systemctl kill: %v", err)
 				}
 			}

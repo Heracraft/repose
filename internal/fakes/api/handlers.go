@@ -851,6 +851,7 @@ func (f *Fake) finishDestroy(p *project) {
 		f.snapshot(p, "stop")
 	}
 	p.goneUnsized = !f.out(p).Sized
+	p.goneHostID = p.HostID
 	p.State = "destroyed"
 	p.HostID = ""
 	p.destroyed = true
@@ -1899,6 +1900,18 @@ func (f *Fake) restoreAsNew(u *userRec, p *project, snap *Snapshot, name string)
 	}
 	f.copyMultiplexer(p, np)
 	copyHeld(p, np)
+	// A snapshot is readable only on the host it was taken on, so a copy
+	// of one taken on a host of the account's own comes back there, as
+	// the api places it (review-cli R1, d2-core's TestRestoreAsNewGoesWhereTheSnapshotIs).
+	src := p.HostID
+	if src == "" {
+		src = p.goneHostID
+	}
+	for _, h := range f.ownedHosts {
+		if h.ID == src {
+			np.HostID = src
+		}
+	}
 	// The volume's layout is the runtime's, so a copy keeps it, as the
 	// api's insertRestored does (I-1462).
 	np.GuestRuntime = p.GuestRuntime

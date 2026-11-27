@@ -134,3 +134,43 @@ func TestHostRestartNamesTheMachine(t *testing.T) {
 		t.Fatalf("answer %v", err)
 	}
 }
+
+// review-cli 2026-11-27: `host restart` had no --json, and off a Mac it
+// asked for a confirmation before it said it runs only on a Mac.
+func TestHostRestartJSONAndCheckOrder(t *testing.T) {
+	sock, _ := fakeHostd(t, []map[string]any{{"guest_id": "a", "project": "api", "ok": true, "outcome": "parked"}}, nil)
+	restartWith(t, sock)
+	var out, errOut bytes.Buffer
+	if err := HostRestartCmd(context.Background(), &Env{Out: &out, ErrOut: &errOut, JSON: true}, false); err != nil {
+		t.Fatal(err)
+	}
+	var res []map[string]any
+	if err := json.Unmarshal(out.Bytes(), &res); err != nil || len(res) != 1 || res[0]["project"] != "api" || res[0]["outcome"] != "parked" {
+		t.Fatalf("--json %q: %v", out.String(), err)
+	}
+	if !strings.Contains(errOut.String(), "Parked 1 machines") {
+		t.Errorf("stderr %q", errOut.String())
+	}
+
+	onMac = func() bool { return false }
+	cmd := newHostCmd(func() (*Env, error) { return &Env{Out: &out, ErrOut: &errOut}, nil }, &globalFlags{})
+	cmd.SetArgs([]string{"restart"})
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "runs on the Mac it restarts") {
+		t.Errorf("host restart off a Mac, no -y: %v", err)
+	}
+}
+
+func TestHostRmRefusesABadNameBeforeAsking(t *testing.T) {
+	var out bytes.Buffer
+	cmd := newHostCmd(func() (*Env, error) { return &Env{Out: &out, ErrOut: &out}, nil }, &globalFlags{})
+	cmd.SetArgs([]string{"rm", "Bad Name"})
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	err := cmd.Execute()
+	if err == nil || strings.Contains(err.Error(), "confirmation") || !strings.Contains(err.Error(), "NAME must match") {
+		t.Errorf("host rm of a bad name: %v", err)
+	}
+}

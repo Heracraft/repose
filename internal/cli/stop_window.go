@@ -17,7 +17,7 @@ import (
 // without an attach, and nothing removed a worktree. The window's
 // worktree (a `<checkout>-worktree-N` folder no other window works in)
 // goes with it only when it has no uncommitted file and this laptop has
-// its branch tip, after the same `git fetch repose` a stop makes first.
+// its branch tip (nothing is fetched first, as for a stop).
 // Otherwise it stays, and the line says why.
 
 // windowWorktree is what the machine says about the window's folder

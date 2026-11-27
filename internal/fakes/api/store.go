@@ -436,6 +436,9 @@ type project struct {
 	// goneUnsized: destroyed off a host of the account's own that
 	// shares, where it had no size (I-1654).
 	goneUnsized bool
+	// goneHostID is the host it ran on before its destroy: its snapshots
+	// are on that host, and a restore of one comes back there (I-1542).
+	goneHostID string
 	// hostOwner is the account that owns the project's host, "" for a
 	// host repose runs (DECISIONS I-1368).
 	hostOwner   string
