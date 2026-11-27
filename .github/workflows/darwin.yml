@@ -46,12 +46,20 @@ jobs:
       - run: go vet ./internal/hostd/... ./cmd/hostd ./internal/parkkey/...
       - run: go test -race -p 2 -timeout 30m ./internal/hostd/... ./cmd/hostd ./internal/parkkey/...
         if: ${{ !cancelled() }}
-      # The CLI's tests drive a stub machine that runs tmux on this host.
-      - run: brew install tmux
+      # The CLI as a Mac user runs it: its laptop side (host add, rm and
+      # restart on a Mac, the installer and updater, login and the Keychain,
+      # config, ssh certificates, versions, the docs guard). The rest of
+      # internal/cli's tests drive a stub machine that runs the guest's half
+      # of each command on this host, which here is macOS (BSD touch and
+      # stat, no ss): no customer's guest is, and ci.yml runs them on Linux
+      # (48 of them fail here for that alone, run 45948757737).
+      - name: go test internal/cli, the laptop side
         if: ${{ !cancelled() }}
-      # The CLI as a Mac user runs it (host add, host restart, the Keychain).
-      - run: go test -p 2 -timeout 25m ./internal/cli/... ./cmd/repose
-        if: ${{ !cancelled() }}
+        run: |
+          files="appliance cert certrefusal config configerofs configmenu devx_errors docs exitcode_login host_add_json hostrestart hosts login machost repoconfig version versionupdate"
+          tests=$(for f in $files; do grep -hoE '^func Test[A-Za-z0-9_]+' "internal/cli/${f}_test.go"; done | awk '{print $2}' | paste -sd'|' -)
+          echo "$(echo "$tests" | tr '|' '\n' | wc -l) tests"
+          go test -p 2 -timeout 20m -run "^($tests)\$" ./internal/cli ./cmd/repose
       # An exact version, as ci.yml's lint (DECISIONS I-429).
       - run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
         if: ${{ !cancelled() }}
