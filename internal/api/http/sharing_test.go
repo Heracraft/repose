@@ -187,3 +187,25 @@ func TestOwnedHostSaysItsRoom(t *testing.T) {
 		t.Fatalf("hosts: %s, want free_mem_bytes 3 GiB and running_limit 3", raw)
 	}
 }
+
+// A Mac without the appliance (its hostd names `restart`, design 2) sizes
+// each start to what the running machines leave and never refuses one for
+// cores, so GET /hosts gives no running_limit and the New project form
+// does not hold Create at D1's count (I-1692); free_mem_bytes stays.
+func TestDesignTwoMacHasNoRunningLimit(t *testing.T) {
+	e := newEnv(t)
+	tok := e.signIn(t, "sub-room2", "room2")
+	uid := e.exempt(t, "sub-room2")
+	if _, err := e.h.Pool.Exec(e.h.Ctx, "update hosts set owner_account_id = $1, arch = 'aarch64', vcpus = 10 where id = $2", uid, e.h.HostID); err != nil {
+		t.Fatal(err)
+	}
+	shareHost(t, e)
+	setOwnFree(t, e, 3<<30)
+	if _, err := e.h.Pool.Exec(e.h.Ctx, "update hosts set features = array_append(features, 'restart') where id = $1", e.h.HostID); err != nil {
+		t.Fatal(err)
+	}
+	raw := string(e.do(t, tok, "GET", "/hosts", nil).raw)
+	if !strings.Contains(raw, `"free_mem_bytes":3221225472`) || strings.Contains(raw, `running_limit`) {
+		t.Fatalf("hosts: %s, want free_mem_bytes and no running_limit", raw)
+	}
+}

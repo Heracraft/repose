@@ -125,7 +125,9 @@ memory its hostd last reported free, against which a machine starts at
 1 GiB; `running_limit` is, on an `aarch64` host (the Mac appliance,
 which runs its guests nested), the machines its cores run at once,
 `max((vcpus - 2) / 2, 1)` (I-1640), and absent on any other host, where
-the api cannot tell. The New project form shows both before Create.
+the api cannot tell, and on a Mac without the appliance (its hostd names
+`restart`), which sizes each start to what the running machines leave and
+refuses none for cores (I-1692). The New project form shows both before Create.
 
 `install` is the one line to run on the machine, with its argument
 already in it, the argument on its own, and the address of the page that
