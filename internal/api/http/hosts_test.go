@@ -2,7 +2,6 @@ package httpapi_test
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -213,7 +212,7 @@ func TestCreateWithSeveralOwnHosts(t *testing.T) {
 		t.Fatalf("both hosts down: %d %s, want 503 no_own_host naming e2e-x86-1 first", r.status, r.raw)
 	}
 	msg, _ := r.body["error"].(map[string]any)["message"].(string)
-	if want := "none of your hosts can take a small machine (4 GB): e2e-x86-1 has not registered yet; e2e-x86-2 has not answered for 14m"; msg != want {
+	if want := "none of your hosts has room for a small machine (4 GB): e2e-x86-1 has not joined your account yet; e2e-x86-2 has not answered for 14m"; msg != want {
 		t.Fatalf("message %q, want %q", msg, want)
 	}
 
@@ -323,7 +322,7 @@ func TestCreateOnANamedHost(t *testing.T) {
 	}
 	r = e.do(t, tok, "POST", "/projects", map[string]any{"name": "full", "class": "small", "host": "e2e-x86-a"})
 	msg, _ = r.body["error"].(map[string]any)["message"].(string)
-	if r.status != 503 || detailOf(t, r)["host"] != "e2e-x86-a" || !strings.HasPrefix(msg, "your host e2e-x86-a has 0 GB of memory free for machines, and a small machine needs 4 GB") {
+	if r.status != 503 || detailOf(t, r)["host"] != "e2e-x86-a" || !strings.HasPrefix(msg, "your host e2e-x86-a is full") {
 		t.Fatalf("full named host: %d %s, want 503 naming e2e-x86-a", r.status, r.raw)
 	}
 
@@ -638,7 +637,7 @@ func TestCreateRefusedBeforeTheRowIsWritten(t *testing.T) {
 		if r.status != 503 || d["reason"] != "no_own_host" || d["host"] != "mac-mini" || d["host_state"] != "registering" || d["hosted_allowed"] != true {
 			t.Fatalf("attempt %d while the host waits: %d %s, want 503 capacity no_own_host for mac-mini", attempt, r.status, r.raw)
 		}
-		if msg, _ := r.body["error"].(map[string]any)["message"].(string); !strings.Contains(msg, "your host mac-mini has not registered yet") {
+		if msg, _ := r.body["error"].(map[string]any)["message"].(string); !strings.Contains(msg, "your host mac-mini has not joined your account yet") {
 			t.Fatalf("attempt %d: message %q does not name the host and its state", attempt, msg)
 		}
 		if n := rows(); n != 0 {
@@ -932,14 +931,13 @@ func TestCreateOnAFullOwnHostNamesTheFigure(t *testing.T) {
 	if d := detailOf(t, r); r.status != 503 || d["reason"] != "no_own_host" || d["host"] != name || d["host_state"] != "ready" {
 		t.Fatalf("a large on a full own host: %d %s, want 503 no_own_host naming %s", r.status, r.raw, name)
 	}
-	gb := strings.TrimSuffix(strconv.FormatFloat(float64(free)/(1<<30), 'f', 1, 64), ".0")
-	want := "your host " + name + " has " + gb + " GB of memory free for machines, and a large machine needs 8 GB. A machine holds its memory while it runs, so stopping one frees room for it"
+	_ = free
+	want := "your host " + name + " is full. Stop a machine there"
 	if msg, _ := r.body["error"].(map[string]any)["message"].(string); msg != want {
 		t.Fatalf("message %q, want %q", msg, want)
 	}
-	// "an xl", not "a xl" (x86 pass 2 N6, I-1600).
+	// An xl reads the same: a full host is full whatever the size (I-1724).
 	r = e.do(t, tok, "POST", "/projects", map[string]any{"name": "todo-xl", "class": "xl"})
-	want = "your host " + name + " has " + gb + " GB of memory free for machines, and an xl machine needs 16 GB."
 	if msg, _ := r.body["error"].(map[string]any)["message"].(string); r.status != 503 || !strings.HasPrefix(msg, want) {
 		t.Fatalf("an xl on a full own host: %d %q, want 503 starting %q", r.status, msg, want)
 	}
@@ -984,8 +982,7 @@ func TestStartRefusedOnAFullOwnHostNamesTheFigure(t *testing.T) {
 	// The free figure is the fake hostd's last heartbeat, which this
 	// test does not pin; the host and the need are the point.
 	msg, _ := op.Error["message"].(string)
-	if op.State != "error" || !strings.HasPrefix(msg, "your host "+name+" has ") ||
-		!strings.Contains(msg, " GB of memory free for machines, and a small machine needs 4.5 GB there. A machine holds its memory while it runs") {
+	if op.State != "error" || msg != "your host "+name+" is full. Stop a machine there" {
 		t.Fatalf("start op %s %v, want the host's name and figures", op.State, op.Error)
 	}
 }

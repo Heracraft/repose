@@ -658,16 +658,16 @@ func (f *Fake) placeNew(u *userRec, class, placement string, pin *ownedHostRec) 
 	if len(own) == 0 {
 		return "", nil
 	}
-	msg := "your host " + own[0].Name + " " + f.ownHostWhy(own[0], class, false)
+	msg := ownLabel(own[0].Name, own[0].Arch) + " " + f.ownHostWhy(own[0], class, false)
 	if len(own) > 1 {
 		why := make([]string, len(own))
 		for i, h := range own {
 			why[i] = h.Name + " " + f.ownHostWhy(h, class, true)
 		}
-		msg = "none of your hosts can start a machine: " + strings.Join(why, "; ")
+		msg = "none of your hosts has room: " + strings.Join(why, "; ")
 		for _, h := range own {
 			if h.oldHostd {
-				msg = "none of your hosts can take " + aClass(class) + " machine (" + gbText(int64(classGB[class])<<30) + "): " + strings.Join(why, "; ")
+				msg = "none of your hosts has room for " + aClass(class) + " machine (" + gbText(int64(classGB[class])<<30) + "): " + strings.Join(why, "; ")
 				break
 			}
 		}
@@ -696,12 +696,21 @@ func (f *Fake) hostPin(u *userRec, host *string, placement string) (*ownedHostRe
 	return nil, invalid("you have no host called %s", want).withDetail(map[string]any{"reason": "host", "host": want})
 }
 
+// ownLabel is the api's ops.ownLabel: "your Mac NAME" for an arm64
+// host of the user's own, else "your host NAME" (I-1724).
+func ownLabel(name, arch string) string {
+	if arch == "aarch64" || arch == "arm64" {
+		return "your Mac " + name
+	}
+	return "your host " + name
+}
+
 // ownHostWhy is the api's ops.Engine.ownHostWhy: why one host took no
-// placement, as the words after its name.
+// placement, as the words after its name (I-1724's words).
 func (f *Fake) ownHostWhy(h *ownedHostRec, class string, short bool) string {
 	switch h.State {
 	case "registering":
-		return "has not registered yet"
+		return "has not joined your account yet"
 	case "unreachable":
 		quiet := "90s"
 		if h.LastHeartbeatAt != nil {
@@ -709,33 +718,14 @@ func (f *Fake) ownHostWhy(h *ownedHostRec, class string, short bool) string {
 		}
 		return "has not answered for " + quiet
 	case "draining":
-		if short {
-			return "is being removed"
-		}
-		return "is being removed, so nothing can be placed on it"
+		return "is being removed"
 	}
-	// The api names the figure that refused (I-1586); the fake has no
-	// disk, so memory is the only one it can. Since I-1630 that is what
-	// the host reports free against a gigabyte, with no class.
-	free, need := f.room(h, class)
-	if free >= need {
-		if short {
-			return "has no room"
-		}
-		if h.oldHostd {
-			return "has no room for " + aClass(class) + " machine"
-		}
-		return "has no room for a machine"
-	}
+	// The fake has no disk, so memory is the only figure it can refuse
+	// by; either way the host is full.
 	if short {
-		return "has " + gbText(free) + " free"
+		return "is full"
 	}
-	if h.oldHostd {
-		return "has " + gbText(free) + " of memory free for machines, and " + aClass(class) + " machine needs " + gbText(need) +
-			". A machine holds its memory while it runs, so stopping one frees room for it"
-	}
-	return "has " + gbText(max(free, 0)) + " of memory free, and a machine starts there when it has at least " + gbText(ownedStartFreeBytes) +
-		" free. Stopping a machine frees the memory it uses"
+	return "is full. Stop a machine there"
 }
 
 // ownedStartFreeBytes is scheduler.OwnedStartFreeBytes, the free memory

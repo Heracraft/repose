@@ -583,7 +583,7 @@ test('a full host of your own names itself and the memory it has', async ({ page
 		await form(page).getByLabel('Name').fill(name);
 		// The form says so before Create, and Create waits (I-1654, I-1658).
 		await expect(form(page).getByTestId('nm-host-full')).toContainText(
-			'mac-full has 819 MB of memory free, and a machine starts there at 1 GB.'
+			'mac-full is full.'
 		);
 		await form(page).getByRole('button', { name: 'Create' }).click({ force: true });
 		expect(await fromApi(name)).toBeUndefined();
@@ -645,7 +645,7 @@ test('a machine on your own host shows what it uses, not a size', async ({ page 
 // sentence, the list has no row for it, and the name works again.
 test('a create the host refuses says why and leaves no row', async ({ page }) => {
 	const why =
-		'the host has as many machines running as its cores allow; stopping a running machine frees room';
+		'its host is running as many machines as it can. Stop a machine there';
 	await openForm(page);
 	const name = unique('refused');
 	await form(page).getByLabel('Name').fill(name);
@@ -687,7 +687,7 @@ test('New project on a full Mac says so before Create, with both ways out', asyn
 		await expect(form(page).getByTestId('nm-summary')).toContainText('3 of 3 running');
 		const full = form(page).getByTestId('nm-host-full');
 		await expect(full).toContainText(
-			"mac-mini runs as many machines at once as its cores allow. Stop one of its machines, or make this one on repose's servers."
+			"mac-mini is running as many machines as it can. Stop a machine there, or make this one on repose's servers."
 		);
 		await expect(full.getByRole('button', { name: /^Stop alpha-/ })).toBeVisible();
 		// Create waits for room: Enter and the button make nothing, so no

@@ -76,12 +76,12 @@ func TestAPIErrorSentences(t *testing.T) {
 		want string
 		not  string
 	}{
-		{"proxy 502", &APIError{Code: "internal", Message: "<html>Bad Gateway</html>", Status: 502, Raw: true, RequestID: "r1"}, ExitGeneric, "The repose api answered 502, request r1. Try again in a minute.", "html"},
-		{"api 500", &APIError{Code: "internal", Message: "internal error", Status: 500, RequestID: "r2"}, ExitGeneric, "The repose api failed (internal, request r2). Try again in a minute.", ""},
-		{"capacity", &APIError{Code: "capacity", Status: 503}, ExitCapacity, "repose has no room for this machine. A machine holds its memory while it runs, so stopping one frees room for it.", "alerted"},
+		{"proxy 502", &APIError{Code: "internal", Message: "<html>Bad Gateway</html>", Status: 502, Raw: true, RequestID: "r1"}, ExitGeneric, "Repose had a problem on its side. Try again in a minute. If it keeps happening, give support this: r1.", "html"},
+		{"api 500", &APIError{Code: "internal", Message: "internal error", Status: 500, RequestID: "r2"}, ExitGeneric, "Repose had a problem on its side. Try again in a minute. If it keeps happening, give support this: r2.", ""},
+		{"capacity", &APIError{Code: "capacity", Status: 503}, ExitCapacity, "Repose has no room for this machine right now.\nStop one of your running machines to make room.", "alerted"},
 		{"rate limit", &APIError{Code: "rate_limited", Status: 429}, ExitGeneric, "Too many requests from this account in the last minute. Try again in a minute.", "repose status"},
 		{"project cap", &APIError{Code: "invalid", Status: 400, Detail: map[string]any{"reason": "project_limit", "limit": float64(100), "projects": float64(100)}}, ExitPaymentRequired, "You have 100 of the 100 projects an account can have, running or stopped. Destroy one first with `repose rm PROJECT`.", ""},
-		{"refusal", &APIError{Code: "invalid", Message: "kind must be console, build or ops", Status: 400}, ExitGeneric, "Kind must be console, build or ops (invalid).", "invalid:"},
+		{"refusal", &APIError{Code: "invalid", Message: "kind must be console, build or ops", Status: 400}, ExitGeneric, "Kind must be console, build or ops.", "invalid:"},
 	}
 	for _, c := range cases {
 		var buf bytes.Buffer
@@ -172,15 +172,15 @@ func TestOpFailedExitCodes(t *testing.T) {
 		{OpError{Code: "insufficient_capacity", Message: "the host's disk pool is full, so no machine starts on it until the operator grows it; stopping a machine does not free pool space"}, nextAfterFailedStart("todo-app", "insufficient_capacity"), ExitCapacity,
 			"Could not start todo-app: the host's disk pool is full, so no machine starts on it until the operator grows it; stopping a machine does not free pool space."},
 		{OpError{Code: "insufficient_capacity"}, nextAfterFailedStart("todo-app", "insufficient_capacity"), ExitCapacity,
-			"Could not start todo-app: no server had room for it (insufficient_capacity)."},
-		{OpError{Code: "payment_required", Message: "the account needs a plan"}, "", ExitPaymentRequired, "Could not start todo-app: the account needs a plan (payment_required)."},
+			"Could not start todo-app: no server had room for it."},
+		{OpError{Code: "payment_required", Message: "the account needs a plan"}, "", ExitPaymentRequired, "Could not start todo-app: the account needs a plan."},
 		{OpError{Code: "boot_failed"}, "", ExitGeneric, "Could not start todo-app"},
 		// A host whose pool is down (DECISIONS I-644): exit 1, and the
 		// api's sentence says when `repose start` works, so nothing is added.
 		{OpError{Code: "volume_unavailable", Message: "the server's machine disks are unavailable right now; this machine's disk is intact, and `repose start` works once they are back"}, nextAfterFailedStart("todo-app", "volume_unavailable"), ExitGeneric,
-			"Could not start todo-app: the server's machine disks are unavailable right now; this machine's disk is intact, and `repose start` works once they are back (volume_unavailable)."},
+			"Could not start todo-app: the server's machine disks are unavailable right now; this machine's disk is intact, and `repose start` works once they are back."},
 		{OpError{Code: "volume_unavailable"}, nextAfterFailedStart("todo-app", "volume_unavailable"), ExitGeneric,
-			"Could not start todo-app: the server's machine disks are unavailable right now; the machine's disk is intact (volume_unavailable)."},
+			"Could not start todo-app: the server's machine disks are unavailable right now; the machine's disk is intact."},
 	}
 	for _, c := range cases {
 		err := opFailed("start", "todo-app", c.oe, c.next)

@@ -42,7 +42,7 @@ func TestOwnRefusalReadsTheRoomAgain(t *testing.T) {
 	for _, pin := range []uuid.UUID{uuid.Nil, h.HostID} {
 		_, err := place(pin)
 		var refused *ops.PlacementRefusal
-		if !errors.As(err, &refused) || !strings.HasPrefix(refused.Message, "your host e2e-x86-a has 0 GB of memory free for machines, and a small machine needs 4 GB") {
+		if !errors.As(err, &refused) || !strings.HasPrefix(refused.Message, "your host e2e-x86-a is full") {
 			t.Fatalf("pin %v, full host: %v, want the figure", pin, err)
 		}
 	}

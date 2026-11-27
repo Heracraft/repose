@@ -91,22 +91,22 @@ func TestCapacitySaysWhichKindAndWhatWorks(t *testing.T) {
 		lever bool // whether "stopping one frees room" is true here
 	}{
 		// internal/hostd/guest/create.go:89 and :637
-		{"create: not enough free memory for a large guest", "no free memory for a machine this size", true},
+		{"create: not enough free memory for a large guest", "its host is full. Stop a machine there", true},
 		// internal/hostd/guest/owned.go ownedCPURoom (I-1640)
-		{"not enough free CPU: 8 of 8 vCPUs taken by running machines on this host, a machine starts with 2", "as many machines running as its cores allow", true},
+		{"not enough free CPU: 8 of 8 vCPUs taken by running machines on this host, a machine starts with 2", "running as many machines as it can. Stop a machine there", true},
 		// internal/hostd/guest/commit.go commitSize (a Mac, I-1666)
-		{"the machines running on this host hold 22528 of the 24576 MiB it gives its machines, and one starts with at least 2048 MiB: stop one first", "hold the memory it gives its machines", true},
+		{"the machines running on this host hold 22528 of the 24576 MiB it gives its machines, and one starts with at least 2048 MiB: stop one first", "its host is full. Stop a machine there", true},
 		// internal/hostd/guest/create.go:105 and :645
-		{"create: thin pool 96% full", "disk pool is full", false},
+		{"create: thin pool 96% full", "out of disk space", false},
 		// internal/hostd/guest/manager.go:1033
-		{"build queue full", "building as many machines at once as it can", false},
+		{"build queue full", "busy building other machines", false},
 		// internal/hostd/guest/build.go:38
-		{"host store full", "no disk left to build new systems", false},
+		{"host store full", "no disk space left to build", false},
 		// internal/hostd/guest/create.go:76
 		{"host draining", "being emptied", false},
 		// create.go:165 and snapshot.go:260 wrap an LVM error in this
 		// code; its text is the host's own and stays with operators.
-		{"lvcreate: Volume group \"vg\" has insufficient free space", "no room for this project right now", false},
+		{"lvcreate: Volume group \"vg\" has insufficient free space", "no room right now", true},
 	} {
 		got, handled := humanError(KindStart, PhaseStartGuest, "insufficient_capacity", c.msg, false)
 		if !handled {
@@ -116,7 +116,7 @@ func TestCapacitySaysWhichKindAndWhatWorks(t *testing.T) {
 		if !strings.Contains(got, c.want) {
 			t.Errorf("%q\n got: %q\nwant it to contain: %q", c.msg, got, c.want)
 		}
-		if saysStopping := strings.Contains(got, "stopping a running machine frees room"); saysStopping != c.lever {
+		if saysStopping := strings.Contains(got, "Stop a machine there"); saysStopping != c.lever {
 			t.Errorf("%q: says stopping frees room = %v, want %v\n got: %q", c.msg, saysStopping, c.lever, got)
 		}
 		// I-623 removed "(We have been alerted.)" everywhere, and that

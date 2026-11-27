@@ -232,3 +232,24 @@ func TestSnapshotsListTellsSnapshotsOfOneMinuteApart(t *testing.T) {
 		t.Errorf("TAKEN has no seconds:\n%s", out.String())
 	}
 }
+
+// The owner's own run (2026-11-27): "Could not start muqsit-labs: the
+// machines running on this host hold the memory it gives its machines;
+// stopping a running machine frees room (insufficient_capacity)." With the
+// api's new sentence the CLI says what happened on one line and the one
+// action on the next, with no code (I-1724).
+func TestOpFailedIsTwoPlainLines(t *testing.T) {
+	err := opFailed("start", "muqsit-labs", OpError{Code: "insufficient_capacity",
+		Message: "your Mac e2e-d2lab is full. Stop api there, or run it on repose's servers: repose run --host repose"}, nextAfterFailedStart("muqsit-labs", "insufficient_capacity"))
+	var buf bytes.Buffer
+	if code := exitCodeFor(err, &buf); code != ExitCapacity {
+		t.Errorf("exit %d", code)
+	}
+	want := "Could not start muqsit-labs: your Mac e2e-d2lab is full.\nStop api there, or run it on repose's servers: repose run --host repose\n"
+	if buf.String() != want {
+		t.Errorf("printed %q\nwant    %q", buf.String(), want)
+	}
+	if strings.Contains(buf.String(), "insufficient_capacity") || strings.Contains(buf.String(), "(") {
+		t.Errorf("a code reached the user: %q", buf.String())
+	}
+}

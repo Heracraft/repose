@@ -75,7 +75,7 @@ func TestCreateRefusedWhileOwnHostWaitsNamesTheWayOut(t *testing.T) {
 
 	for attempt := 1; attempt <= 2; attempt++ {
 		err := runRun(ctx, e, RunOptions{Name: "todo-app", NoSync: true, NoAttach: true}, false)
-		want := "your host mac-mini has not registered yet. `repose run --host repose` makes it on repose's servers instead."
+		want := "Your Mac mac-mini has not joined your account yet.\nRun it on repose's servers: repose run --host repose"
 		if exitCodeOf(err) != ExitCapacity || err.Error() != want {
 			t.Fatalf("attempt %d: %v, want exit 8 with %q", attempt, err, want)
 		}
@@ -94,7 +94,7 @@ func TestCreateRefusedWhileOwnHostWaitsNamesTheWayOut(t *testing.T) {
 	// name: the sentence stands alone.
 	fake.SetHostLimit(1)
 	err := runRun(ctx, e, RunOptions{Name: "api", NoSync: true, NoAttach: true}, false)
-	if exitCodeOf(err) != ExitCapacity || err.Error() != "your host mac-mini has not registered yet." {
+	if exitCodeOf(err) != ExitCapacity || err.Error() != "Your Mac mac-mini has not joined your account yet." {
 		t.Fatalf("own hardware plan: %v", err)
 	}
 }
@@ -243,7 +243,7 @@ func TestRunHostPicksOneOfSeveral(t *testing.T) {
 
 	fake.SetOwnedHostOffline(a, 14*time.Minute)
 	err := runRun(ctx, e, RunOptions{Name: "api", Host: "box-a", NoSync: true, NoAttach: true}, false)
-	if exitCodeOf(err) != ExitCapacity || err.Error() != "your host box-a has not answered for 14m." {
+	if exitCodeOf(err) != ExitCapacity || err.Error() != "Your host box-a has not answered for 14m." {
 		t.Fatalf("--host on an offline host: %v, want exit 8 naming box-a alone", err)
 	}
 	if bySlug(listed(t, e), "api") != nil {

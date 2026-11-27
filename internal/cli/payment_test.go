@@ -69,9 +69,9 @@ func TestProjectLimitMessage(t *testing.T) {
 			Detail: map[string]any{"limit": float64(6), "projects": float64(6)}},
 			"You have 6 of the 6 projects an account can have, running or stopped. Destroy one first with `repose rm PROJECT`.\n", ExitPaymentRequired},
 		{"other invalid", &APIError{Code: "invalid", Message: "name must match [A-Za-z0-9._-]{1,64}"},
-			"Name must match [A-Za-z0-9._-]{1,64} (invalid).\n", ExitGeneric},
+			"Name must match [A-Za-z0-9._-]{1,64}.\n", ExitGeneric},
 		{"other reason", &APIError{Code: "invalid", Message: "something else", Detail: map[string]any{"reason": "other", "limit": float64(1), "projects": float64(1)}},
-			"Something else (invalid).\n", ExitGeneric},
+			"Something else.\n", ExitGeneric},
 	} {
 		var buf bytes.Buffer
 		if code := exitCodeFor(c.err, &buf); code != c.code || buf.String() != c.want {

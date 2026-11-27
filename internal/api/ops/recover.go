@@ -165,9 +165,9 @@ func humanError(kind, phase, code, msg string, hostGone bool) (string, bool) {
 		// its text (I-592).
 		reason := strings.TrimSuffix(firstLineOf(msg), ".")
 		if phase == PhaseApplyConfig {
-			return "the new system did not boot: " + reason + "; `repose logs --kind console` shows what it printed", true
+			return "the new system did not boot: " + reason + ". `repose logs --kind console` shows why", true
 		}
-		return "the machine did not boot: " + reason + "; `repose logs --kind console` shows what it printed", true
+		return "the machine did not boot: " + reason + ". `repose logs --kind console` shows why", true
 	case codeGuestUnresponsive:
 		if phase == PhaseCreateGuest || phase == PhaseStartGuest || phase == PhaseRestore {
 			// guestd answered, and then one of the two phases that
@@ -182,11 +182,11 @@ func humanError(kind, phase, code, msg string, hostGone bool) (string, bool) {
 			if strings.Contains(msg, "deadline exceeded") {
 				switch {
 				case strings.Contains(msg, "RegisterPaths: "):
-					return "the machine started but did not finish loading its system in time; `repose logs --kind console` shows what it printed, and `repose start` tries again", true
+					return "the machine started but did not finish loading in time. `repose start` tries again", true
 				case strings.Contains(msg, "SetupProject: "):
-					return "the machine started but did not finish setting up the project in time; `repose logs --kind console` shows what it printed, and `repose start` tries again", true
+					return "the machine started but did not finish setting up your project in time. `repose start` tries again", true
 				case strings.Contains(msg, "WriteSecrets: "), strings.Contains(msg, "SetPrincipals: "):
-					return "the machine started but did not take its ssh keys in time, so nothing can log in to it; `repose start` tries again", true
+					return "the machine started but cannot be logged in to yet. `repose start` tries again", true
 				}
 			}
 			// Not "booted": a guest that stopped before its system
@@ -195,33 +195,33 @@ func humanError(kind, phase, code, msg string, hostGone bool) (string, bool) {
 			// a Mac appliance against sixty seconds on Azure), so the
 			// sentence names no figure; it named a minute until I-1408,
 			// which was false on every Mac start it was shown for.
-			return "the machine did not answer while it was starting; `repose logs --kind console` shows what it printed, and `repose start` tries again", true
+			return "the machine did not answer while it was starting. `repose start` tries again", true
 		}
 		if phase == PhaseApplyConfig && strings.Contains(msg, "while it applied the menu") {
 			// hostd's silence guard on an ApplyMenu (DECISIONS I-1558):
 			// guestd's keepalive stopped, which a slow install never
 			// does.
-			return "the machine stopped answering while it applied the menu: nothing from it for 2 minutes; `repose start` restarts it", true
+			return "the machine stopped answering while it installed your tools. `repose start` restarts it", true
 		}
 		switch kind {
 		case KindResize:
-			return "the disk grew but the filesystem inside did not: repose's service on the machine stopped answering. `repose start` restarts it, then resize again", true
+			return "the disk grew, but the machine stopped answering before it could use the space. `repose start`, then resize again", true
 		case KindSnapshot:
-			return "repose's service on the machine stopped answering, so the filesystem could not be frozen for a snapshot; `repose start` restarts it", true
+			return "the machine stopped answering, so no snapshot was taken. `repose start` restarts it", true
 		}
-		return "repose's service on the machine stopped answering; `repose start` restarts it", true
+		return "the machine stopped answering. `repose start` restarts it", true
 	case codeNotFound:
 		if phase == PhaseApplyConfig {
 			// guestd's store does not show the new system (I-593); the
 			// machine runs what it ran.
-			return "the new system is not in the machine's store, so it was not switched to and keeps its current system", true
+			return "the new system did not reach the machine, so it keeps the one it has", true
 		}
 	case codeStorePathHidden:
 		if phase == PhaseApplyConfig {
 			// The revision stays built: the next start boots the system
 			// the machine has, whose stage 1 removes the whiteouts
 			// (I-587), then switches to it.
-			return "a nix garbage collection inside the machine hid parts of the new system, so it keeps its current one; `repose stop` then `repose start` applies the new one", true
+			return "the machine cleaned up part of the new system, so it keeps the one it has. `repose stop` then `repose start` applies the new one", true
 		}
 	case "host_unreachable":
 		if hostGone {
@@ -233,22 +233,22 @@ func humanError(kind, phase, code, msg string, hostGone bool) (string, bool) {
 			// all that is left, because the machine's disk was on that
 			// host and nowhere else (ENG-119, DECISIONS I-1418).
 			if kind == KindDestroy {
-				return "the host running this project was removed, so there is nothing left to take down; `repose rm` finishes it", true
+				return "its host was removed, so there is nothing left to take down. `repose rm` finishes it", true
 			}
-			return "the host running this project was removed, and this machine's disk was on it; `repose rm` removes the record", true
+			return "its host was removed, and its disk with it. `repose rm` removes it from your list", true
 		}
-		return "the host running this project stopped answering; the operation can be run again once the host is back", true
+		return "its host stopped answering. Try again when the host is back", true
 	case "timeout":
 		// The engine's own phase timeout (checkTimeout): the host took
 		// the command and never answered it. Its message is written for
 		// a log -- "start_guest did not complete in 10m0s" -- and until
 		// I-1408 reached the user as it was, naming an internal phase
 		// and a Go duration.
-		return "the host running this project did not answer in time, so the operation was given up; it can be run again", true
+		return "its host did not answer in time. Try again", true
 	case codeVolumeUnavailable:
 		// The disk is intact; the host's pool is down (I-644). A start
 		// leaves the project stopped, so the same command works later.
-		return "the server's machine disks are unavailable right now; this machine's disk is intact, and `repose start` works once they are back", true
+		return "the server's disks are not available right now; your machine's disk is safe. `repose start` works once they are back", true
 	case "insufficient_capacity":
 		// One code, five producers in hostd, and what the reader should
 		// do differs by producer, so the sentence does (I-771, which
@@ -262,17 +262,17 @@ func humanError(kind, phase, code, msg string, hostGone bool) (string, bool) {
 			// holds its own until it stops (I-724); the three minutes
 			// after a stop or rm are the api's own wait (I-408), so a
 			// refusal that reaches here has nothing left to wait for.
-			return "the host has no free memory for a machine this size; stopping a running machine frees room", true
+			return "its host is full. Stop a machine there", true
 		case strings.Contains(msg, "machines running on this host hold"):
 			// A Mac host sizes each machine to the memory its running
 			// machines leave, down to a floor, and refuses below it
 			// (I-1666): macOS's own free figure says nothing here.
-			return "the machines running on this host hold the memory it gives its machines; stopping a running machine frees room", true
+			return "its host is full. Stop a machine there", true
 		case strings.Contains(msg, "not enough free CPU"):
 			// A host the user owns that runs under a hypervisor (the
 			// Mac appliance) boots no more guest vCPUs than it has
 			// (I-1640); a stopped machine gives its back.
-			return "the host has as many machines running as its cores allow; stopping a running machine frees room", true
+			return "its host is running as many machines as it can. Stop a machine there", true
 		case strings.Contains(msg, "thin pool"):
 			// I-586: no start past 95 percent, and nothing stops a
 			// running guest for the pool, so neither waiting nor
@@ -281,24 +281,24 @@ func humanError(kind, phase, code, msg string, hostGone bool) (string, bool) {
 			// poolRoom), and "no machine starts" is not what a refused
 			// resize did, so the sentence follows the operation.
 			if kind == KindResize {
-				return "the host's disk pool is full, so the disk cannot grow until the operator grows the pool; stopping a machine does not free pool space", true
+				return "its host is out of disk space, so the disk cannot grow", true
 			}
-			return "the host's disk pool is full, so no machine starts on it until the operator grows it; stopping a machine does not free pool space", true
+			return "its host is out of disk space, so nothing new starts there", true
 		case strings.Contains(msg, "build queue full"):
 			// The one cause where waiting is what works.
-			return "the host is building as many machines at once as it can; this one starts when one of those finishes", true
+			return "its host is busy building other machines. This one starts when one of them finishes", true
 		case strings.Contains(msg, "host store full"):
-			return "the host has no disk left to build new systems, and only the operator can clear it", true
+			return "its host has no disk space left to build", true
 		case strings.Contains(msg, "host draining"):
 			// phases.go sets draining and the scheduler places nothing
 			// on such a host; how long the drain takes is the
 			// operator's, so this promises no time.
-			return "the host this project is on is being emptied, so nothing starts on it", true
+			return "its host is being emptied, so nothing starts on it", true
 		}
 		// create.go and snapshot.go also wrap an LVM or filesystem
 		// error in this code, whose text is the host's own (shown to
 		// operators under -v, never here).
-		return "the host has no room for this project right now", true
+		return "its host has no room right now. Stop a machine there", true
 	}
 	return msg, false
 }

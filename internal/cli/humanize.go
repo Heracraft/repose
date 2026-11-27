@@ -224,6 +224,29 @@ func notRunningMessage(p *Project) string {
 
 // withNext ends reason with a full stop and adds next, unless the reason
 // (a sentence from the api since I-159) already names a command.
+// plainLines is a sentence of the api's, "what. Action", as the two lines
+// a user reads (I-1724): what happened, then the one thing to do, with
+// alt (", or ...") joined to the action, or alone when there is none. A
+// line that ends in a command takes no period.
+func plainLines(reason, alt string) string {
+	what, action, _ := strings.Cut(strings.TrimSuffix(strings.TrimSpace(reason), "."), ". ")
+	out := capitalFirst(what) + "."
+	switch {
+	case action != "" && alt != "":
+		action = strings.TrimSuffix(action, ".") + ", or " + alt
+	case alt != "":
+		action = alt
+	}
+	if action == "" {
+		return out
+	}
+	action = capitalFirst(strings.TrimSuffix(action, "."))
+	if _, cmd, ok := strings.Cut(action, ": "); !ok || !strings.HasPrefix(cmd, "repose ") {
+		action += "."
+	}
+	return out + "\n" + action
+}
+
 func withNext(reason, next string) string {
 	s := strings.TrimSuffix(reason, ".") + "."
 	if next != "" && !strings.Contains(reason, "`repose ") {
@@ -233,23 +256,26 @@ func withNext(reason, next string) string {
 }
 
 // opFailed renders a failed op for verb ("start", "stop", "destroy", …)
-// on slug, with the next step that fits the verb. The code is kept in
-// parentheses for support; ids are dropped.
+// on slug, with the next step that fits the verb. No code and no ids
+// (I-1724).
 func opFailed(verb, slug string, e OpError, next string) error {
-	reason := reasonFor(e.Code, e.Message)
-	code := ""
-	if e.Code != "" {
-		code = " (" + e.Code + ")"
-	}
-	if (e.Code == "insufficient_capacity" || e.Code == "capacity") && strings.TrimSpace(e.Message) != "" {
-		// The api's sentence names the cause and the way out (I-771,
-		// I-1654), as its refusal at placement does with no code beside
-		// it; exit 8 is what a script reads.
-		code = ""
-	}
-	msg := fmt.Sprintf("Could not %s %s: %s%s.", verb, slug, reason, code)
-	if next != "" && !strings.Contains(reason, "`repose ") && !strings.Contains(strings.ToLower(reason), "try again") {
-		msg += " " + next
+	reason := strings.TrimSuffix(strings.TrimSpace(reasonFor(e.Code, e.Message)), ".")
+	// What happened on the first line, the one action on the second, and
+	// no code: the user can do nothing with it, and --json and the exit
+	// code carry it (owner, 2026-11-27; I-1724 amends I-159).
+	what, action, _ := strings.Cut(reason, ". ")
+	msg := fmt.Sprintf("Could not %s %s: %s.", verb, slug, what)
+	switch {
+	case action != "":
+		action = capitalFirst(strings.TrimSuffix(action, "."))
+		// A line that ends in a command to type ends with the command, so
+		// a copy of it takes no period with it.
+		if _, cmd, ok := strings.Cut(action, ": "); !ok || !strings.HasPrefix(cmd, "repose ") {
+			action += "."
+		}
+		msg += "\n" + action
+	case next != "" && !strings.Contains(strings.ToLower(reason), "try again"):
+		msg += "\n" + next
 	}
 	return exitf(opExitCode(e.Code), "%s", msg)
 }

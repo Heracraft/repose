@@ -642,6 +642,8 @@ Two lines on stderr are about the CLI itself. One release behind the latest, it 
 
 ## Exit codes
 
+A refusal or a failure says what happened and what to do, in one or two lines, with no error code in it; `--json` carries the code, and the exit code is below.
+
 | Code | Meaning |
 | ---- | ------- |
 | 0 | Worked. |

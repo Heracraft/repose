@@ -20,18 +20,18 @@ func TestRoomWhyNamesTheFigure(t *testing.T) {
 	}{
 		// A hostd that does not share yet places by class (I-1586).
 		{scheduler.Room{FreeBytes: 5 << 30, PoolFreeBytes: 900 << 30, PoolNeedBytes: 300 << 30}, false,
-			"has 5 GB of memory free for machines, and a large machine needs 8 GB. A machine holds its memory while it runs, so stopping one frees room for it"},
+			"is full. Stop a machine there"},
 		{scheduler.Room{Shares: true, FreeBytes: 1 << 29, PoolFreeBytes: 900 << 30, PoolNeedBytes: 300 << 30}, false,
-			"has 0.5 GB of memory free, and a machine starts there when it has at least 1 GB free. Stopping a machine frees the memory it uses"},
+			"is full. Stop a machine there"},
 		{scheduler.Room{Shares: true, FreeBytes: 0, PoolFreeBytes: 900 << 30, PoolNeedBytes: 300 << 30}, false,
-			"has 0 GB of memory free, and a machine starts there when it has at least 1 GB free. Stopping a machine frees the memory it uses"},
-		{scheduler.Room{Shares: true, FreeBytes: 3 << 28, PoolFreeBytes: 0, PoolNeedBytes: 1}, true, "has 0.8 GB free"},
+			"is full. Stop a machine there"},
+		{scheduler.Room{Shares: true, FreeBytes: 3 << 28, PoolFreeBytes: 0, PoolNeedBytes: 1}, true, "is full"},
 		// 5 GB free took a large before I-1630; now it is room.
 		{scheduler.Room{Shares: true, FreeBytes: 5 << 30, PoolFreeBytes: 900 << 30, PoolNeedBytes: 300 << 30}, false, ""},
 		{scheduler.Room{Shares: true, FreeBytes: 20 << 30, PoolFreeBytes: 40 << 30, PoolNeedBytes: 61 << 30}, false,
-			"has 40 GB of disk free, and a new machine needs 61 GB free"},
-		{scheduler.Room{Shares: true, FreeBytes: 20 << 30, PoolFreeBytes: 40 << 30, PoolNeedBytes: 61 << 30}, true, "has 40 GB of disk free, 61 GB needed"},
-		{scheduler.Room{Shares: true, FreeBytes: 20 << 30, PoolUnavailable: true}, false, "cannot use its disk for machines"},
+			"is out of disk space: 40 GB free, 61 GB needed. `repose rm` a machine there to free some"},
+		{scheduler.Room{Shares: true, FreeBytes: 20 << 30, PoolFreeBytes: 40 << 30, PoolNeedBytes: 61 << 30}, true, "is out of disk space"},
+		{scheduler.Room{Shares: true, FreeBytes: 20 << 30, PoolUnavailable: true}, false, "cannot use its disk right now"},
 		{scheduler.Room{Shares: true, FreeBytes: 20 << 30, PoolFreeBytes: 900 << 30, PoolNeedBytes: 300 << 30}, false, ""},
 	} {
 		if got := roomWhy(c.r, "large", c.short); got != c.want {

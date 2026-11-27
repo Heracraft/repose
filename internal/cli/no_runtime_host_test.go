@@ -57,7 +57,7 @@ func TestRunNoRuntimeHostSaysWhy(t *testing.T) {
 func TestCapacityRefusalOwnHost(t *testing.T) {
 	own := &APIError{Code: "capacity", Status: 503, Message: "your host e2e-x86-a has 5 GB of memory free for machines, and a large machine needs 8 GB",
 		Detail: map[string]any{"reason": "no_own_host", "host": "e2e-x86-a", "host_state": "ready"}}
-	if got, want := capacityRefusal(own), "your host e2e-x86-a has 5 GB of memory free for machines, and a large machine needs 8 GB."; got != want {
+	if got, want := capacityRefusal(own), "Your host e2e-x86-a has 5 GB of memory free for machines, and a large machine needs 8 GB."; got != want {
 		t.Fatalf("own host: %q, want %q", got, want)
 	}
 	var buf bytes.Buffer
@@ -65,7 +65,7 @@ func TestCapacityRefusalOwnHost(t *testing.T) {
 		t.Fatalf("apiErrorExit: %d %q", code, buf.String())
 	}
 	fleet := &APIError{Code: "capacity", Status: 503, Message: "no host with capacity", Detail: map[string]any{"reason": "no_capacity"}}
-	if got := capacityRefusal(fleet); !strings.HasPrefix(got, "repose has no room for this machine.") {
+	if got := capacityRefusal(fleet); !strings.HasPrefix(got, "Repose has no room for this machine right now.") {
 		t.Fatalf("fleet: %q", got)
 	}
 }
