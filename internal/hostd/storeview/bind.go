@@ -4,6 +4,8 @@ package storeview
 
 import (
 	"fmt"
+	"path/filepath"
+	"regexp"
 	"runtime"
 
 	"golang.org/x/sys/unix"
@@ -140,3 +142,14 @@ func mkpoint(target string, e entry) error {
 
 // tmpfsMagic is statfs's f_type of a tmpfs, the view's root.
 const tmpfsMagic = unix.TMPFS_MAGIC
+
+// storePathRe is a top-level store path: no further slashes, no dot names.
+var storePathRe = regexp.MustCompile(`^/nix/store/[0-9a-df-np-sv-z]{32}-[A-Za-z0-9+._?=-]+$`)
+
+// storeName returns the entry name of a top-level store path.
+func storeName(p string) (string, bool) {
+	if !storePathRe.MatchString(p) {
+		return "", false
+	}
+	return filepath.Base(p), true
+}

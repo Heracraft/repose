@@ -264,3 +264,26 @@ func TestTempStays(t *testing.T) {
 		}
 	}
 }
+
+// On a Mac (design 2) hostd refuses a disk grow of a running machine
+// before it changes anything, and `repose resize` says so in hostd's
+// words; the disk keeps its size (DECISIONS I-1666, I-1688).
+func TestResizeDiskOfARunningMachineOnAMac(t *testing.T) {
+	ctx := context.Background()
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	e := newLifecycleEnv(t, fake)
+	e.Out, e.ErrOut = &bytes.Buffer{}, &bytes.Buffer{}
+	p, err := e.Client.CreateProject(ctx, CreateProjectRequest{Name: "izma", Class: "large"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fake.SetProjectHost(p.ID, fake.AddOwnedHost("mac-mini"))
+	err = ResizeCmd(ctx, e, "izma", p.VolumeBytes+10<<30)
+	if err == nil || !strings.Contains(err.Error(), "gets a bigger disk while it is stopped") {
+		t.Fatalf("live grow on a Mac: %v", err)
+	}
+	if got, _ := e.Client.GetProject(ctx, p.ID); got.VolumeBytes != p.VolumeBytes {
+		t.Fatalf("the refused grow changed the disk: %d, was %d", got.VolumeBytes, p.VolumeBytes)
+	}
+}

@@ -199,7 +199,11 @@ func TestTainted(t *testing.T) {
 
 	// This machine's own word, read for real: hosts are Intel and this box
 	// is Azure AMD, so the value says nothing about a host, but the read
-	// path has to work on a live /proc.
+	// path has to work on a live /proc. A Mac has no /proc and no taint
+	// word; hostd there reads neither.
+	if runtime.GOOS != "linux" {
+		return
+	}
 	if _, err := Tainted(); err != nil {
 		t.Fatalf("this machine's taint word: %v", err)
 	}

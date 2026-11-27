@@ -23,6 +23,11 @@ func TestArgsGolden(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The golden is an x86 host's; the serial console is the one thing
+	// that differs on arm64 (ttyAMA0, a Mac's VZ guests).
+	if c := ConsoleTTY(); c != "ttyS0" {
+		want = []byte(strings.ReplaceAll(string(want), "console=ttyS0", "console="+c))
+	}
 	if got != string(want) {
 		t.Fatalf("argv differs from testdata/args.golden:\n%s", got)
 	}

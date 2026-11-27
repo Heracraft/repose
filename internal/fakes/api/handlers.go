@@ -1201,6 +1201,15 @@ func (f *Fake) resizeProject(w http.ResponseWriter, r *http.Request) *apiError {
 	if e := f.gate(userFrom(r), "", &diskAsk{volumeBytes: body.VolumeBytes}, nil); e != nil {
 		return e
 	}
+	if p.State == "running" && f.ownedHostProvider(p.HostID) == "mac" {
+		// hostd on a Mac refuses a live grow before it changes anything:
+		// Virtualization.framework cannot resize an attached disk
+		// (DECISIONS I-1666, I-1688). The op fails with hostd's words,
+		// which the api passes on as they are, and the disk keeps its size.
+		o := f.newOp(p, "resize")
+		o.State, o.Error = "error", MacLiveGrowRefusal
+		return opResult(w, o)
+	}
 	o := f.newOp(p, "resize")
 	p.VolumeBytes = body.VolumeBytes
 	// The guest's growfs follows a resize, so its root filesystem grows too.
