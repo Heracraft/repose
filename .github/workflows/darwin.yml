@@ -44,6 +44,8 @@ jobs:
           codesign -d --entitlements - "$RUNNER_TEMP/repose-vm" 2>&1 | grep -q com.apple.security.virtualization
       - run: go build ./cmd/hostd ./cmd/repose
       - run: go vet ./internal/hostd/... ./cmd/hostd ./internal/parkkey/...
+      # TEMP d2-int-3: the tag-push flake, many times.
+      - run: go test -race -count=20 -run 'TestVZKilledLauncherBootsAgain' ./internal/hostd/guest
       - name: go test -race, every darwin hostd package but the network
         if: ${{ !cancelled() }}
         run: |
