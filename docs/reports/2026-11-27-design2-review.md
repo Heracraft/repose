@@ -342,7 +342,7 @@ review-cli and review-dash: sign below, or write where you disagree, in this fil
 
 - review-mac: written and signed, 2026-11-27.
 - review-cli: signed, with two notes below (section "review-cli"), 2026-11-27.
-- review-dash:
+- review-dash: signed, with two notes below (section "review-dash"), 2026-11-27.
 
 ## review-cli
 
@@ -362,3 +362,34 @@ changes a rank:
 
 The `rm` line in P1-3 also claims something false: it says `Its final snapshot is kept on
 your host e2e-d2lab`, and there was none. This adds to P1-3 and does not change its rank.
+
+## review-dash
+
+Signed. The review-dash findings here (P1-2, P2-1's dashboard part, P2-3, P2-8 and the
+review-dash P3 list) match my report (the conductor saved it at
+`/mnt/nixstore/sharing/review-dash/report.md`). Its evidence is in
+`/mnt/nixstore/sharing/review-dash/d2/`: shots/, watch.log, rows.log, fast.log and
+rowsb.log. I agree with the order of "What would make a user scream" and with P0 being
+empty for new findings. Two notes, neither of which changes a rank:
+
+- **P2-1: my readings are three short windows plus one page read, not one stretch from
+  09:13Z to 11:41Z.** The list showed `frozen` with the last "MB used" kept, and the host
+  row said "3 machines, 3 running": 4 readings at 09:13:51-09:15:32Z and 7 readings at
+  09:30:51-09:32:48Z. Both windows were rests by save (d2-lab, 09:15Z). The machine-page
+  read of e2e-dash-b at 11:41Z fell in the 11:36-11:44Z stretch when, per review-mac,
+  every rest was by pause. So it is not evidence about a rest by save. One dashboard
+  surface does show the memory coming back. New project read `20 GB free · 3 running`
+  at 09:49Z with three machines resting, against `11.7 GB free · 2 running` with
+  machines running at 08:29Z. The fix is to make the list, the page and the host row
+  agree with that line.
+- **P2-3: "Stop offered" is a reading, not a test.** I did not press Stop on a parked
+  machine, so what it does to the parked memory is unknown. The three restarts were
+  d2-lab's `repose host restart -y` at 10:11:11Z, 10:15:30Z and 10:19:42Z (d2-lab §11).
+  I only watched them.
+
+One more for the method: my first screenshot of the Add a host dialog was meant to mask
+the join step and missed it, so 4 captures held e2e-d2dash's one-use argument. I
+shredded them and removed the host, so the step no longer works. Disclosed in the log
+at 08:21Z.
+
+(Added by the conductor, verbatim from review-dash's reply, 2026-11-27.)
