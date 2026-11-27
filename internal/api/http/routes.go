@@ -43,6 +43,7 @@ func (s *Server) registerUserRoutes() {
 	s.route(m, "POST /v1/projects/{id}/start", a(s.startProject))
 	s.route(m, "POST /v1/projects/{id}/stop", a(s.stopProject))
 	s.route(m, "POST /v1/projects/{id}/wake", a(s.wakeProject))
+	s.route(m, "POST /v1/projects/{id}/agents", a(s.startAgent))
 	s.route(m, "GET /v1/projects/{id}/ops/{op_id}", a(s.getOp))
 	s.route(m, "GET /v1/projects/{id}/ops/{op_id}/log", s.authed(s.opLog, true))
 	s.route(m, "POST /v1/projects/{id}/resize", a(s.resizeProject))

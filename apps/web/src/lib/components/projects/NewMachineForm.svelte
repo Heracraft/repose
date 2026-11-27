@@ -30,6 +30,7 @@
 	import { hostStateWord } from '$lib/offlinehost';
 	import { withoutBillingURL } from '$lib/refusal';
 	import { repoName, wordName } from '$lib/machineName';
+	import { AGENTS, agentName } from '$lib/agents';
 	import { defaultClass, fits, freeGB, type PlanRoom } from '$lib/planRoom';
 	import type { OwnedHost, Placement, Project } from '$lib/api/types';
 
@@ -52,7 +53,7 @@
 		room?: PlanRoom;
 		/** The account's machines, so a full host of its own names the ones
 		 * running there, with a Stop each (I-1654). */
-		machines?: Pick<Project, 'id' | 'name' | 'state' | 'host_id'>[];
+		machines?: Pick<Project, 'id' | 'name' | 'state' | 'host_id' | 'agent_default'>[];
 		/** Stops a machine that holds the plan's memory, as its row's Stop does. */
 		onstop?: (id: string) => void;
 		onsaved: (p: Project) => void;
@@ -99,6 +100,13 @@
 	let saving = $state(false);
 	let error = $state<string | undefined>(undefined);
 	let billingRefusal = $state(false);
+	/** The agent the machine starts (I-1702): the one the account's
+	 * machines already use, or, with none to go by, the form asks. '' is
+	 * none. */
+	let knownAgent = $derived(machines.find((m) => m.agent_default)?.agent_default);
+	let agentChosen = $state<string | undefined>(undefined);
+	let agent = $derived(agentChosen ?? knownAgent ?? 'claude');
+	let remoteControl = $state(false);
 	let nameField = $state<HTMLInputElement | undefined>();
 
 	onMount(() => {
@@ -188,6 +196,7 @@
 			room && !onOwnHost ? `${free} GB of your plan's ${room.limitGB} GB free` : '',
 			whereWords,
 			hostRoom,
+			agent ? `starts ${agentName(agent)}` : 'no agent',
 			life === 0
 				? 'kept until you destroy it'
 				: `destroyed after ${LIVES.find((l) => l.value === life)?.label}`,
@@ -225,7 +234,14 @@
 					: undefined),
 				...(life === 0 ? undefined : { expires_in_s: life }),
 				...(zone ? { tz: zone } : undefined),
-				...(hosts.length === 0 ? undefined : placementBody(runsOn))
+				...(hosts.length === 0 ? undefined : placementBody(runsOn)),
+				...(agent
+					? {
+							agent_default: agent,
+							start_agent: true,
+							...(agent === 'claude' && remoteControl ? { remote_control: true } : undefined)
+						}
+					: undefined)
 			});
 			onsaved(p);
 		} catch (err) {
@@ -253,6 +269,15 @@
 	}
 </script>
 
+{#snippet agentSelect()}
+	<select id="nm-agent" class="hk-select" bind:value={() => agent, (v) => (agentChosen = v)}>
+		{#each AGENTS as a (a.id)}
+			<option value={a.id}>{a.name}</option>
+		{/each}
+		<option value="">No agent</option>
+	</select>
+{/snippet}
+
 <section class="hk-section" aria-labelledby="nm-title">
 	<h2 id="nm-title" class="hk-sr">New project</h2>
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -277,6 +302,14 @@
 				<button type="button" class="hk-btn-ghost" onclick={oncancel}>Cancel</button>
 			</div>
 		</div>
+
+		{#if !knownAgent}
+			<!-- No machine to go by, so the form asks which agent (I-1702). -->
+			<div class="nmrow nmagent">
+				<label for="nm-agent" class="hk-field-label nmlabel">Agent</label>
+				{@render agentSelect()}
+			</div>
+		{/if}
 
 		<div class="nmsummary">
 			<button
@@ -354,6 +387,20 @@
 								<option value={c}>{sizeLabel(c)}</option>
 							{/each}
 						</select>
+					</div>
+				{/if}
+				{#if knownAgent}
+					<div class="nmfield">
+						<label for="nm-agent" class="hk-field-label">Agent</label>
+						{@render agentSelect()}
+					</div>
+				{/if}
+				{#if agent === 'claude'}
+					<div class="nmfield nmcheck">
+						<label class="hk-check">
+							<input type="checkbox" bind:checked={remoteControl} data-testid="nm-remote-control" />
+							Remote Control, for the Claude app
+						</label>
 					</div>
 				{/if}
 				<div class="nmfield">

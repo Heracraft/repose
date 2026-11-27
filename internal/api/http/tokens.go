@@ -65,6 +65,7 @@ var tokenRouteScope = map[string]string{
 	"POST /v1/projects/{id}/start":                   tokens.ScopeProjects,
 	"POST /v1/projects/{id}/stop":                    tokens.ScopeProjects,
 	"POST /v1/projects/{id}/wake":                    tokens.ScopeProjects,
+	"POST /v1/projects/{id}/agents":                  tokens.ScopeProjects,
 	"POST /v1/projects/{id}/resize":                  tokens.ScopeProjects,
 	"POST /v1/projects/{id}/snapshots":               tokens.ScopeProjects,
 	"POST /v1/projects/{id}/snapshots/{sid}/restore": tokens.ScopeProjects,

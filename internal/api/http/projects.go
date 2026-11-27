@@ -458,6 +458,11 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 		// GuestRuntime is nix or erofs (DECISIONS I-1462); absent is the
 		// environment's default.
 		GuestRuntime *string `json:"guest_runtime"`
+		// StartAgent starts agent_default once the machine is up, and
+		// RemoteControl turns Claude Code's Remote Control on first
+		// (DECISIONS I-1702): the dashboard's New project.
+		StartAgent    bool `json:"start_agent"`
+		RemoteControl bool `json:"remote_control"`
 	}
 	if err := decode(r, &body); err != nil {
 		return err
@@ -529,6 +534,17 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 	agent := "claude"
 	if body.Agent != nil {
 		agent = *body.Agent
+	}
+	if body.StartAgent {
+		// Only an agent the machine can start is started.
+		if agent, err = agentChoice(&agent, "claude", body.RemoteControl); err != nil {
+			return err
+		}
+		if mux == multiplexer.Herdr {
+			return withDetail(errf("invalid", "start_agent starts an agent in tmux; a herdr machine starts one with `repose run`"), map[string]any{"reason": "start_agent"})
+		}
+	} else if body.RemoteControl {
+		return withDetail(errf("invalid", "remote_control goes with start_agent"), map[string]any{"reason": "remote_control"})
 	}
 	if mux == multiplexer.Herdr && runtime == store.RuntimeNix {
 		// The new machine's first build takes the newest base. An erofs
@@ -618,7 +634,12 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 		if _, err := tx.Exec(ctx, "insert into config_revisions (id, project_id, fragment, status, personal, personal_revision_id, personal_opt_out) values ($1, $2, $3, 'building', $4, $5, $6)", rid, pid, fragment, layer.Text, layer.RevisionID, layer.OptOut); err != nil {
 			return err
 		}
-		if opID, err = s.d.Engine.Enqueue(ctx, tx, ops.NewOp{Kind: ops.KindCreate, ProjectID: &pid, Phases: ops.PlanCreateFor(runtime)}, false); err != nil {
+		create := ops.NewOp{Kind: ops.KindCreate, ProjectID: &pid, Phases: ops.PlanCreateFor(runtime)}
+		if body.StartAgent {
+			create.Phases = ops.PlanCreateWithAgent(runtime)
+			create.Params = map[string]any{"agent": agent, "remote_control": body.RemoteControl}
+		}
+		if opID, err = s.d.Engine.Enqueue(ctx, tx, create, false); err != nil {
 			return err
 		}
 		// Read the row inside the transaction: once it commits and the

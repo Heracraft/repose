@@ -967,6 +967,8 @@ func Kind(cmd *hostdv1.Command) string {
 		return "DeleteSnapshot"
 	case *hostdv1.Command_RestartHost:
 		return "RestartHost"
+	case *hostdv1.Command_StartAgent:
+		return "StartAgent"
 	}
 	return "unknown"
 }

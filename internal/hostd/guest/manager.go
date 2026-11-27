@@ -1379,6 +1379,8 @@ func Kind(cmd *hostdv1.Command) string {
 		return "DeleteSnapshot"
 	case *hostdv1.Command_RestartHost:
 		return "RestartHost"
+	case *hostdv1.Command_StartAgent:
+		return "StartAgent"
 	}
 	return ""
 }
@@ -1412,6 +1414,8 @@ func Target(cmd *hostdv1.Command) string {
 		return c.AnswerQuestion.GuestId
 	case *hostdv1.Command_SayToAgent:
 		return c.SayToAgent.GuestId
+	case *hostdv1.Command_StartAgent:
+		return c.StartAgent.GuestId
 	case *hostdv1.Command_SetTriggers:
 		return c.SetTriggers.GuestId
 	case *hostdv1.Command_RunTrigger:
@@ -1736,6 +1740,9 @@ func (m *Manager) execute(ctx context.Context, cmd *hostdv1.Command) *hostdv1.Re
 	case *hostdv1.Command_SayToAgent:
 		r, err := m.sayToAgent(ctx, c.SayToAgent)
 		return payloadOrErr(id, err, func(res *hostdv1.Result) { res.Payload = &hostdv1.Result_Say{Say: r} })
+	case *hostdv1.Command_StartAgent:
+		r, err := m.startAgent(ctx, c.StartAgent)
+		return payloadOrErr(id, err, func(res *hostdv1.Result) { res.Payload = &hostdv1.Result_StartAgent{StartAgent: r} })
 	case *hostdv1.Command_PauseGuest:
 		r, err := m.pause(ctx, id, c.PauseGuest)
 		return payloadOrErr(id, err, func(res *hostdv1.Result) { res.Payload = &hostdv1.Result_Pause{Pause: r} })

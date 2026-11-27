@@ -514,9 +514,26 @@ func (f *Fake) createProject(w http.ResponseWriter, r *http.Request) *apiError {
 		Host *string `json:"host"`
 		// GuestRuntime is nix or erofs (I-1462).
 		GuestRuntime *string `json:"guest_runtime"`
+		// StartAgent and RemoteControl as the api (I-1702).
+		StartAgent    bool `json:"start_agent"`
+		RemoteControl bool `json:"remote_control"`
 	}
 	if e := decodeBody(r, &body, false); e != nil {
 		return e
+	}
+	if body.StartAgent {
+		agent := body.AgentDefault
+		if agent == "" {
+			agent = "claude"
+		}
+		if e := checkAgentChoice(agent, body.RemoteControl); e != nil {
+			return e
+		}
+		if body.Multiplexer != nil && *body.Multiplexer == multiplexer.Herdr {
+			return invalid("start_agent starts an agent in tmux; a herdr machine starts one with `repose run`").withDetail(map[string]any{"reason": "start_agent"})
+		}
+	} else if body.RemoteControl {
+		return invalid("remote_control goes with start_agent").withDetail(map[string]any{"reason": "remote_control"})
 	}
 	runtime, e := f.createRuntime(body.GuestRuntime)
 	if e != nil {
@@ -640,13 +657,117 @@ func (f *Fake) createProject(w http.ResponseWriter, r *http.Request) *apiError {
 			defer f.mu.Unlock()
 			p.OpID = ""
 			f.run(p)
+			if body.StartAgent {
+				o.Result = f.startAgentOn(p, p.AgentDefault)
+			}
 			o.State = "done"
 		}()
 		writeJSON(w, http.StatusCreated, out)
 		return nil
 	}
+	if body.StartAgent {
+		// The api's create ends with the agent's start (I-1702); the
+		// fake's create is done at once, so is the agent.
+		o := f.newOp(p, "create")
+		o.Result = f.startAgentOn(p, p.AgentDefault)
+		out := f.out(p)
+		out.OpID = o.id
+		writeJSON(w, http.StatusCreated, out)
+		return nil
+	}
 	writeJSON(w, http.StatusCreated, f.out(p))
 	return nil
+}
+
+// fakeAgents are the agents a machine ships (the api's startableAgents).
+var fakeAgents = []string{"claude", "opencode", "codex", "gemini", "pi"}
+
+// checkAgentChoice is the api's agentChoice refusals (I-1702).
+func checkAgentChoice(agent string, remoteControl bool) *apiError {
+	if !slices.Contains(fakeAgents, agent) {
+		return invalid("agent must be one of claude, opencode, codex, gemini, pi").withDetail(map[string]any{"reason": "agent"})
+	}
+	if remoteControl && agent != "claude" {
+		return invalid("remote_control is Claude Code's; it needs agent claude").withDetail(map[string]any{"reason": "remote_control"})
+	}
+	return nil
+}
+
+// startAgentOn opens agent's window on p as hostd's StartAgent does: a
+// window of that name already open is left alone and answered existed
+// (I-1702). The new agent is idle at its prompt, as an agent that has
+// just started is. The answer is the agent op's result.
+func (f *Fake) startAgentOn(p *project, agent string) map[string]any {
+	if agent == "" {
+		agent = "claude"
+	}
+	if p.Signals == nil {
+		p.Signals = &Signals{GuestdOK: true}
+	}
+	for _, a := range p.Signals.Agents {
+		if a.Window == agent {
+			return map[string]any{"agent": agent, "window": agent, "existed": true}
+		}
+	}
+	p.Signals.Agents = append(p.Signals.Agents, AgentSignal{Agent: agent, Window: agent, State: "idle", Terminal: "tmux:" + agent})
+	f.agentStarts++
+	return map[string]any{"agent": agent, "window": agent, "existed": false}
+}
+
+// startAgent is POST /v1/projects/{id}/agents (I-1702), with the api's
+// refusals.
+func (f *Fake) startAgent(w http.ResponseWriter, r *http.Request) *apiError {
+	p, e := f.project(userFrom(r), r.PathValue("id"))
+	if e != nil {
+		return e
+	}
+	var body struct {
+		Agent         string `json:"agent"`
+		RemoteControl bool   `json:"remote_control"`
+	}
+	if e := decodeBody(r, &body, true); e != nil {
+		return e
+	}
+	agent := body.Agent
+	if agent == "" {
+		agent = p.AgentDefault
+	}
+	if agent == "" {
+		agent = "claude"
+	}
+	if e := checkAgentChoice(agent, body.RemoteControl); e != nil {
+		return e
+	}
+	if p.Multiplexer == multiplexer.Herdr {
+		return errf("conflict", "%s's terminals are herdr's; start an agent there with `repose run`", p.Slug).withDetail(map[string]any{"reason": "herdr"})
+	}
+	if p.State != "running" {
+		return errf("conflict", "%s is %s; start it first", p.Slug, p.State).withDetail(map[string]any{"reason": "not_running", "state": p.State})
+	}
+	o := f.newOp(p, "agent")
+	if msg := f.agentFails; msg != "" {
+		o.State, o.Error = "error", msg
+	} else {
+		p.Resting = nil
+		o.Result = f.startAgentOn(p, agent)
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"op_id": o.id, "agent": agent})
+	return nil
+}
+
+// SetAgentFailure makes every agent op fail with msg ("" puts success
+// back), as a hostd that refuses StartAgent does.
+func (f *Fake) SetAgentFailure(msg string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.agentFails = msg
+}
+
+// AgentStarts is how many agent windows the fake has opened.
+func (f *Fake) AgentStarts() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.agentStarts
 }
 
 // createRefusedPrefix is the api's ops.CreateRefusedPrefix (I-1648).

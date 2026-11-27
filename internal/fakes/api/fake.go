@@ -200,10 +200,14 @@ type Fake struct {
 	// wakes counts POST /internal/wake, for the gateway's dedupe tests;
 	// userWakes counts POST /projects/:id/wake (I-1682).
 	userWakes int
-	wakes     int
-	sessions  []SessionReport
-	questions []*Question // newest last (DECISIONS I-245)
-	holds     []string    // question ids the dashboard held (I-1242)
+	// agentStarts counts agent windows opened and agentFails is the
+	// failure every agent op ends with, "" for none (I-1702).
+	agentStarts int
+	agentFails  string
+	wakes       int
+	sessions    []SessionReport
+	questions   []*Question // newest last (DECISIONS I-245)
+	holds       []string    // question ids the dashboard held (I-1242)
 	// says are the `repose say` messages the fake took, and sayAgents /
 	// sayState / sayReplaced what it answers with (DECISIONS I-1144).
 	says         []Say
@@ -773,6 +777,7 @@ func (f *Fake) register() {
 	f.handle("DELETE /v1/projects/{id}", f.destroyProject)
 	f.handle("POST /v1/projects/{id}/start", f.startProject)
 	f.handle("POST /v1/projects/{id}/wake", f.wakeProject)
+	f.handle("POST /v1/projects/{id}/agents", f.startAgent)
 	f.handle("POST /v1/projects/{id}/stop", f.stopProject)
 	f.handle(opPattern, f.getOp)
 	f.handle(logPattern, f.opLog)

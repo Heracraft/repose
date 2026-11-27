@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1171 entries.
+1172 entries.
 
 ## Scope
 
@@ -1203,3 +1203,4 @@ pointer, not a summary.
 - **I-1694** Design 2 is built for customers and replaces design 1 on the Mac, with no migration; idle machines on a Mac give their memory back by rest by save (conductor, design 2 build, 2026-11-27) — L39815
 - **I-1696** A wake waits as long as the machine takes to come back, up to two minutes, through the gateway, the api and the ops engine, so the first ssh to a machine resting as a save succeeds however long its restore takes; and a restore into a project with no host goes where the snapshot is kept (d2-core, after the design 2 release, 2026-11-27) — L39823
 - **I-1704** The hosted plans (Solo, Plus, Pro) include any number of hosts of the user's own at no extra price, and a machine on such a host counts nothing against the plan (sweep-dash, 2026-11-27) — L39829
+- **I-1702** The dashboard starts agents: a machine made there starts its agent, the form asks which when the account has none to go by, and a running machine's page has Start agent with Claude Code's Remote Control as an option (sweep-dash, 2026-11-27) — L39838
