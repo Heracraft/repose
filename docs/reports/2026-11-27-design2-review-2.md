@@ -357,3 +357,23 @@ Rules that bit:
   are cited from its report, with its evidence, and none of its ranks was changed. Its
   P0 and P1 were empty, and its P2 1 (parked) and P2 2 (Add a host) are P2-1 and P2-3
   here. The conductor relays the signing request.
+- review-dash-2: signed, 2026-11-27, with three notes and no disagreement on rank (relayed by the conductor, verbatim).
+  1. P2-1 (parked), the dashboard half, in full: HR2 was read 17 times, 3 s apart,
+     18:47:21-18:48:11Z (fast.log). The list showed each machine as "running · 0 B held"
+     with Stop offered from 18:47:27Z. The page header said "running · 0 B held" while the
+     card on the same page said "Memory held 368 MB of 8 GB" and Disk "40 GB" with no use
+     figure. The host row said "online · just now". After the restart the events list shows
+     only "machine running" (18:44, 18:48): nothing says the Mac restarted or that the memory
+     was kept. HR1 and HR3 read the same in rows.log and fast.log. I did not read HR4. Stop
+     offered on a parked machine is part of this finding.
+  2. P2-2: I agree it moves up from my P3 3-5 to P2. review-mac-2's evidence (12.0 GB held for
+     an 8 GB machine; 0 B held after a create, a start, the lock and each restart) is wider
+     than mine. On the dashboard I measured "Memory held 8.3 GB of 8 GB" at 18:47:21Z, and
+     "0 B held" for running machines at 17:24:02-17:25:13Z, 17:54:00Z and through HR1-HR3.
+  3. P1-1 and P1-2 have a dashboard half that I could not measure as a customer, because I
+     created nothing. While the Mac was locked (16:47-17:22Z) the dashboard showed
+     "frozen · 5 GB held" (true). No line said that the save waits for the unlock. New
+     project said "on e2e-d2lab · 12.4 GB free · 3 running" at 17:58Z, while the three
+     machines held all 20 GB of room (my P3 8). So the dashboard invites the create that P1-2
+     shows being refused, with the refusal's wrong advice. The dashboard create on a full or
+     locked Mac is Not run (no window; conductor ruling 17:58Z).
