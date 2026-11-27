@@ -4,9 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -323,4 +326,32 @@ func TestGuestEventsCannotEvictOrBlockHostEvents(t *testing.T) {
 	stub.mu.Unlock()
 	waitFor(t, "live guest event", func() bool { stub.mu.Lock(); defer stub.mu.Unlock(); return len(stub.events) == MaxGuestEvents+2 })
 	stub.mu.Lock()
+}
+
+type countDialer struct{ n atomic.Int32 }
+
+func (d *countDialer) Dial(context.Context) (hostdv1.HostService_SessionClient, func(), error) {
+	d.n.Add(1)
+	return nil, func() {}, errors.New("no peer yet")
+}
+
+// Until a stream has connected once, FirstMaxBackoff caps the wait between
+// tries: a Mac just registered tries every couple of seconds while the
+// edge peers its key, rather than backing off to 30 s (d2-core,
+// 2026-11-27). Without it the schedule is the usual one.
+func TestFirstMaxBackoffBeforeTheFirstSession(t *testing.T) {
+	run := func(cfg Config) int32 {
+		d := &countDialer{}
+		s := New(cfg, d, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		ctx, cancel := context.WithTimeout(context.Background(), 700*time.Millisecond)
+		defer cancel()
+		s.Run(ctx)
+		return d.n.Load()
+	}
+	if n := run(Config{BackoffBase: 200 * time.Millisecond}); n > 3 {
+		t.Fatalf("without the cap %d tries in 700 ms; the test no longer shows the cap", n)
+	}
+	if n := run(Config{BackoffBase: 200 * time.Millisecond, FirstMaxBackoff: 50 * time.Millisecond}); n < 6 {
+		t.Fatalf("with a 50 ms cap only %d tries in 700 ms", n)
+	}
 }

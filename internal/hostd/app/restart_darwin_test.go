@@ -3,9 +3,11 @@ package app
 import (
 	"context"
 	"errors"
+	"io"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/heracraft/repose/internal/hostd/shell"
 )
@@ -58,5 +60,35 @@ func TestRestartMacFallsBackToShutdown(t *testing.T) {
 	r = &restartRunner{fail: map[string]bool{"/usr/bin/osascript": true}}
 	if err := restartMac(context.Background(), r, false, true, 501, "dev"); err == nil {
 		t.Fatal("a user hostd has no shutdown to fall back on")
+	}
+}
+
+type hangingRunner struct{ ran []string }
+
+func (h *hangingRunner) Start(context.Context, io.Reader, ...string) (shell.Proc, error) {
+	return nil, errors.New("not used")
+}
+
+func (h *hangingRunner) Run(ctx context.Context, argv ...string) (shell.Result, error) {
+	h.ran = append(h.ran, argv[0])
+	if slices.Contains(argv, "/usr/bin/osascript") {
+		<-ctx.Done() // an Automation consent prompt nobody answers
+		return shell.Result{}, ctx.Err()
+	}
+	return shell.Result{}, nil
+}
+
+// A System Events restart that never answers (the lab Mac, from root) is
+// given up after politeTimeout and the Mac restarts with shutdown.
+func TestRestartMacDoesNotWaitOnAConsentPrompt(t *testing.T) {
+	old := politeTimeout
+	politeTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { politeTimeout = old })
+	h := &hangingRunner{}
+	if err := restartMac(context.Background(), h, true, true, 501, "dev"); err != nil {
+		t.Fatal(err)
+	}
+	if len(h.ran) != 2 || h.ran[1] != "/sbin/shutdown" {
+		t.Fatalf("ran %v", h.ran)
 	}
 }

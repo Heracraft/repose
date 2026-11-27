@@ -53,7 +53,7 @@
 	let memText = $derived(
 		memUsed === undefined
 			? ''
-			: unsized(project) && project.host_name
+			: unsized(project) && project.host_name && !project.vm
 				? `${bytes(memUsed)} of ${project.host_name}'s ${bytes(memBytes)}`
 				: `${bytes(memUsed)} of ${bytes(memBytes)}`
 	);

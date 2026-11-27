@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/heracraft/repose/internal/hostd/shell"
 )
@@ -30,18 +31,31 @@ func restartArgv(root, loggedIn bool, uid int, name string) ([][]string, error) 
 	return nil, errors.New("nobody is logged in to this Mac and hostd is not root, so it cannot restart it")
 }
 
-// restartMac runs restartArgv's commands in turn until one succeeds. The
-// shutdown after a failed System Events restart (an automation consent
-// refused, say) is what the user asked for: every machine is parked
-// already, so only the restart itself is left.
+// politeTimeout bounds the System Events restart. Measured on the lab Mac
+// (2026-11-27): asked through `launchctl asuser` from root, osascript
+// waits on an Automation consent prompt and never answers, which would
+// leave every machine parked behind a restart that is not coming. A var
+// for tests.
+var politeTimeout = 15 * time.Second
+
+// restartMac runs restartArgv's commands in turn until one succeeds, each
+// but the last within politeTimeout. The shutdown after a System Events
+// restart that failed or did not answer is what the user asked for: every
+// machine is parked already, so only the restart itself is left.
 func restartMac(ctx context.Context, r shell.Runner, root, loggedIn bool, uid int, name string) error {
 	tries, err := restartArgv(root, loggedIn, uid, name)
 	if err != nil {
 		return err
 	}
 	var last error
-	for _, argv := range tries {
-		if _, err := r.Run(ctx, argv...); err != nil {
+	for i, argv := range tries {
+		rctx, cancel := ctx, context.CancelFunc(func() {})
+		if i < len(tries)-1 {
+			rctx, cancel = context.WithTimeout(ctx, politeTimeout)
+		}
+		_, err := r.Run(rctx, argv...)
+		cancel()
+		if err != nil {
 			last = fmt.Errorf("%s: %w", argv[0], err)
 			continue
 		}

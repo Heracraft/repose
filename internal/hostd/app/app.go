@@ -186,9 +186,33 @@ const HostNetUnit = "repose-host-net.service"
 // TokenError is returned by EnsureIdentity when the token is refused.
 var TokenError = register.ErrTokenUsed
 
-// registerRetry is the wait between registration attempts; a variable so
-// the test of the loop does not take half a minute.
+// registerRetry is the longest wait between registration attempts; a
+// variable so the test of the loop does not take half a minute.
 var registerRetry = 30 * time.Second
+
+// registerFirstRetry and registerFirstTry start the registration's
+// back-off: a host just added waits for the edge to peer its key (its
+// WireGuard sync runs every 30 s), so the first tries are short and close
+// together, doubling to registerRetry between tries and to 20 s, gRPC's
+// own connect timeout, for one try. Before, every try waited out gRPC's
+// 20 s and then 30 s more, and a Mac joined 43-84 s after `repose host
+// add` (d2-install, 2026-11-27). The api sees at most one Register every
+// 2 s, then fewer.
+var (
+	registerFirstRetry = 2 * time.Second
+	registerFirstTry   = 3 * time.Second
+	registerMaxTry     = 20 * time.Second
+)
+
+// registerBackoff is the try's deadline and the wait after it for try n
+// (0 the first).
+func registerBackoff(n int) (try, wait time.Duration) {
+	try, wait = registerFirstTry, registerFirstRetry
+	for i := 0; i < n && (try < registerMaxTry || wait < registerRetry); i++ {
+		try, wait = min(try*2, registerMaxTry), min(wait*2, registerRetry)
+	}
+	return min(try, registerMaxTry), min(wait, registerRetry)
+}
 
 // EnsureIdentity loads the identity or registers with the join token,
 // retrying every 30 s while the token is missing or the api unreachable.
@@ -216,9 +240,12 @@ func EnsureIdentity(ctx context.Context, o Options, log *slog.Logger, r shell.Ru
 		return nil, err
 	}
 	cfg := register.Config{Dir: o.StateDir, TokenPath: o.TokenPath, APIAddr: o.APIAddr, ServerName: o.APIServerName, Roots: roots, Dial: o.APIDial}
-	for {
+	for n := 0; ; n++ {
 		cfg.Info = hostinfo.Collect(ctx, r, l)
-		id, err := register.Register(ctx, cfg)
+		try, wait := registerBackoff(n)
+		tctx, cancel := context.WithTimeout(ctx, try)
+		id, err := register.Register(tctx, cfg)
+		cancel()
 		switch {
 		case err == nil:
 			log.Info("registered", "event", "register", "host_id", id.Host.HostID)
@@ -248,12 +275,12 @@ func EnsureIdentity(ctx context.Context, o Options, log *slog.Logger, r shell.Ru
 			}
 			log.Warn("waiting for join token", "event", "register")
 		default:
-			log.Warn("register failed; retrying", "event", "register", "err", err.Error())
+			log.Warn("register failed; retrying", "event", "register", "err", err.Error(), "try", n+1, "retry_ms", wait.Milliseconds())
 		}
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
-		case <-time.After(registerRetry):
+		case <-time.After(wait):
 		}
 	}
 }
@@ -348,7 +375,14 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 	d := &Daemon{o: o, log: log, st: st, metrics: m, id: id, start: time.Now()}
 	d.dialer = &rotatingDialer{inner: stream.GRPCDialer{Addr: o.APIAddr, TLS: id.TLSConfig(roots, o.APIServerName), NetDial: o.APIDial}}
 	lh := &lateHost{}
-	d.strm = stream.New(stream.Config{}, streamDialer{d.dialer}, lh, m, log)
+	scfg := stream.Config{}
+	if o.APIDial != nil {
+		// A Mac dials through its own WireGuard, which the edge peers
+		// within 30 s of the registration: until the first session the
+		// tries stay 2 s apart (FirstMaxBackoff).
+		scfg.FirstMaxBackoff = 2 * time.Second
+	}
+	d.strm = stream.New(scfg, streamDialer{d.dialer}, lh, m, log)
 
 	var blob snapshot.Blob
 	switch {
