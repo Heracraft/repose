@@ -9,6 +9,7 @@ package metrics
 
 import (
 	"context"
+	"net"
 	"net/http"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -162,8 +163,9 @@ var NotifyDropReasons = []string{"rate_limited", "invalid", "queue_full"}
 // deadline), deadline (the deadline passed before the snapshot started),
 // failed (the park failed after it started; the guest keeps running),
 // no_key (the image key was not available), busy (another park or unpark
-// held the lock past the deadline).
-var ParkSkippedReasons = []string{"no_room", "estimate", "deadline", "failed", "no_key", "busy"}
+// held the lock past the deadline), locked (a Mac whose screen is locked,
+// where a save fails and can end the VM, I-1682).
+var ParkSkippedReasons = []string{"no_room", "estimate", "deadline", "failed", "no_key", "busy", "locked"}
 
 // UnparkDiscardedReasons is the `reason` enum of
 // repose_host_guest_unpark_discarded_total: incomplete (the image was never
@@ -237,7 +239,7 @@ func NewVersion(version string) *M {
 		Load1:                 f.gauge("load1", "Host one-minute load average."),
 		GuestdLost:            f.gauge("guestd_lost", "Count of guests with guestd_ok=false."),
 		GuestsInterrupted:     f.gauge("guests_interrupted", "Guests a host restart took down in the last 6 h that have not run since (I-645)."),
-		GuestParkSkipped:      f.counterVec("guest_park_skipped_total", "Running guests a park left skipped, so their memory is lost when the host goes down, by reason: no_room, estimate, deadline, failed, no_key, busy (I-796).", "reason"),
+		GuestParkSkipped:      f.counterVec("guest_park_skipped_total", "Running guests a park left skipped, so their memory is lost when the host goes down, by reason: no_room, estimate, deadline, failed, no_key, busy, locked (I-796, I-1682).", "reason"),
 		GuestUnparkDiscarded:  f.counterVec("guest_unpark_discarded_total", "Parked guests whose memory image an unpark discarded, so they started cold and lost what they were running, by reason: incomplete, too_old, changed, no_key, failed, window (I-796).", "reason"),
 		GuestCPUSecondsTotal:  f.counterVec("guest_cpu_seconds_total", "Guest CPU time summed by class.", "class"),
 		GuestNetBytesTotal:    f.counterVec("guest_net_bytes_total", "Guest network bytes by direction.", "direction"),
@@ -306,6 +308,12 @@ func (m *M) Registry() *prometheus.Registry { return m.obs.Registry() }
 // Serve runs the /metrics endpoint until ctx is done. The address must name
 // an interface: docs/ops/OBSERVABILITY.md requires the WireGuard address.
 func (m *M) Serve(ctx context.Context, addr string) error { return m.obs.Serve(ctx, addr) }
+
+// ServeListener serves on a listener the caller opened (the Mac's mesh
+// address, DECISIONS I-1670).
+func (m *M) ServeListener(ctx context.Context, ln net.Listener) error {
+	return m.obs.ServeListener(ctx, ln)
+}
 
 type promauto struct{ reg *obsmetrics.Metrics }
 

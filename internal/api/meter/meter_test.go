@@ -393,18 +393,29 @@ func TestIngestKeepsParkedWaitingOnlyFromAnOwnedHost(t *testing.T) {
 	parkedAt := now.Add(-20 * time.Minute)
 	sample := func(host uuid.UUID, gid uuid.UUID) {
 		ing.OnSamples(ctx, host, &hostdv1.Samples{Ts: now.Unix(), Guests: []*hostdv1.GuestSample{
-			{GuestId: gid.String(), State: "running", Class: "large", Signals: &hostdv1.GuestSignals{}, ParkedWaitingSince: parkedAt.Unix()},
+			{GuestId: gid.String(), State: "running", Class: "large", Signals: &hostdv1.GuestSignals{}, ParkedWaitingSince: parkedAt.Unix(),
+				WaitsFor: "unlock", Vm: &hostdv1.VmSize{Vcpus: 2, MemMib: 4096, FullVcpus: 5, FullMemMib: 8192}},
 		}})
 	}
 	sample(testHost, gidFleet)
 	sample(owned, gidMac)
 	l, ok, err := meter.LatestSample(ctx, pool, pidMac)
-	if err != nil || !ok || l.ParkedWaitingSince == nil || !l.ParkedWaitingSince.Equal(parkedAt) {
+	if err != nil || !ok || l.ParkedWaitingSince == nil || !l.ParkedWaitingSince.Equal(parkedAt) || l.WaitsFor != "unlock" {
 		t.Fatalf("owned host: %+v %v %v", l, ok, err)
 	}
 	l, ok, err = meter.LatestSample(ctx, pool, pidFleet)
-	if err != nil || !ok || l.ParkedWaitingSince != nil {
-		t.Fatalf("a fleet host's sample kept parked_waiting_since: %+v %v %v", l, ok, err)
+	if err != nil || !ok || l.ParkedWaitingSince != nil || l.WaitsFor != "" {
+		t.Fatalf("a fleet host's sample kept parked_waiting_since or waits_for: %+v %v %v", l, ok, err)
+	}
+	// The size the VM got (I-1680), kept only from a host an account owns.
+	for pid, want := range map[uuid.UUID]bool{pidMac: true, pidFleet: false} {
+		p, err := store.GetProject(ctx, pool, pid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := p.VMSize != nil && p.VMSize.SizedDown() && p.VMSize.MemMiB == 4096; got != want {
+			t.Fatalf("project %s vm_size %+v, want kept %v", pid, p.VMSize, want)
+		}
 	}
 }
 

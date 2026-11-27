@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -61,6 +62,11 @@ type Options struct {
 	APIAddr       string
 	APIServerName string
 	APICA         string
+	// APIDial, when set, opens every api connection (register, rotate,
+	// the Session): on macOS through hostd's WireGuard netstack
+	// (unet.Edge.DialContext, DECISIONS I-1670). Nil on Linux, where
+	// wg0 is the kernel's.
+	APIDial       func(ctx context.Context, addr string) (net.Conn, error)
 	TokenPath     string
 	MetricsAddr   string
 	ControlSock   string
@@ -84,6 +90,8 @@ type Options struct {
 	LogLevel         string
 	// Park is the guest park across host restarts (park.go, I-652).
 	Park ParkOptions
+	// Mac is a Mac host's substrate (design 2); unused elsewhere.
+	Mac MacOptions
 	// PauseIdle lets this host rest an idle guest (DECISIONS I-818). It
 	// is what puts `pause` in Hello.features, so an api asks this host
 	// for no pause and no wake without it.
@@ -178,9 +186,33 @@ const HostNetUnit = "repose-host-net.service"
 // TokenError is returned by EnsureIdentity when the token is refused.
 var TokenError = register.ErrTokenUsed
 
-// registerRetry is the wait between registration attempts; a variable so
-// the test of the loop does not take half a minute.
+// registerRetry is the longest wait between registration attempts; a
+// variable so the test of the loop does not take half a minute.
 var registerRetry = 30 * time.Second
+
+// registerFirstRetry and registerFirstTry start the registration's
+// back-off: a host just added waits for the edge to peer its key (its
+// WireGuard sync runs every 30 s), so the first tries are short and close
+// together, doubling to registerRetry between tries and to 20 s, gRPC's
+// own connect timeout, for one try. Before, every try waited out gRPC's
+// 20 s and then 30 s more, and a Mac joined 43-84 s after `repose host
+// add` (d2-install, 2026-11-27). The api sees at most one Register every
+// 2 s, then fewer.
+var (
+	registerFirstRetry = 2 * time.Second
+	registerFirstTry   = 3 * time.Second
+	registerMaxTry     = 20 * time.Second
+)
+
+// registerBackoff is the try's deadline and the wait after it for try n
+// (0 the first).
+func registerBackoff(n int) (try, wait time.Duration) {
+	try, wait = registerFirstTry, registerFirstRetry
+	for i := 0; i < n && (try < registerMaxTry || wait < registerRetry); i++ {
+		try, wait = min(try*2, registerMaxTry), min(wait*2, registerRetry)
+	}
+	return min(try, registerMaxTry), min(wait, registerRetry)
+}
 
 // EnsureIdentity loads the identity or registers with the join token,
 // retrying every 30 s while the token is missing or the api unreachable.
@@ -207,10 +239,13 @@ func EnsureIdentity(ctx context.Context, o Options, log *slog.Logger, r shell.Ru
 	if err != nil {
 		return nil, err
 	}
-	cfg := register.Config{Dir: o.StateDir, TokenPath: o.TokenPath, APIAddr: o.APIAddr, ServerName: o.APIServerName, Roots: roots}
-	for {
+	cfg := register.Config{Dir: o.StateDir, TokenPath: o.TokenPath, APIAddr: o.APIAddr, ServerName: o.APIServerName, Roots: roots, Dial: o.APIDial}
+	for n := 0; ; n++ {
 		cfg.Info = hostinfo.Collect(ctx, r, l)
-		id, err := register.Register(ctx, cfg)
+		try, wait := registerBackoff(n)
+		tctx, cancel := context.WithTimeout(ctx, try)
+		id, err := register.Register(tctx, cfg)
+		cancel()
 		switch {
 		case err == nil:
 			log.Info("registered", "event", "register", "host_id", id.Host.HostID)
@@ -219,7 +254,9 @@ func EnsureIdentity(ctx context.Context, o Options, log *slog.Logger, r shell.Ru
 			// host-conventions.md, DECISIONS I-18, I-40). When hostd
 			// registers itself instead of repose-register.service, nothing
 			// else would.
-			if r != nil {
+			// A Mac has no renderer: its edge reads host.json itself
+			// (unet, I-1670), and systemctl is not there to warn about.
+			if r != nil && runtime.GOOS == "linux" {
 				if _, rerr := r.Run(ctx, "systemctl", "--no-block", "restart", HostNetUnit); rerr != nil {
 					log.Warn("restart of the host network renderer failed", "event", "register", "unit", HostNetUnit, "err", rerr.Error())
 				}
@@ -238,12 +275,12 @@ func EnsureIdentity(ctx context.Context, o Options, log *slog.Logger, r shell.Ru
 			}
 			log.Warn("waiting for join token", "event", "register")
 		default:
-			log.Warn("register failed; retrying", "event", "register", "err", err.Error())
+			log.Warn("register failed; retrying", "event", "register", "err", err.Error(), "try", n+1, "retry_ms", wait.Milliseconds())
 		}
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
-		case <-time.After(registerRetry):
+		case <-time.After(wait):
 		}
 	}
 }
@@ -306,13 +343,25 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 	// I-1638). The state lock above makes this the only hostd doing it.
 	// A changed hostd.env ends this start: systemd starts hostd again with
 	// the new flags, and the guests, units of their own, keep running.
-	if res, err := (&hostfiles.Ensurer{Root: "/", R: r, Log: log}).Ensure(ctx); err != nil {
-		log.Warn("host files not complete; the next start tries again", "event", "host_file", "err", err.Error())
-	} else if res.Restart {
-		log.Info("hostd.env changed; restarting with it", "event", "host_file", "written", len(res.Written))
-		return nil
+	plat := platformFor(o)
+	if plat.prepare != nil {
+		var perr error
+		if o, perr = plat.prepare(ctx, o, log); perr != nil {
+			return perr
+		}
 	}
-	l := &lvm.Real{VG: o.VG, Pool: o.Pool, R: r, Sandbox: true}
+	if !plat.noHostFiles {
+		if res, err := (&hostfiles.Ensurer{Root: "/", R: r, Log: log}).Ensure(ctx); err != nil {
+			log.Warn("host files not complete; the next start tries again", "event", "host_file", "err", err.Error())
+		} else if res.Restart {
+			log.Info("hostd.env changed; restarting with it", "event", "host_file", "written", len(res.Written))
+			return nil
+		}
+	}
+	var l lvm.LVM = &lvm.Real{VG: o.VG, Pool: o.Pool, R: r, Sandbox: true}
+	if plat.volumes != nil {
+		l = plat.volumes(r)
+	}
 	id, err := EnsureIdentity(ctx, o, log, r, l)
 	if err != nil {
 		return err
@@ -324,9 +373,16 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 	m := newMetrics(o)
 	total, _, _ := hostinfo.MemInfo() // an unreadable meminfo means no memory accounting; Defaults() copes with zero
 	d := &Daemon{o: o, log: log, st: st, metrics: m, id: id, start: time.Now()}
-	d.dialer = &rotatingDialer{inner: stream.GRPCDialer{Addr: o.APIAddr, TLS: id.TLSConfig(roots, o.APIServerName)}}
+	d.dialer = &rotatingDialer{inner: stream.GRPCDialer{Addr: o.APIAddr, TLS: id.TLSConfig(roots, o.APIServerName), NetDial: o.APIDial}}
 	lh := &lateHost{}
-	d.strm = stream.New(stream.Config{}, streamDialer{d.dialer}, lh, m, log)
+	scfg := stream.Config{}
+	if o.APIDial != nil {
+		// A Mac dials through its own WireGuard, which the edge peers
+		// within 30 s of the registration: until the first session the
+		// tries stay 2 s apart (FirstMaxBackoff).
+		scfg.FirstMaxBackoff = 2 * time.Second
+	}
+	d.strm = stream.New(scfg, streamDialer{d.dialer}, lh, m, log)
 
 	var blob snapshot.Blob
 	switch {
@@ -399,7 +455,13 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 		PathsTimeout:       o.PathsTimeout,
 		SetupTimeout:       o.SetupTimeout,
 	}
-	fcfg, fdeps := parkSetup(o, r, l, log)
+	var fcfg guest.ParkConfig
+	var fdeps guest.ParkDeps
+	if plat.park != nil {
+		fcfg, fdeps = plat.park(o, log)
+	} else {
+		fcfg, fdeps = parkSetup(o, r, l, log)
+	}
 	cfg.Park = fcfg
 	if os.Getenv("REPOSE_HOSTD_TESTING") == "1" {
 		cfg.FailAtStep = o.FailAtStep
@@ -420,7 +482,7 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 	if nixOn {
 		view = &storeview.Real{SD: sdr}
 	}
-	mgr, err := guest.New(cfg, guest.Deps{
+	deps := guest.Deps{
 		State: st, LVM: l, Mount: &mount.Real{R: r}, View: view, Net: hnet.NewReal(r), Systemd: sdr, CH: &ch.HTTP{}, Guestd: dialer, Nix: nix,
 		Roots: gcRoots, Images: images, Blob: blob, Stream: &snapshot.Pipeline{R: r, Sandbox: true, ReplayJournal: true}, Emit: d.strm, Metrics: m, Log: log,
 		MemInfo: hostinfo.MemInfo, Load1: hostinfo.Load1, CgroupCPUPressure: hostinfo.CgroupCPUPressure, StoreStat: hostinfo.StoreStat, ConsoleStart: consoles.start,
@@ -433,7 +495,13 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 		GuestMemory:         hostinfo.GuestMemory,
 		SliceOOMKills:       hostinfo.SliceOOMKills,
 		SetOOMScoreAdj:      hostinfo.SetOOMScoreAdj,
-	})
+	}
+	if plat.adapt != nil {
+		if err := plat.adapt(ctx, r, log, &cfg, &deps); err != nil {
+			return err
+		}
+	}
+	mgr, err := guest.New(cfg, deps)
 	if err != nil {
 		return err
 	}
@@ -443,7 +511,7 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 		images.Refs = mgr.BaseRefs
 	}
 	refreshKeyAtStart(ctx, fdeps.Sealer, log)
-	if o.OwnedHost {
+	if o.OwnedHost && !plat.noSlice {
 		ownedSlice(ctx, r, total, nested, log)
 	}
 	if err := mgr.Reconcile(ctx); err != nil {
@@ -468,6 +536,9 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 	run("samples", func() { d.samplesLoop(ctx) })
 	run("rotation", func() { d.rotationLoop(ctx, roots) })
 	run("prune", func() { d.pruneLoop(ctx) })
+	if plat.loop != nil {
+		run("platform", func() { plat.loop(ctx, mgr, log) })
+	}
 	run("metrics", func() { d.serveMetrics(ctx) })
 	if resetter != nil {
 		run("cpu-reset", func() { resetter.Run(ctx) })
@@ -529,7 +600,7 @@ func (d *Daemon) rotationLoop(ctx context.Context, roots *x509.CertPool) {
 		if !cur.ShouldRotate(time.Now()) {
 			continue
 		}
-		cfg := register.Config{Dir: d.o.StateDir, APIAddr: d.o.APIAddr, ServerName: d.o.APIServerName, Roots: roots, Info: hostinfo.Collect(ctx, shell.Exec{}, nil)}
+		cfg := register.Config{Dir: d.o.StateDir, APIAddr: d.o.APIAddr, ServerName: d.o.APIServerName, Roots: roots, Info: hostinfo.Collect(ctx, shell.Exec{}, nil), Dial: d.o.APIDial}
 		next, err := register.Rotate(ctx, cfg, cur)
 		if err != nil {
 			d.log.Warn("certificate rotation failed", "event", "rotate", "err", err.Error())
@@ -542,13 +613,13 @@ func (d *Daemon) rotationLoop(ctx context.Context, roots *x509.CertPool) {
 		// Fluent Bit ships to) only reach /run/repose when the renderer runs
 		// again; a rotate is the one time they change without a boot
 		// (I-95, I-139).
-		if next.Host.HostCAPub != cur.Host.HostCAPub || next.Host.LokiURL != cur.Host.LokiURL {
+		if runtime.GOOS == "linux" && (next.Host.HostCAPub != cur.Host.HostCAPub || next.Host.LokiURL != cur.Host.LokiURL) {
 			if _, rerr := (shell.Exec{}).Run(ctx, "systemctl", "--no-block", "restart", HostNetUnit); rerr != nil {
 				d.log.Warn("restart of the host network renderer failed", "event", "rotate", "unit", HostNetUnit, "err", rerr.Error())
 			}
 		}
 		d.dialer.mu.Lock()
-		d.dialer.inner = stream.GRPCDialer{Addr: d.o.APIAddr, TLS: next.TLSConfig(roots, d.o.APIServerName)}
+		d.dialer.inner = stream.GRPCDialer{Addr: d.o.APIAddr, TLS: next.TLSConfig(roots, d.o.APIServerName), NetDial: d.o.APIDial}
 		d.dialer.mu.Unlock()
 		d.log.Info("certificate rotated", "event", "rotate", "not_after", next.NotAfter.Format(time.RFC3339))
 		d.strm.Reconnect()
@@ -599,10 +670,27 @@ func (d *Daemon) serveMetrics(ctx context.Context) {
 		}
 	}
 	d.log.Info("metrics listening", "event", "metrics", "addr", addr)
+	if meshListen != nil {
+		// A Mac's WireGuard address lives in hostd's own netstack.
+		if ln, err := meshListen(addr); err != nil {
+			d.log.Error("metrics server failed", "event", "metrics", "err", err.Error())
+			return
+		} else if ln != nil {
+			if err := d.metrics.ServeListener(ctx, ln); err != nil {
+				d.log.Error("metrics server failed", "event", "metrics", "err", err.Error())
+			}
+			return
+		}
+	}
 	if err := d.metrics.Serve(ctx, addr); err != nil {
 		d.log.Error("metrics server failed", "event", "metrics", "err", err.Error())
 	}
 }
+
+// meshListen, when set (the Mac, DECISIONS I-1670), opens a listener on
+// an address of hostd's own WireGuard netstack; it returns nil for any
+// other address, which Serve binds as on Linux.
+var meshListen func(addr string) (net.Listener, error)
 
 // --- control.Backend ----------------------------------------------------
 

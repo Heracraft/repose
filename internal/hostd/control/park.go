@@ -64,3 +64,19 @@ func (c *Client) Unpark(ctx context.Context) ([]guest.ParkResult, error) {
 	var res []guest.ParkResult
 	return res, c.do(ctx, http.MethodPost, "/unpark", &res)
 }
+
+// ParkOperatorReason is the reason a park asked for by an operator or by
+// `repose host restart` carries.
+const ParkOperatorReason = guest.ParkOperator
+
+// ParkSkippedStopped is the park result's reason for a machine that was
+// not running, which a park leaves as it is and loses nothing.
+const ParkSkippedStopped = guest.SkipNotRunning
+
+// ParkSkippedParked is the reason for a machine parked already: its memory
+// is saved, so a restart loses nothing of it.
+const ParkSkippedParked = guest.SkipParked
+
+// ParkSkippedLocked is the reason for every machine on a Mac whose screen
+// is locked: nothing is saved there until it is unlocked (I-1682).
+const ParkSkippedLocked = guest.SkipLocked

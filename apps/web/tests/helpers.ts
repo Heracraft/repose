@@ -453,6 +453,12 @@ export async function ownedHost(body: {
 	free_bytes?: number;
 	/** With project_id: the memory that running machine reports in use (I-1632). */
 	mem_used_bytes?: number;
+	/** With state_host: a Mac that parks its machines and restarts (I-1690). */
+	restart?: boolean;
+	/** With restart: the slugs its next restart cannot park. */
+	not_parked?: string[];
+	/** With restart: the Mac's screen is locked, so its restart parks nothing. */
+	locked?: boolean;
 }): Promise<string> {
 	const res = await fetch(`${adminURL()}/owned-host`, {
 		method: 'POST',

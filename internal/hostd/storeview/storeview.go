@@ -19,7 +19,6 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -162,21 +161,10 @@ func rootOf(proc string, pid int) (rootKind, error) {
 	if err := unix.Statfs(p, &fs); err != nil {
 		return 0, err
 	}
-	if fs.Type == unix.TMPFS_MAGIC {
+	if fs.Type == tmpfsMagic {
 		return rootView, nil
 	}
 	return rootOther, nil
-}
-
-// storePathRe is a top-level store path: no further slashes, no dot names.
-var storePathRe = regexp.MustCompile(`^/nix/store/[0-9a-df-np-sv-z]{32}-[A-Za-z0-9+._?=-]+$`)
-
-// storeName returns the entry name of a top-level store path.
-func storeName(p string) (string, bool) {
-	if !storePathRe.MatchString(p) {
-		return "", false
-	}
-	return filepath.Base(p), true
 }
 
 // Fake records what each unit's view holds.

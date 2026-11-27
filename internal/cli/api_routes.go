@@ -224,6 +224,12 @@ func (c *Client) StartProject(ctx context.Context, id string) (*StartResult, err
 	return &r, nil
 }
 
+// WakeProject wakes a resting machine now (POST /projects/:id/wake,
+// DECISIONS I-1682); a machine that is not resting answers at once.
+func (c *Client) WakeProject(ctx context.Context, id string) error {
+	return c.post(ctx, "/projects/"+url.PathEscape(id)+"/wake", nil, nil)
+}
+
 func (c *Client) StopProject(ctx context.Context, id string, snapshot bool) (string, error) {
 	var r opIDResponse
 	body := map[string]bool{"snapshot": snapshot}

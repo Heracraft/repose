@@ -76,7 +76,7 @@ unique; it is the second half of the SSH login name.
 A host the user owns is a machine of their own that joined their account:
 their projects run on it and nobody else's ever does, and it is outside
 the seat count, the waitlist and the host gauges, because repose did not
-buy it. These three routes are the whole of it; the hosts repose runs are
+buy it. These routes are the whole of it; the hosts repose runs are
 the operator's (`repose-admin hosts`) and appear on none of them.
 
 | Method | Path | Body / result |
@@ -84,11 +84,14 @@ the operator's (`repose-admin hosts`) and appear on none of them.
 | GET | `/hosts` | `[Host]`, oldest first: the hosts this account owns. A host repose runs is never listed, and neither is another account's, so an empty list is the answer for almost every account |
 | POST | `/hosts` | `{name?}`, or no body at all, which is the same as no name → `201`, the `Host` plus `join_token`, `join_token_expires_at` and `install`: the one answer that carries the token, as a minted API token is. `name` matches `[a-z0-9][a-z0-9-]{0,31}` and is free among this account's hosts; without it the api names the host `host-1`, `host-2`, … in the account, and the caller never invents a name. The token is single-use and valid 24 hours, the same token `repose-admin hosts add` mints, and the host trades it for its identity with `Register` (`grpc-hostd.md`) |
 | DELETE | `/hosts/{id}` | `204`: the host is drained and retired, its certificate serials and its unused join token cleared so it cannot come back on them, and a machine that is still dialling is refused. A host that still holds live machines is `409 conflict` `host_has_projects` with their slugs, **unless its state is `unreachable` or `lost`**, where it is retired with them still on it (I-1420): a destroy's phases are skipped only for `lost` and `retired` (I-924), so refusing left an account unable to remove the host, unable to destroy the machines and unable to add a replacement against the plan's one slot. The machines are not destroyed, and every `repose rm` on them then drains to no phases; what is lost is said at the client's confirmation, not here. Already retired answers `204` too, so a repeated remove is not an error. The row stays, so `GET /hosts` still lists it as `retired`; `repose host ls` and the dashboard leave a removed host out, because it is not hardware the user has. It also clears `last_error` on the account's machines that are in `error`, hold no host and failed on `capacity`: a placement that found no host of the account's own frees the machine and leaves its sentence on the row, so without this "your host mac-mini has not registered yet" outlives the host and the dashboard names hardware the user no longer has. The ops keep the history, and the next start says what is true then |
+| POST | `/hosts/{id}/restart` | `{force?}`, or no body → `202 {op_id}` (added with I-1690): a `host_restart` op whose one phase is hostd's `RestartHost` (`grpc-hostd.md`): every machine on the host is parked with its memory, then the host restarts, and the machines run again at its user's next login. Only for a host whose `can_restart` is true. A `host_restart` op already pending or running for the host is answered with its `op_id`, so a second press is the same restart. Refusals: `404 not_found` for a host that is not the account's; `409 conflict` `detail.reason = "host_not_ready"` (with `detail.state`) for a host that is not `ready` or is being removed; `409 conflict` `detail.reason = "restart_unsupported"` for a host whose hostd does not name `restart`. The op ends `done` with `result {parked, not_parked: [slug], restarting: true, park_ms}` when the host restarts (with `force`, `not_parked` names the machines that start fresh), and `error` with `code` `not_parked` when a machine could not be parked and `force` was false (when nothing was parked because the Mac's screen is locked, the `message` is "This Mac's screen is locked, and a locked Mac cannot save a machine's memory. Nothing restarted; unlock it and restart again."; otherwise its `message` names them by slug, each with hostd's reason (`kept: started with nobody logged in`), its `result` has them in `not_parked` and the reasons in `not_parked_reasons`, nothing restarted and the parked machines run again |
+| GET | `/hosts/:id/ops/:op_id` | an op of one of the account's hosts, in the shape of `GET /projects/:id/ops/:op_id` without the long-poll fields (`{op_id, kind, state, created_at, finished_at, error?: {code, message, detail?}, result?}`); `404 not_found` for a host or op that is not the account's (added with I-1690) |
 
 ```
 Host { id, name, state, provider?, arch?, mem_bytes, vcpus, cores,
        projects, running_projects, snapshots?, last_heartbeat_at?, registered_at?,
        free_mem_bytes?, running_limit?,          -- GET, a ready host that shares (I-1654)
+       can_restart?,                             -- GET, true on a host whose hostd parks before a restart (I-1690)
        created_at,
        join_token?, join_token_expires_at?,     -- the POST answer only
        install?: {command, argument, url} }     -- the POST answer only
@@ -112,13 +115,19 @@ registers; `arch` is the CPU architecture it reported (`x86_64`,
 placed on it and `running_projects` those of them in a state that holds
 memory, which is what the dashboard's list shows.
 
+`can_restart` (I-1690, GET only) is `true` on a host whose hostd names
+`restart` in its features (a Mac without the appliance) and absent
+otherwise: `POST /hosts/{id}/restart` takes it.
+
 `free_mem_bytes` and `running_limit` (I-1654, GET only) are present on a
 `ready` host whose hostd shares it (I-1630): `free_mem_bytes` is the
 memory its hostd last reported free, against which a machine starts at
 1 GiB; `running_limit` is, on an `aarch64` host (the Mac appliance,
 which runs its guests nested), the machines its cores run at once,
 `max((vcpus - 2) / 2, 1)` (I-1640), and absent on any other host, where
-the api cannot tell. The New project form shows both before Create.
+the api cannot tell, and on a Mac without the appliance (its hostd names
+`restart`), which sizes each start to what the running machines leave and
+refuses none for cores (I-1692). The New project form shows both before Create.
 
 `install` is the one line to run on the machine, with its argument
 already in it, the argument on its own, and the address of the page that
@@ -174,11 +183,12 @@ the machines go first: destroy them, or restore them onto another host.
 | DELETE | `/projects/:id` | destroy (volume deleted, last snapshot kept 30 days) → `202 {op_id, state, final_snapshot}`; the destroy is finished only when that op is `done` (`GET /projects/:id` then answers `404`). The project's state is `destroying` from the moment the DELETE answers; the op stops the guest, snapshots the stopped volume (reason `stop`) and deletes it (I-165). A failed destroy leaves the project in `error` with `last_error` and records a `destroy_failed` event, which notifies. A DELETE while a destroy op is open answers with that op. A dead guestd does not fail it (I-156). A temporary project's destroy is `destroy_guest` alone: no snapshot is taken and the ones it has expire at once, so it cannot be restored (I-347). `final_snapshot` is whether this destroy will take one, which a client needs before any phase has run because it says what is kept the moment this route answers: false for a temporary project and false when the project's host is `lost` or `retired`, where every phase including the snapshot is skipped (I-924). Such a destroy sends nothing and finishes at once: the row is `destroyed`, and a snapshot that host kept on its own disk (the account's own host) is marked `gone_with_host`, while one in repose's store stays restorable (I-1548). A client that does not see the field must read it as true, which is what it was for every host that was still there; `repose rm` promised a snapshot for a machine on a Mac the user had deleted, whose snapshot count was 0 (ENG-119, I-1418). `state` was added with I-165; `final_snapshot` with I-1418; `op_id` was always there |
 | POST | `/projects/:id/start` | → `{op_id, restart, create}`; `restart: true` when the project was in `error` or running with its guestd not answering, and the op stops and reboots it on its newest built revision (I-157). `restart` was added with I-157. `create: true` (added with I-406, absent before) when the project has no guest because its create failed before one was made (no host with capacity, a failed build): the op is a `create` (`build`, `create_guest`, with a build log), the project reads `creating` from the answer on, and its placement is redone if its host cannot take it; `restart` is then false. `403 forbidden` with `detail.reason: "abuse_hold"` when the api stopped the project three times within 24 hours because a cryptocurrency miner was running, until an operator runs `repose-admin abuse clear` (added with I-239); the message names the process and the terms. A restore with `start` from a held project's snapshots (`POST /projects/restore`, `.../snapshots/:sid/restore`) is refused the same way, and so is every copy of a held project whether it starts or not (`POST /projects/restore`, `.../snapshots/:sid/restore` with `as_new_project`; I-460); an in-place restore without `start` is not. A stopped project whose only open ops are personal builds (a `machine.nix` change queued them, I-490) is not refused: the builds not started yet are queued again behind the start, so the machine boots on what it has and switches in place once built; one already building is waited for. `409 conflict` with `detail.reason: "restore_unfinished"` (added with I-461) when the project's newest create or restore is a restore that failed in its build or restore phase (after the old guest was destroyed): the project has no usable volume, and another restore is the way back. A `start` op that ends `done` with the machine running but not as asked carries `result.warning: {code, message}` (I-590): its new system did not boot and it runs its previous one (`boot_failed`), or its switch to a newer revision failed (the apply's code); `message` is the sentence to show. An older api never sets it |
 | POST | `/projects/:id/stop` | `{snapshot: bool=true}` → `{op_id}`; the op, once `done`, carries `result: {snapshot_id}` when the stop recorded a snapshot (the api has always set it; documented with I-570, which reads it). The project reads `stopping` once the engine picks the op up, which can be after the `202`. A stop op that fails leaves the project in `error` with `last_error` (`stopping <slug> failed: ...`) and, since I-710, records a `stop_failed` event, which notifies; the CLI waits only until the engine has claimed the op, not for it to finish. A stop's snapshot that fails after the guest is down keeps `snapshot_failed` (I-158) |
+| POST | `/projects/:id/wake` | → `{was_resting, wake_ms}`: a resting machine (`resting` set) is woken now, as the gateway's first connection would wake it; any other machine answers `was_resting: false` at once and nothing reaches its host. A wake that fails is `503 unavailable` with `detail.reason: wake_failed`, as on the other user routes (I-1642). The CLI sends it the moment it reads a resting machine, beside its ssh (I-1682); an api older than I-1682 answers `404` and the gateway wakes the machine as before |
 | GET | `/projects/:id/ops/:op_id` | `{state: pending\|running\|done\|error, error?: {code, message, detail?, fragment_line?, personal_line?}, log_url?, version, project_state, phase?}`; `message` is the sentence to show the user, `detail` the host's own wording for operators (I-159). Answers for a destroyed project's ops too. `?wait=<duration>` (`20s`, `1500ms`, or whole seconds; capped at 20 s) makes it a long-poll (I-236): the answer comes when the op's `version` differs from `?seen=<version>` (from the op as the request found it, without `seen`), when the op is `done` or `error`, when the wait runs out, or when the api begins a drain; a held (or already changed) answer carries the header `Repose-Long-Poll: 1`. Past 4 held reads per user the request is answered at once without the header, and the client pauses before its next read. `version` is opaque and changes with the op's state or phase or the project's state; `project_state` is the project's `state`; `phase` names the phase a `running` op is in (`build`, `start_guest`, `wake`, ...; `wake`, added with I-818, resumes a frozen machine before the first phase of the plan that reaches its guest, and is skipped when there is nothing to wake). `version`, `project_state`, `phase` and `wait` were added with I-236; a client that ignores them polls as before |
 | GET | `/projects/:id/ops/:op_id/log` | SSE stream of `BuildLog` lines (`id:` = seq, `data:` = `{seq, line, ts}`; `ts`, when the line reached the api, since I-322, and a client must accept a line without it), then a `done` event whose data is `{state}`; `?since=<seq>` or `Last-Event-ID` resumes after a line. Browsers cannot set headers on EventSource, so this route also accepts `?access_token=<jwt>`; the token is never logged and the route is the only one that accepts it. |
 | POST | `/projects/:id/resize` | `{volume_bytes}` (grow only) |
 | GET | `/projects/:id/route` | `{host_id, host_name?, host_state?, guest_ip, state, host_unreachable}` (used by CLI for `status` detail; `host_name` is what it shows, I-192) |
-| GET | `/projects/:id/samples?window=1h\|24h\|7d` | `{window, step_s, vcpus, memory_bytes, points: [{ts, cpu, mem_used_bytes, cpu_pressure, host_cpu_wait, disk_used_bytes}], procs: [{comm, cpu_s, rss_max_bytes}]}`: the machine over the window from its minute samples while running (I-492, I-493). `window` defaults to `1h`; `step_s` is 60, 300 or 3600. `vcpus` is the cores the class sells and is fractional on `tiny` (0.5, I-1168), and on a host the account owns whose hostd names `shared` the host's vCPUs, with `memory_bytes` the host's memory (I-1632: a machine there has no size); `cpu` is the share of those vCPUs used, `cpu_pressure` the share of the time a task in the guest waited for a vCPU, `host_cpu_wait` the share of the time the machine waited for a host CPU (all 0 to 1). `mem_used_bytes` is memory in use as the guest sees it. `mem_used_bytes` and `cpu_pressure` are null in a bucket whose samples came from a guest older than I-493. `procs` is the eight process names with the most CPU in the window, their CPU seconds and largest RSS. Any other `window` is `invalid` |
+| GET | `/projects/:id/samples?window=1h\|24h\|7d` | `{window, step_s, vcpus, memory_bytes, points: [{ts, cpu, mem_used_bytes, cpu_pressure, host_cpu_wait, disk_used_bytes}], procs: [{comm, cpu_s, rss_max_bytes}]}`: the machine over the window from its minute samples while running (I-492, I-493). `window` defaults to `1h`; `step_s` is 60, 300 or 3600. `vcpus` is the cores the class sells and is fractional on `tiny` (0.5, I-1168), and on a host the account owns whose hostd names `shared` the host's vCPUs, with `memory_bytes` the host's memory (I-1632: a machine there has no size), except on a Mac without the appliance, where they are what the machine's VM got (`Project.vm`, I-1680, I-1692); `cpu` is the share of those vCPUs used, `cpu_pressure` the share of the time a task in the guest waited for a vCPU, `host_cpu_wait` the share of the time the machine waited for a host CPU (all 0 to 1). `mem_used_bytes` is memory in use as the guest sees it. `mem_used_bytes` and `cpu_pressure` are null in a bucket whose samples came from a guest older than I-493. `procs` is the eight process names with the most CPU in the window, their CPU seconds and largest RSS. Any other `window` is `invalid` |
 
 ```
 Project { id, name, slug, remote_url, class, state, host_id?, host_name?, guest_ip?,
@@ -191,7 +201,7 @@ Project { id, name, slug, remote_url, class, state, host_id?, host_name?, guest_
           running_seconds_today, running_seconds_month, -- what `repose status` shows (I-289)
           last_snapshot_at?, last_error?, host_unreachable, tz,
           idle?: {since, hourly_cents, memory_gb},     -- hourly_cents 0 since I-289, kept one release
-          resting?: {since},                           -- frozen while idle, state still running (I-818)
+          resting?: {since, waits_for?},               -- frozen while idle, state still running (I-818); waits_for: I-1682
           keep_awake,                                  -- kept out of the rest rule (I-820)
           expires_at?,                                 -- set while temporary (I-347)
           personal_opt_out,                            -- machine.nix kept off (I-490)
@@ -203,7 +213,8 @@ Project { id, name, slug, remote_url, class, state, host_id?, host_name?, guest_
           sized,                                       -- false on a host the account owns: class is no size there (I-1632)
           mem_used_bytes?,                             -- running only: memory in use, newest sample (I-1632)
           not_answering?: {since},                     -- running, guestd silent ~3 minutes (I-1652)
-          parked?: {since, waits_for} }                -- running, parked on a Mac until its user logs in (I-1672)
+          parked?: {since, waits_for},                 -- running, parked on a Mac until its user logs in (I-1672)
+          vm?: {vcpus, mem_bytes, full_vcpus, full_mem_bytes, sized_down} }  -- running, the size its VM got (I-1680)
                                                        -- host_name: the owned host's name beside host_id,
                                                        -- absent on a host repose runs (I-1392)
 
@@ -300,12 +311,28 @@ owns whose newest sample says the machine is parked and waits for the
 Mac's user to log in (hostd's `parked_waiting_since`, sent only by hostd
 on a Mac without the appliance, where Virtualization.framework restores a
 save file only in the user's unlocked session, I-1662): `since` is when it
-was parked, `waits_for` is `login`. Its memory is kept and it runs again
+was parked, `waits_for` is `login`, or `unlock` when the Mac's user is
+logged in with the screen locked (I-1682). Its memory is kept and it runs again
 at the login, so it is never `not_answering` though its guestd is silent,
 the `not_answering` event is not raised, and `POST /projects/:id/start`
 answers `409 conflict` as for any running machine, never the restart a
 silent guestd gets. A sample from a fleet host never sets it. An api older
 than I-1672 sends nothing, and says `not_answering` instead.
+
+`resting.waits_for` (I-1682) is set on a machine resting as a save file
+on a Mac that cannot read it now: `unlock` while the Mac's user is
+logged in with the screen locked, `login` while nobody is. A wake meanwhile
+is refused, and the machine wakes once the user unlocks or logs in; its
+memory is kept. Absent everywhere else and from an api older than I-1682.
+
+`vm` (I-1680) is set on a `running` project whose host sizes each start
+to what its running machines leave (a Mac without the appliance, I-1666):
+`vcpus` and `mem_bytes` are what its VM was booted with, `full_vcpus` and
+`full_mem_bytes` what it gets with the host to itself, and `sized_down`
+is true when it got less. A VM keeps its size until it stops, so a
+machine sized down gets all of it at a start after the machines beside it
+have stopped. Absent on every other host, on a project that is not
+running, and from an api older than I-1680.
 
 `guest_runtime` (DECISIONS I-1462) is `nix` (a NixOS machine built from
 its configuration, every project before I-1462) or `erofs` (a machine

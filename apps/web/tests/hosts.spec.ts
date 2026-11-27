@@ -410,3 +410,68 @@ test('a host row with a long name and unbroken arch fits 390px with Remove click
 	}
 	await shots(page, 'hosts-long-row');
 });
+
+// A Mac that parks its machines restarts from here as `repose host
+// restart` does on it (I-1690): Restart parks every machine and restarts
+// the Mac; a machine that cannot be parked stops it with its name, and
+// Restart anyway goes ahead. A host that cannot park offers no Restart.
+test('a Mac that parks its machines restarts from the Hosts page', async ({ page }) => {
+	await clearHosts(page);
+	const hostId = await ownedHost({ name: 'mac-mini' });
+	const p = await createProject(apiURLFromEnv(), {
+		name: 'restart-app',
+		remote_url: 'github.com/heracraft/restart-app'
+	});
+	created.push(p.id);
+	await ownedHost({ project_id: p.id, host_id: hostId });
+
+	await page.goto('/settings/hosts');
+	const row = page.getByTestId('own-hosts').getByRole('row').filter({ hasText: 'mac-mini' });
+	await expect(row).toContainText('online');
+	await expect(row.getByRole('button', { name: 'Restart mac-mini…' })).toHaveCount(0);
+
+	await ownedHost({ state_host: 'mac-mini', restart: true });
+	await page.reload();
+	await expect(row.getByRole('button', { name: 'Restart mac-mini…' })).toBeVisible();
+	await shots(page, 'hosts-restart-row');
+	await row.getByRole('button', { name: 'Restart mac-mini…' }).click();
+	const confirm = page.getByTestId('confirm-restart-host');
+	await expect(confirm).toContainText(
+		'Its running machine is parked with its memory, then the Mac restarts; the machine runs again when you log in to the Mac.'
+	);
+	await shots(page, 'hosts-restart-confirm');
+	await confirm.getByRole('button', { name: 'Restart mac-mini now' }).click();
+	await expect(page.getByTestId('host-restarted')).toHaveText(
+		'Parked 1 machine; mac-mini is restarting.'
+	);
+
+	// One machine the Mac cannot park: refused with its name, nothing
+	// restarted; Restart anyway goes ahead and says it starts fresh.
+	await ownedHost({ state_host: 'mac-mini', restart: true, not_parked: [p.slug] });
+	await page.reload();
+	await row.getByRole('button', { name: 'Restart mac-mini…' }).click();
+	await confirm.getByRole('button', { name: 'Restart mac-mini now' }).click();
+	await expect(page.getByTestId('host-restart-refused')).toContainText(
+		`1 machine could not be parked and would start fresh (${p.slug}: started with nobody logged in). Nothing restarted`
+	);
+	await shots(page, 'hosts-restart-refused');
+	await confirm.getByRole('button', { name: 'Restart mac-mini anyway' }).click();
+	await expect(page.getByTestId('host-restarted')).toHaveText(
+		`Parked 0 machines; mac-mini is restarting. ${p.slug} starts fresh.`
+	);
+
+	// A locked Mac parks nothing, and the refusal says to unlock it.
+	await ownedHost({ state_host: 'mac-mini', restart: true, not_parked: [p.slug], locked: true });
+	await page.reload();
+	await row.getByRole('button', { name: 'Restart mac-mini…' }).click();
+	await confirm.getByRole('button', { name: 'Restart mac-mini now' }).click();
+	await expect(page.getByTestId('host-restart-refused')).toHaveText(
+		"This Mac's screen is locked, and a locked Mac cannot save a machine's memory. Nothing restarted; unlock it and restart again."
+	);
+	await confirm.getByRole('button', { name: 'Cancel' }).click();
+
+	// Offline: no Restart, since there is nothing to ask.
+	await ownedHost({ id: hostId, quiet_minutes: 14 });
+	await page.reload();
+	await expect(row.getByRole('button', { name: 'Restart mac-mini…' })).toHaveCount(0);
+});

@@ -185,6 +185,17 @@ func (m *Metrics) Serve(ctx context.Context, addr string) error {
 	if host == "" || host == "0.0.0.0" || host == "::" {
 		return fmt.Errorf("metrics address %q binds every interface; bind the WireGuard address (docs/ops/OBSERVABILITY.md)", addr)
 	}
+	return m.serve(ctx, net.JoinHostPort(host, port), nil)
+}
+
+// ServeListener is Serve on a listener the caller opened: a Mac's hostd
+// listens on its WireGuard address inside its own netstack, which no
+// kernel interface carries (DECISIONS I-1670).
+func (m *Metrics) ServeListener(ctx context.Context, ln net.Listener) error {
+	return m.serve(ctx, ln.Addr().String(), ln)
+}
+
+func (m *Metrics) serve(ctx context.Context, addr string, ln net.Listener) error {
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", m.Handler())
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -192,14 +203,19 @@ func (m *Metrics) Serve(ctx context.Context, addr string) error {
 		_, _ = w.Write([]byte("ok\n"))
 	})
 	srv := &http.Server{
-		Addr:              net.JoinHostPort(host, port),
+		Addr:              addr,
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 		WriteTimeout:      30 * time.Second,
 	}
 	done := make(chan error, 1)
 	go func() {
-		err := srv.ListenAndServe()
+		var err error
+		if ln != nil {
+			err = srv.Serve(ln)
+		} else {
+			err = srv.ListenAndServe()
+		}
 		if errors.Is(err, http.ErrServerClosed) {
 			err = nil
 		}

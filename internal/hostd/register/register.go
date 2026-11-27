@@ -11,6 +11,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -130,6 +131,17 @@ type Config struct {
 	ServerName string
 	Roots      *x509.CertPool // nil: system roots
 	Info       *hostdv1.HostInfo
+	// Dial, when set, opens the api connection (on macOS through hostd's
+	// WireGuard netstack, DECISIONS I-1670); nil is gRPC's own dial.
+	Dial func(ctx context.Context, addr string) (net.Conn, error)
+}
+
+func (cfg Config) dialOpts(creds credentials.TransportCredentials) []grpc.DialOption {
+	opts := []grpc.DialOption{grpc.WithTransportCredentials(creds)}
+	if cfg.Dial != nil {
+		opts = append(opts, grpc.WithContextDialer(cfg.Dial))
+	}
+	return opts
 }
 
 // Register performs first registration: token in, identity out, token
@@ -148,7 +160,7 @@ func Register(ctx context.Context, cfg Config) (*Identity, error) {
 		return nil, ErrNoToken
 	}
 	creds := credentials.NewTLS(&tls.Config{RootCAs: cfg.Roots, ServerName: cfg.ServerName, MinVersion: tls.VersionTLS13})
-	conn, err := grpc.NewClient(cfg.APIAddr, grpc.WithTransportCredentials(creds))
+	conn, err := grpc.NewClient(cfg.APIAddr, cfg.dialOpts(creds)...)
 	if err != nil {
 		return nil, fmt.Errorf("dial api: %w", err)
 	}
@@ -179,7 +191,7 @@ func Register(ctx context.Context, cfg Config) (*Identity, error) {
 // files atomically.
 func Rotate(ctx context.Context, cfg Config, cur *Identity) (*Identity, error) {
 	creds := credentials.NewTLS(cur.TLSConfig(cfg.Roots, cfg.ServerName))
-	conn, err := grpc.NewClient(cfg.APIAddr, grpc.WithTransportCredentials(creds))
+	conn, err := grpc.NewClient(cfg.APIAddr, cfg.dialOpts(creds)...)
 	if err != nil {
 		return nil, fmt.Errorf("dial api: %w", err)
 	}

@@ -461,7 +461,7 @@ func renderSSHConfig(projects []Project, handle string, gw gatewayAddr, prefix s
 			// connection (I-149).
 			b.WriteString("  ControlMaster auto\n")
 			_, _ = fmt.Fprintf(&b, "  ControlPath %s\n", sshPath(prefix, ".ssh/repose/cm-%C"))
-			b.WriteString("  ControlPersist 10m\n")
+			_, _ = fmt.Fprintf(&b, "  ControlPersist %s\n", controlPersist(p))
 		}
 	}
 	return b.String()
@@ -492,4 +492,18 @@ func refreshSSHAccess(ctx context.Context, e *Env, slug string) {
 	if err != nil {
 		e.warn("Could not renew your SSH certificate for %s (%v); `repose attach %s` renews it.", slug, err, slug)
 	}
+}
+
+// controlPersist is how long a project's ssh master outlives its last
+// command. An idle master is an ssh session in the guest, and a machine on
+// a Mac without the appliance rests when nobody uses it (and may give its
+// memory back, DECISIONS I-1666, I-1682): there a minute, which covers the
+// connections one command makes. Such a machine is the one the api gives
+// a `vm` size (I-1680). Everywhere else, x86 hosts of the account's own
+// included (they do not rest machines), ten minutes, as before.
+func controlPersist(p Project) string {
+	if p.HostName != "" && p.VM != nil {
+		return "1m"
+	}
+	return "10m"
 }

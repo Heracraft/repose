@@ -102,7 +102,10 @@ type OwnedHost struct {
 	RunningLimit int    `json:"running_limit,omitempty"`
 	// Snapshots counts the live snapshots kept on the host's disk, which
 	// removing it deletes (I-1542).
-	Snapshots       int        `json:"snapshots"`
+	Snapshots int `json:"snapshots"`
+	// CanRestart is a host that parks its machines before a restart, so
+	// the dashboard offers Restart (I-1690).
+	CanRestart      bool       `json:"can_restart,omitempty"`
 	LastHeartbeatAt *time.Time `json:"last_heartbeat_at,omitempty"`
 	RegisteredAt    *time.Time `json:"registered_at,omitempty"`
 	CreatedAt       time.Time  `json:"created_at"`
@@ -131,6 +134,11 @@ type ownedHostRec struct {
 	// oldHostd is a host whose hostd does not share (no "shared" Hello
 	// feature): the api places there by class, as before I-1630.
 	oldHostd bool
+	// restarts is a host whose hostd names `restart` (I-1690), and
+	// notParked the slugs its next restart cannot park.
+	restarts  bool
+	notParked []string
+	locked    bool
 }
 
 // SetOwnedHostOldHostd makes the account's live host called name one
@@ -299,6 +307,7 @@ func (f *Fake) listHosts(w http.ResponseWriter, r *http.Request) *apiError {
 				row.RunningLimit = max((row.VCPUs-2)/2, 1)
 			}
 		}
+		row.CanRestart = h.restarts
 		out = append(out, &row)
 	}
 	writeJSON(w, 200, out)
@@ -563,6 +572,21 @@ func (f *Fake) SetProjectHost(projectID, hostID string) {
 	if p := f.projects[projectID]; p != nil {
 		p.HostID, p.HostName = hostID, f.ownedHostName(hostID)
 	}
+}
+
+// MacLiveGrowRefusal is hostd's answer on a Mac to a disk grow of a
+// running machine (internal/hostd/guest/stop.go, I-1666).
+const MacLiveGrowRefusal = "a machine on this host gets a bigger disk while it is stopped: stop it, resize, and start it again"
+
+// ownedHostProvider is the provider of the account's host hostID, "" for a
+// host of the fleet.
+func (f *Fake) ownedHostProvider(hostID string) string {
+	for _, h := range f.ownedHosts {
+		if h.ID == hostID {
+			return h.Provider
+		}
+	}
+	return ""
 }
 
 // ownedHostName is the name of an owned host by id, "" for a host

@@ -176,6 +176,14 @@ func (s *Server) projectJSON(ctx context.Context, p *store.Project, u *store.Use
 		// hide for a machine's first day.
 		out["resting"] = map[string]any{"since": *p.RestingSince}
 	}
+	if p.State == "running" && p.VMSize != nil {
+		// What the machine's VM got and what it gets with its host to
+		// itself, from a host that sizes each start (I-1680): a start
+		// sized below the full size is a slower machine, and the clients
+		// say so.
+		v := p.VMSize
+		out["vm"] = map[string]any{"vcpus": v.VCPUs, "mem_bytes": v.MemMiB << 20, "full_vcpus": v.FullVCPUs, "full_mem_bytes": v.FullMemMiB << 20, "sized_down": v.SizedDown()}
+	}
 	if x.idleSince != nil {
 		// A running machine unused for a day, still holding the plan's
 		// memory (I-262). hourly_cents is 0 since I-289, kept one release.
@@ -210,12 +218,24 @@ func (s *Server) projectJSON(ctx context.Context, p *store.Project, u *store.Use
 		}
 		out["signals"] = map[string]any{"ssh_sessions": x.latest.SSHSessions, "tmux_clients": x.latest.TmuxClients, "agents": agents,
 			"docker_containers": x.latest.DockerContainers, "guestd_ok": guestdOK, "sampled_at": x.latest.TS, "gateway_sessions": s.sessions.Count(ctx, p.ID)}
+		if r, ok := out["resting"].(map[string]any); ok && x.latest.Resting && x.latest.WaitsFor != "" && !sampleBeforeStart(p, x.latest) {
+			// A machine resting as a save on a Mac whose screen is locked
+			// (or with nobody logged in) wakes once the user unlocks it or
+			// logs in (I-1682): its memory is kept.
+			r["waits_for"] = x.latest.WaitsFor
+		}
 		parked := p.State == "running" && x.latest.ParkedWaitingSince != nil && !sampleBeforeStart(p, x.latest)
 		if parked {
 			// Parked on a Mac, waiting for its user to log in (I-1672):
 			// its memory is kept and it runs again at the login. Silent
 			// on purpose, so never not_answering.
-			out["parked"] = map[string]any{"since": x.latest.ParkedWaitingSince.UTC(), "waits_for": "login"}
+			// waits_for is "unlock" when the Mac's user is logged in with
+			// the screen locked (I-1682), else "login" as before.
+			waits := "login"
+			if x.latest.WaitsFor == "unlock" {
+				waits = "unlock"
+			}
+			out["parked"] = map[string]any{"since": x.latest.ParkedWaitingSince.UTC(), "waits_for": waits}
 		}
 		if !parked && !x.latest.GuestdOK && !x.latest.Resting && !sampleBeforeStart(p, x.latest) {
 			// Its guestd has not answered for about three minutes
@@ -938,6 +958,32 @@ func (s *Server) finalSnapshot(ctx context.Context, p *store.Project) bool {
 		return err == nil && h != nil
 	}
 	return h.State != "lost" && h.State != "retired"
+}
+
+// wakeProject is POST /projects/:id/wake (DECISIONS I-1682):
+// a resting machine is woken now, as the gateway's first connection would
+// wake it. The CLI sends it the moment it reads a resting machine, so the
+// wake runs beside the ssh handshake instead of after it. A machine that
+// is not resting answers was_resting false at once.
+func (s *Server) wakeProject(w http.ResponseWriter, r *http.Request) error {
+	p, err := s.userProject(r)
+	if err != nil {
+		return err
+	}
+	if p.State != "running" || p.RestingSince == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"was_resting": false, "wake_ms": 0})
+		return nil
+	}
+	waker := s.userWake()
+	if waker == nil {
+		return errf("internal", "waking is not configured on this api")
+	}
+	res, err := waker.Wake(r.Context(), p.ID, "cli")
+	if err != nil {
+		return wakeFailed(p.Slug, err)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"was_resting": res.GetWasResting(), "wake_ms": res.GetWakeMs()})
+	return nil
 }
 
 func (s *Server) startProject(w http.ResponseWriter, r *http.Request) error {

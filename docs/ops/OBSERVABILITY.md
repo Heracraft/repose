@@ -128,8 +128,9 @@ restart then boots it cold. Every path that does so counts
 the event `guest_park`. `reason` is `estimate` (the snapshot would have
 outlasted `repose.host.park.deadline` at the host's
 `writeRateMBs`), `deadline` (the deadline passed before the snapshot
-started), `no_room` (the thin pool), `failed`, `no_key` (Key Vault) or
-`busy` (another park or unpark held the lock). `GuestNotParked` reads
+started), `no_room` (the thin pool), `failed`, `no_key` (Key Vault),
+`busy` (another park or unpark held the lock) or `locked` (a Mac whose
+screen is locked, where a save fails and can end the VM, I-1682). `GuestNotParked` reads
 it over 6 hours and names the reason; the runbook's section is the
 arithmetic to check before raising the deadline. The
 `guests parked` line carries `parked`, `skipped`, `guests` and

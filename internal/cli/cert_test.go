@@ -544,3 +544,32 @@ func TestGatewayFromFallsBackToProduction(t *testing.T) {
 		t.Errorf("no known_hosts read as %+v, want the default", got)
 	}
 }
+
+// A machine on a host the account owns rests when nobody uses it, and an
+// idle ControlMaster counts as an ssh session in the guest: kept for ten
+// minutes after the last command, it held the machine awake that long
+// (d2-arch's end-to-end run on design 2, 2026-11-26). Its master lingers a
+// minute; a machine on repose's servers keeps ten.
+func TestOwnedHostMasterLingersAMinute(t *testing.T) {
+	ps := []Project{
+		{ID: "p1", Slug: "mac-app", HostName: "mac-mini", VM: &ProjectVM{VCPUs: 5, MemBytes: 8 << 30, FullVCPUs: 5, FullMemBytes: 8 << 30}},
+		{ID: "p2", Slug: "cloud-app"},
+		// An x86 host of the account's own rests no machine: the master
+		// keeps its ten minutes there (conductor, 2026-11-27 03:46Z).
+		{ID: "p3", Slug: "box-app", HostName: "basement"},
+	}
+	got := renderSSHConfig(ps, "heracraft", defaultGateway, "~", true)
+	blocks := strings.Split(got, "Host ")
+	for _, b := range blocks[1:] {
+		switch {
+		case strings.HasPrefix(b, "mac-app.repose"):
+			if !strings.Contains(b, "  ControlPersist 1m\n") {
+				t.Fatalf("Mac block:\n%s", b)
+			}
+		case strings.HasPrefix(b, "cloud-app.repose"), strings.HasPrefix(b, "box-app.repose"):
+			if !strings.Contains(b, "  ControlPersist 10m\n") {
+				t.Fatalf("fleet or x86 block:\n%s", b)
+			}
+		}
+	}
+}

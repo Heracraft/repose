@@ -11,8 +11,6 @@ import (
 	"os"
 	"unsafe"
 
-	"golang.org/x/sys/unix"
-
 	"github.com/heracraft/repose/internal/hostd/lvm"
 	"github.com/heracraft/repose/internal/hostd/mount"
 	"github.com/heracraft/repose/internal/hostd/shell"
@@ -212,7 +210,7 @@ func KeyCheck(key []byte) string {
 // parks and compared at the restore, it catches the one thing that makes
 // a parked guest's memory a lie: its disk written by anything since.
 func Fingerprint(dev string) (string, error) {
-	f, err := os.OpenFile(dev, os.O_RDONLY|unix.O_DIRECT, 0)
+	f, err := openDirect(dev)
 	if err != nil {
 		return "", err
 	}

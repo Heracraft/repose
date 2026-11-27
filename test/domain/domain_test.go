@@ -65,6 +65,7 @@ var allowed = []struct {
 	{"nix/hosts/platform.nix", "apiServerName =", "the production host pins it"},
 	{"images/appliance-arm64/mac/etc/repose/hostd.env", "--api-server-name api.repose.herakraft.co", "the Debian Mac appliance pins the same name as platform.nix (I-1494)"},
 	{"ops/install-host-x86.sh", "API_SERVER_NAME=api.repose.herakraft.co", "an x86 host pins the same name as platform.nix (I-1498)"},
+	{"internal/machost/machost.go", `ServerName: "api.repose.herakraft.co"`, "a Mac's hostd pins the same unmoved gRPC name as an x86 host (I-1684)"},
 	{"nix/hosts/prod.nix", "# api.repose.herakraft.co and this address", "the comment that says why"},
 	{"cmd/hostd/main.go", `"api-addr"`, "hostd's flag default for the same address"},
 	{"internal/hostd/register/register.go", "APIAddr    string", "a comment giving the shape of that address"},

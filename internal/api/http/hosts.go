@@ -132,15 +132,19 @@ func (s *Server) hostSnapshots(r *http.Request, hostID uuid.UUID) (n int, err er
 // the machines its cores run at once: two vCPUs each and two of the
 // host's left over, never under one (I-1640). hostd does not report the
 // bound, so it is computed here from the rule it applies, and left out
-// where the api cannot tell (an x86 host, nested or not).
+// where the api cannot tell (an x86 host, nested or not). A Mac without
+// the appliance (design 2, its hostd names `restart`) runs each machine
+// as a VM of its own and sizes each start to what the running machines
+// leave, never refusing one for cores (I-1666, I-1680), so it has no
+// count to give and `running_limit` is left out (I-1692).
 func (s *Server) hostRoom(r *http.Request, h *store.Host, row map[string]any) error {
-	var shares bool
-	err := s.d.Pool.QueryRow(r.Context(), "select $2 = any(features) from hosts where id = $1", h.ID, scheduler.SharedFeature).Scan(&shares)
+	var shares, own bool
+	err := s.d.Pool.QueryRow(r.Context(), "select $2 = any(features), $3 = any(features) from hosts where id = $1", h.ID, scheduler.SharedFeature, RestartFeature).Scan(&shares, &own)
 	if err != nil || !shares || h.State != "ready" {
 		return err
 	}
 	row["free_mem_bytes"] = max(h.FreeMemBytes, 0)
-	if hostArch(h) == "aarch64" && h.VCPUs > 0 {
+	if hostArch(h) == "aarch64" && h.VCPUs > 0 && !own {
 		row["running_limit"] = max((h.VCPUs-2)/nestedOwnedVCPUs, 1)
 	}
 	return nil
@@ -164,6 +168,13 @@ func (s *Server) listHosts(w http.ResponseWriter, r *http.Request) error {
 		}
 		row := hostJSON(&hosts[i], projects, running, "", nil, nil)
 		row["snapshots"] = snaps
+		// A host that parks its machines before a restart says so, and
+		// the dashboard offers its Restart (I-1690).
+		if restarts, err := s.hostRestarts(r, hosts[i].ID); err != nil {
+			return err
+		} else if restarts {
+			row["can_restart"] = true
+		}
 		if err := s.hostRoom(r, &hosts[i], row); err != nil {
 			return err
 		}

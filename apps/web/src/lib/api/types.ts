@@ -301,7 +301,12 @@ export interface Project {
 	 * are stopped and every process is held (I-818). A marker on
 	 * `running`, never a state of its own; the word a reader sees is
 	 * "frozen" (I-683). */
-	resting?: { since: string } | null;
+	resting?: {
+		since: string;
+		/** On a Mac, a machine resting as a save that the locked Mac cannot
+		 * read: it wakes once its user unlocks it (I-1682). */
+		waits_for?: 'unlock' | 'login';
+	} | null;
 	/** Set while a running machine's guestd has not answered for about
 	 * three minutes (I-1652): hung, its memory full or its kernel stuck.
 	 * A Start restarts it, which loses what is in its memory. */
@@ -310,6 +315,15 @@ export interface Project {
 	 * waits for the Mac's user to log in: its memory is kept and it runs
 	 * again at the login (I-1672). Never with not_answering. */
 	parked?: { since: string; waits_for: string } | null;
+	/** On a running machine of a host that sizes each start (a Mac), the
+	 * size its VM got and its size with the host to itself (I-1680). */
+	vm?: {
+		vcpus: number;
+		mem_bytes: number;
+		full_vcpus: number;
+		full_mem_bytes: number;
+		sized_down: boolean;
+	} | null;
 	/** The machine is never frozen while idle (I-818, I-826); the switch
 	 * is on its Config page. Absent from an older api, which means off. */
 	keep_awake?: boolean;
@@ -370,6 +384,9 @@ export interface OwnedHost {
 	running_limit?: number;
 	/** Snapshots kept on its disk, which removing it deletes (I-1542). */
 	snapshots?: number;
+	/** A Mac that parks its machines before a restart, so Restart keeps
+	 * their memory (I-1690). */
+	can_restart?: boolean;
 	last_heartbeat_at?: string;
 	registered_at?: string;
 	created_at: string;
@@ -437,6 +454,13 @@ export interface RestoreResult {
 	snapshot_id: string;
 	snapshot_created_at: string;
 	from_project_id: string;
+}
+
+/** A host op (GET /hosts/:id/ops/:op_id, I-1690): a restart's answer. */
+export interface HostOp {
+	state: 'pending' | 'running' | 'done' | 'error';
+	error?: { code: string; message: string } | string;
+	result?: { parked?: number; not_parked?: string[]; restarting?: boolean; park_ms?: number };
 }
 
 export interface OpStatus {

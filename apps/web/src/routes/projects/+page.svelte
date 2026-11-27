@@ -72,7 +72,7 @@
 	} from '$lib/projectList';
 	import type { DestroyedProject, OwnedHost, Project, Question } from '$lib/api/types';
 	import { frozenSince } from '$lib/frozen';
-	import { notAnsweringSince, notAnsweringText, parkedText } from '$lib/answering';
+	import { notAnsweringSince, notAnsweringText, parkedText, restingWaitText } from '$lib/answering';
 	import { stopWarning } from '$lib/busyAgents';
 	import { focusAfterRender, focusOnMount } from '$lib/focus';
 	import { tabStopWhenScrolls } from '$lib/scroller';
@@ -584,6 +584,10 @@
 		<!-- A newer base waits for the machine's next restart (I-1522). -->
 		<span class="sub">new base at next restart</span>
 	{/if}
+	{#if restingWaitText(p)}
+		<!-- Resting as a save a locked Mac cannot read (I-1682). -->
+		<span class="sub" data-testid="row-resting-waits">{restingWaitText(p)}</span>
+	{/if}
 	{#if parkedText(p)}
 		<!-- Parked on a Mac, waiting for its user to log in (I-1672). -->
 		<span class="sub" data-testid="row-parked">{parkedText(p)}</span>
@@ -1016,7 +1020,8 @@
 										     carries them as the table's state cell does. -->
 										{#if p.expires_at || (p.state === 'running' && p.idle && !frozen) || p.host_unreachable || reason(p) || notAnsweringSince(p) || parkedText(p)}
 											<div class="mrow-sub">
-												{#if parkedText(p)}<span data-testid="row-parked">{parkedText(p)}</span>{/if}
+												{#if parkedText(p)}<span data-testid="row-parked">{parkedText(p)}</span
+													>{/if}
 												{#if notAnsweringSince(p)}<span data-testid="row-not-answering"
 														>{notAnsweringText(p, clock.now)}</span
 													>{/if}

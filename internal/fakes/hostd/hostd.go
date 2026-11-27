@@ -110,6 +110,17 @@ type Options struct {
 	// Arch is Hello.arch (x86_64, aarch64), which placement matches an
 	// erofs base's images against (I-1448, I-1464); "" sends none.
 	Arch string
+	// Restart puts `restart` in Hello's features and makes this fake take
+	// RestartHost, as hostd on a Mac without the appliance does
+	// (DECISIONS I-1690). Off by default, which is every Linux host: the
+	// fake then answers RestartHost invalid_argument, as hostd does there.
+	// NotParked are the guest ids its restart cannot park: the answer
+	// names them, and without force it does not restart.
+	Restart   bool
+	NotParked []string
+	// NotParkedReason is the park's reason for each of NotParked;
+	// "" is "started with nobody logged in".
+	NotParkedReason string
 }
 
 // Fake is one fake host.
@@ -137,6 +148,9 @@ type Fake struct {
 	// poolDown is the host's thin pool unavailable (DECISIONS I-644):
 	// Hello and Heartbeat carry the flag and zero pool bytes, as hostd does.
 	poolDown bool
+	// vmSize is what a create or start reports its VM got (DECISIONS
+	// I-1680), as a Mac's hostd does; nil, every other host, reports none.
+	vmSize *hostdv1.VmSize
 	// freeMem is the free_mem_bytes this host reports, 200 GiB unless a
 	// test sets it (SetFreeMem): on a host the user owns it is what
 	// placement and the refusal read (DECISIONS I-1630).
@@ -426,12 +440,29 @@ func (f *Fake) SetPoolUnavailable(down bool) {
 	f.mu.Unlock()
 }
 
+// SetVMSize makes every create and start from now on report vm as the
+// size its VM got, as hostd on a Mac does when it sizes a start to what
+// the running machines leave (DECISIONS I-1680); nil reports none, as
+// every other host.
+func (f *Fake) SetVMSize(vm *hostdv1.VmSize) {
+	f.mu.Lock()
+	f.vmSize = vm
+	f.mu.Unlock()
+}
+
 // SetFreeMem sets the free_mem_bytes the fake host reports from its next
 // heartbeat on; 0 is the default, 200 GiB.
 func (f *Fake) SetFreeMem(b uint64) {
 	f.mu.Lock()
 	f.freeMem = b
 	f.mu.Unlock()
+}
+
+// vmSizeNow is the VmSize a result carries now.
+func (f *Fake) vmSizeNow() *hostdv1.VmSize {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.vmSize
 }
 
 // freeMemLocked is the free_mem_bytes to report; f.mu is held.
@@ -461,6 +492,9 @@ func (f *Fake) Hello() *hostdv1.Hello {
 	}
 	if f.opts.Erofs {
 		h.Features = append(h.Features, "erofs")
+	}
+	if f.opts.Restart {
+		h.Features = append(h.Features, "restart")
 	}
 	if f.poolDown {
 		h.PoolFreeBytes, h.PoolBytes, h.PoolUnavailable = 0, 0, true
@@ -655,8 +689,18 @@ func kind(cmd *hostdv1.Command) string {
 		return "SetBurst"
 	case *hostdv1.Command_DeleteSnapshot:
 		return "DeleteSnapshot"
+	case *hostdv1.Command_RestartHost:
+		return "RestartHost"
 	}
 	return ""
+}
+
+// SetNotParked sets the guest ids the next RestartHost cannot park
+// (Options.NotParked).
+func (f *Fake) SetNotParked(ids []string, reason string) {
+	f.mu.Lock()
+	f.opts.NotParked, f.opts.NotParkedReason = ids, reason
+	f.mu.Unlock()
 }
 
 // Execute runs a command synchronously, with the documented idempotency.
@@ -742,7 +786,7 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 		f.mu.Unlock()
 		f.setState(g, "running", "")
 		return ok(func(r *hostdv1.Result) {
-			r.Payload = &hostdv1.Result_Create{Create: &hostdv1.CreateResult{GuestIp: g.IP, VsockCid: g.CID, Boot: fakeBoot(true), MenuError: menuErr}}
+			r.Payload = &hostdv1.Result_Create{Create: &hostdv1.CreateResult{GuestIp: g.IP, VsockCid: g.CID, Boot: fakeBoot(true), MenuError: menuErr, Vm: f.vmSizeNow()}}
 		})
 	case *hostdv1.Command_StartGuest:
 		f.mu.Lock()
@@ -810,7 +854,7 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 		return ok(func(r *hostdv1.Result) {
 			// As hostd since I-720: every start reports the guest's address.
 			r.Payload = &hostdv1.Result_Start{Start: &hostdv1.StartResult{BootedClosure: booted, Boot: fakeBoot(false), GuestIp: g.IP, VsockCid: g.CID,
-				BootedBaseVersion: base, MenuError: menuErr}}
+				BootedBaseVersion: base, MenuError: menuErr, Vm: f.vmSizeNow()}}
 		})
 	case *hostdv1.Command_StopGuest:
 		f.mu.Lock()
@@ -1126,6 +1170,31 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 		f.draining = true
 		f.mu.Unlock()
 		return ok(nil)
+	case *hostdv1.Command_RestartHost:
+		// hostd's RestartHost (DECISIONS I-1690): refused on a host that
+		// does not restart; else every running guest parked but those
+		// in NotParked, which stop the restart unless forced.
+		if !f.opts.Restart {
+			return errResult(id, "invalid_argument", "this host does not restart through repose")
+		}
+		f.mu.Lock()
+		running := 0
+		for _, g := range f.guests {
+			if g.State == "running" {
+				running++
+			}
+		}
+		not := append([]string{}, f.opts.NotParked...)
+		f.mu.Unlock()
+		why := make([]string, len(not))
+		for i := range why {
+			why[i] = "started with nobody logged in"
+			if f.opts.NotParkedReason != "" {
+				why[i] = f.opts.NotParkedReason
+			}
+		}
+		r := &hostdv1.RestartResult{Parked: uint32(max(running-len(not), 0)), NotParked: not, NotParkedReasons: why, Restarting: len(not) == 0 || c.RestartHost.Force, ParkMs: 900}
+		return ok(func(res *hostdv1.Result) { res.Payload = &hostdv1.Result_Restart{Restart: r} })
 	case *hostdv1.Command_DeleteSnapshot:
 		// The fake keeps no files; a delete is always ok, as hostd's is
 		// for a snapshot already gone (DECISIONS I-1636).

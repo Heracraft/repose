@@ -179,34 +179,6 @@ func TestOverlappingRecordsLaterWins(t *testing.T) {
 	}
 }
 
-// TestDirectWriteErrorIsReturned: a write that fails ends the restore
-// with that error instead of hanging or reporting success.
-func TestDirectWriteErrorIsReturned(t *testing.T) {
-	const size = 64 << 20
-	p := emptyDevice(t, size)
-	f, _ := os.OpenFile(p, os.O_WRONLY, 0)
-	defer func() { _ = f.Close() }()
-	ro, err := os.OpenFile(p, os.O_RDONLY|syscall.O_DIRECT, 0)
-	if err != nil {
-		t.Skipf("no O_DIRECT here: %v", err)
-	}
-	defer func() { _ = ro.Close() }()
-	var recs []rec
-	for i := range 60 {
-		recs = append(recs, rec{uint64(i) << 20, bytes.Repeat([]byte{9}, 1<<20)})
-	}
-	done := make(chan error, 1)
-	go func() { done <- readExtents(bytes.NewReader(stream(size, recs...)), f, ro) }()
-	select {
-	case err := <-done:
-		if err == nil || !strings.Contains(err.Error(), "write at") {
-			t.Fatalf("got %v, want the write error", err)
-		}
-	case <-time.After(30 * time.Second):
-		t.Fatal("restore hung after a failed write")
-	}
-}
-
 // TestRestoreRefusalsStillHoldWithWriters: the stream checks hold on the
 // direct path: a record past the device, a trailer that disagrees, bytes
 // after the trailer, a stream cut inside a record.

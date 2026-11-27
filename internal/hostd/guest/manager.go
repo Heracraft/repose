@@ -210,10 +210,26 @@ type Config struct {
 	GuestCIDR        string
 	TotalMemBytes    uint64
 	HostReserveBytes uint64
-	MaxOps           int
-	MaxBuilds        int
-	MaxBuildQueue    int
-	ReadyTimeout     time.Duration
+	// OwnedGuestMemMiB caps an owned host's guest memory below the host's
+	// placeable memory (a Mac on design 2: VZ's park and wake time follow
+	// the configured memory, DECISIONS I-1666). Zero is no cap, every
+	// host before design 2.
+	OwnedGuestMemMiB uint64
+	// CommitMemMiB, when set, is the memory the host's machines may be
+	// started with together: each start gets the class's memory or what
+	// the others leave, and is refused below MinCommitMiB. A Mac, whose
+	// VZ VMs never give memory back (DECISIONS I-1666). Zero is off.
+	CommitMemMiB uint64
+	// CommitVCPUs, when set, is the vCPUs the host's machines may be
+	// started with together: each start gets the class's vCPUs or what
+	// the others leave, never fewer than MinCommitVCPUs. A Mac, where
+	// thirty guest vCPUs on ten cores made three builds take 775-811 s
+	// against 55-58 s with twelve (DECISIONS I-1666). Zero is off.
+	CommitVCPUs   uint32
+	MaxOps        int
+	MaxBuilds     int
+	MaxBuildQueue int
+	ReadyTimeout  time.Duration
 	// PathsTimeout and SetupTimeout bound the two phases that run after
 	// guestd answers: the registration of the closure's paths, and the
 	// project's set-up. They are the host's to choose, since how long
@@ -235,7 +251,11 @@ type Config struct {
 	// DownloadMbit limits what a guest receives from outside the host
 	// (DECISIONS I-451); EgressMbit what it sends (I-217).
 	DownloadMbit int
-	StoreTag     string
+	// GuestMTU is the guest NIC's MTU when the host's network runs one
+	// above 1500 (the Mac, DECISIONS I-1668); zero leaves the kernel line
+	// as it is on Linux.
+	GuestMTU int
+	StoreTag string
 	// StoreExport is what each guest's virtiofsd shares: storeview.Dir
 	// (the default) gives every guest a view of its own closure only
 	// (I-463); any other directory is shared whole, as before I-463.
@@ -533,6 +553,45 @@ type Deps struct {
 	// from another death (DECISIONS I-1650). Nil leaves that part out.
 	GuestMemory   func(id string) (uint64, error)
 	SliceOOMKills func() (uint64, error)
+	// DirectAuthShare makes the login share a plain directory the
+	// hypervisor attaches itself (claudeauth.go, a Mac): no volume, no
+	// virtiofsd. False on every Linux host.
+	DirectAuthShare bool
+	// FileVolumes says volumes are files whose attached size the
+	// hypervisor cannot change while it runs (a Mac, VZ): a grow of a
+	// running machine is refused, a snapshot of a volume that is gone
+	// says so as unresponsive, and a restore grows the volume to its
+	// snapshot's size (DECISIONS I-1666). False on Linux.
+	FileVolumes bool
+	// RestartOnExit boots a running machine again when its hypervisor
+	// process ends unexpectedly (create.go unexpectedExit), within a
+	// budget: a Mac, where a VM is one process and D1's launcher
+	// relaunched its VM. False on Linux: the machine goes to error.
+	RestartOnExit bool
+	// RestartHost restarts the machine hostd runs on, for RestartHost
+	// after every guest is parked (DECISIONS I-1690). Nil on Linux, where
+	// RestartHost is refused.
+	RestartHost func(ctx context.Context) error
+	// SnapshotClones keeps each snapshot's frozen volume as a clone
+	// (KeptCloneName) and restores from it when it is there: volumes are
+	// APFS files, where a clone costs nothing until either side is
+	// written (a Mac, DECISIONS I-1666). False on Linux.
+	SnapshotClones bool
+	// BoundAuthShare, with DirectAuthShare, mounts a filesystem of bytes
+	// at share (a sparse disk image on a Mac) unless one is mounted there
+	// already, so the share is bounded as Linux's volume bounds it
+	// (I-464). Nil leaves the share a plain directory.
+	BoundAuthShare func(ctx context.Context, userDir, share string, bytes uint64) error
+	// RestBySave, when set, says whether an idle pause of this guest may
+	// also save the VM and end its hypervisor, giving back its memory
+	// (restsave.go, DECISIONS I-1666). Nil only pauses: every host but a
+	// Mac.
+	RestBySave func(ctx context.Context, id string) bool
+	// SessionState is the Mac user's session: SessionUnlocked,
+	// SessionLocked or SessionNone, for what a guest resting as a save or
+	// a held park waits for (waitsFor, DECISIONS I-1682). Nil on every
+	// host but a Mac.
+	SessionState func(ctx context.Context) string
 	// AfterHypervisorExit is called once a guest's hypervisor is gone
 	// (teardown). On the Mac appliance it resets the host's CPUs, which a
 	// powered-off guest leaves busy in macOS (package cpureset, DECISIONS
@@ -590,6 +649,11 @@ type Manager struct {
 	// are: hostd keeps none of it on disk.
 	triggers map[string][]*guestdv1.Trigger
 	monitors map[string]*monitor
+	// held are parked guests whose restore waits for Park.CanRestore
+	// (park.go); guarded by mu.
+	held map[string]bool
+	// restarts are RestartOnExit's recent restarts per guest; under mu.
+	restarts map[string][]time.Time
 	// boots is each guest's last boot that reached running, step by step
 	// (DECISIONS I-707), for the create or start result that made it.
 	boots map[string]*hostdv1.BootTimings
@@ -635,6 +699,12 @@ type Manager struct {
 	// wake hostd does itself before a session caller, and the armed timer
 	// wake may arrive at once, and only one may drive vm.resume.
 	wakeLocks sync.Map // guest id -> *sync.Mutex
+	// wakeAtUnlock holds the guests whose wake a locked Mac refused, woken
+	// at the unlock (WakeRefusedAtLock); rebindDue the guests restored
+	// from a rest save whose login file is bound again at their next wake
+	// (I-1682).
+	wakeAtUnlock sync.Map // guest id -> true
+	rebindDue    sync.Map // guest id -> true
 
 	// restMu guards the two maps below. It is deliberately not mu: the
 	// monitor goroutine reads the resting mark on every dial retry, and
@@ -1300,6 +1370,8 @@ func Kind(cmd *hostdv1.Command) string {
 		return "SetBurst"
 	case *hostdv1.Command_DeleteSnapshot:
 		return "DeleteSnapshot"
+	case *hostdv1.Command_RestartHost:
+		return "RestartHost"
 	}
 	return ""
 }
@@ -1667,6 +1739,9 @@ func (m *Manager) execute(ctx context.Context, cmd *hostdv1.Command) *hostdv1.Re
 		return payloadOrErr(id, m.setBurst(c.SetBurst), nil)
 	case *hostdv1.Command_DeleteSnapshot:
 		return payloadOrErr(id, m.deleteSnapshot(ctx, c.DeleteSnapshot), nil)
+	case *hostdv1.Command_RestartHost:
+		r, err := m.restartHost(ctx, c.RestartHost)
+		return payloadOrErr(id, err, func(res *hostdv1.Result) { res.Payload = &hostdv1.Result_Restart{Restart: r} })
 	case *hostdv1.Command_SetTriggers:
 		return payloadOrErr(id, m.setTriggers(ctx, c.SetTriggers), nil)
 	case *hostdv1.Command_RunTrigger:

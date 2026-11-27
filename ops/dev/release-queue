@@ -508,7 +508,7 @@ trust_reader() {
     (cd "$top" && go test ./internal/cli -run 'TestDocs|TestEvery|TestSuccessOutputNamesNoCommand|TestCLIReassures|AgentGuide' -count=1 >/dev/null) ||
       die "add: the CLI prints help nobody asked for or fails the docs/agent-guide contract (DECISIONS I-242, I-243, I-484, I-1456); see: go test ./internal/cli -run 'TestDocs|TestEvery|TestSuccessOutputNamesNoCommand|TestCLIReassures|AgentGuide'"
     # What this CLI would fetch on a customer's machine exists and is
-    # public: the appliance image it pins, its checksum, vfkit. v0.1.51
+    # public: the Mac bundle it pins and its signed manifest. v0.1.51
     # shipped pinning an image whose release was never published
     # (DECISIONS I-1398). The CLI's own release is not the branch's to
     # answer for, so --cli none; release.yml and release-assets.yml check it.

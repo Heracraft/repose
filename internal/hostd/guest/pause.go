@@ -280,7 +280,7 @@ func (m *Manager) pause(ctx context.Context, commandID string, c *hostdv1.PauseG
 		m.log(g).Error("resting mark not written; guest keeps running", "event", "guest_resting", "err", err.Error())
 		return nil, errf(CodeInternal, "state write: %v", err)
 	}
-	if err := m.d.CH.Pause(ctx, sock); err != nil {
+	if err := m.restPause(ctx, g, sock); err != nil {
 		// The mark is down and the guest runs. Take it off; a mark the
 		// hypervisor contradicts is cleared at the next reconcile too,
 		// but until then the sampler would skip this guest's own
@@ -444,7 +444,8 @@ func (m *Manager) wakeByID(ctx context.Context, id, reason string) (*hostdv1.Wak
 	}
 	start := m.d.Now()
 	sock := ch.APISocket(m.guestDir(id))
-	if err := m.resumeVM(ctx, g, sock); err != nil {
+	fromSave := m.restSaved(g)
+	if err := m.restResume(ctx, g, sock); err != nil {
 		m.countWakeFailed("resume")
 		m.Warn("guest_wake_failed", "guest "+id+": the hypervisor did not resume")
 		m.log(g).Error("wake failed", "event", "guest_resting", "phase", "resume", "err", err.Error())
@@ -496,6 +497,12 @@ func (m *Manager) wakeByID(ctx context.Context, id, reason string) (*hostdv1.Wak
 		m.Warn("guest_wake_failed", "guest "+id+": no answer from the guest after the resume")
 		m.log(g).Error("wake failed", "event", "guest_resting", "phase", "guestd", "err", perr.Error())
 		return nil, errf(CodeGuestUnresponsive, "guestd did not answer after the resume: %v", perr)
+	}
+	if _, due := m.rebindDue.LoadAndDelete(id); fromSave || due {
+		// Restored from a save, here or at a lock (UnsaveRests).
+		if cur, err := m.session(id); err == nil {
+			m.rebindAuthShare(ctx, g, cur)
+		}
 	}
 	took := m.d.Now().Sub(start)
 	if m.d.Metrics != nil {

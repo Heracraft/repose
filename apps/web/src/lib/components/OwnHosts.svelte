@@ -9,11 +9,17 @@
   otherwise, which is every deployment today. Remove is the two-step the
   other tabs use, and a host still holding machines is refused by the api
   with their names.
+
+  Restart (I-1690) is `repose host restart` for a Mac that parks its
+  machines (`can_restart`): every machine is saved with its memory, the
+  Mac restarts, and they run again at the next login. A machine that
+  cannot be parked stops it, and the refusal names it beside Restart
+  anyway, which restarts with those machines losing their memory.
 -->
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
 	import { resolve } from '$app/paths';
-	import { listHosts, createHost, deleteHost } from '$lib/api/client';
+	import { listHosts, createHost, deleteHost, restartHost, getHostOp } from '$lib/api/client';
 	import { toastApiError } from '$lib/api/toast';
 	import { ApiError, errorText } from '$lib/api/errors';
 	import { gb, relativeTime } from '$lib/format';
@@ -23,13 +29,17 @@
 	import type { OwnedHost, HostState } from '$lib/api/types';
 	import { projectsStore } from '$lib/projects.svelte';
 	import { notAnsweringSince } from '$lib/answering';
+	import { pollUntilDone } from '$lib/poll';
 
 	const NAME_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
-	/** The Mac image's download and the free disk it needs (I-1490). The
-	 * api's install answer carries neither, so they are the appliance's
-	 * own figures, as own-hardware.md gives them. */
-	const MAC_DOWNLOAD = 'about 250 MB';
-	const MAC_FREE_DISK = '20 GB';
+	/** What a Mac downloads and the free disk `repose host add` asks for
+	 * (I-1684): the bundle (repose-host-darwin-arm64.tar.gz, 18.3 MB), the
+	 * erofs base the first machine fetches, and the 10 GB refusal. The
+	 * api's install answer carries none of them, so they are
+	 * own-hardware.md's figures. */
+	const MAC_DOWNLOAD = 'about 20 MB';
+	const MAC_BASE = 'about 3 GB';
+	const MAC_FREE_DISK = '10 GB';
 	/** What takes repose off an x86 box again (I-1590); `repose host rm` prints it too. */
 	const X86_UNINSTALL =
 		'curl -fsSL https://repose.run/install-host.sh | sudo bash -s -- --uninstall';
@@ -38,6 +48,13 @@
 	let loadError = $state<string | undefined>(undefined);
 	let removing = $state<string | undefined>(undefined);
 	let confirming = $state<string | undefined>(undefined);
+	/** The host whose Restart is being confirmed, run, or answered. */
+	let restartFor = $state<string | undefined>(undefined);
+	let restarting = $state(false);
+	/** The refusal of the last restart: the machines it could not park. */
+	let restartRefusal = $state<string | undefined>(undefined);
+	/** What a restart that went ahead said, until the list is read again. */
+	let restarted = $state<Record<string, string>>({});
 
 	// The dialog: the name, then the one view of the join token.
 	let dialog = $state<HTMLDialogElement | undefined>(undefined);
@@ -130,6 +147,76 @@
 		} finally {
 			saving = false;
 		}
+	}
+
+	function openRestart(id: string) {
+		confirming = undefined;
+		restartRefusal = undefined;
+		restartFor = id;
+	}
+
+	function keepRunning(id: string) {
+		restartFor = undefined;
+		restartRefusal = undefined;
+		void focusAfterRender(`host-restart-${id}`);
+	}
+
+	/** Waits for a host op every 2s until it ends. */
+	function waitForHostOp(hostID: string, opID: string) {
+		return new Promise<Awaited<ReturnType<typeof getHostOp>>>((settle, fail) => {
+			pollUntilDone(async () => {
+				try {
+					const op = await getHostOp(hostID, opID);
+					if (op.state === 'done' || op.state === 'error') {
+						settle(op);
+						return true;
+					}
+					return false;
+				} catch (err) {
+					fail(err);
+					return true;
+				}
+			});
+		});
+	}
+
+	async function onRestart(h: OwnedHost, force: boolean) {
+		if (restarting) return;
+		restarting = true;
+		try {
+			const { op_id } = await restartHost(h.id, force);
+			const op = await waitForHostOp(h.id, op_id);
+			if (op.state === 'error') {
+				const e = op.error;
+				restartRefusal = typeof e === 'string' ? e : (e?.message ?? `${h.name} did not restart.`);
+				return;
+			}
+			const n = op.result?.parked ?? 0;
+			const lost = op.result?.not_parked ?? [];
+			restarted = {
+				...restarted,
+				[h.id]:
+					`Parked ${n} ${n === 1 ? 'machine' : 'machines'}; ${h.name} is restarting.` +
+					(lost.length
+						? ` ${lost.join(', ')} ${lost.length === 1 ? 'starts' : 'start'} fresh.`
+						: '')
+			};
+			restartFor = undefined;
+			restartRefusal = undefined;
+			await load();
+		} catch (err) {
+			restartRefusal = errorText(err, `Could not restart ${h.name}.`);
+		} finally {
+			restarting = false;
+		}
+	}
+
+	/** What a Restart does to this host's machines, in one sentence. */
+	function restartWarning(h: OwnedHost): string {
+		if (!h.running_projects) return 'No machine is running on it.';
+		if (h.running_projects === 1)
+			return 'Its running machine is parked with its memory, then the Mac restarts; the machine runs again when you log in to the Mac.';
+		return `Its ${h.running_projects} running machines are parked with their memory, then the Mac restarts; they run again when you log in to the Mac.`;
 	}
 
 	function keep(id: string) {
@@ -348,17 +435,73 @@
 							<td class="c-machines">{machines(h)}</td>
 							<td class="c-when">{heard(h)}</td>
 							<td class="c-act">
-								{#if confirming !== h.id}
+								{#if h.can_restart && h.state === 'ready' && restartFor !== h.id && confirming !== h.id}
+									<button
+										type="button"
+										id={`host-restart-${h.id}`}
+										class="hk-btn-ghost hk-btn-sm hk-btn-ghost--touch"
+										aria-label={`Restart ${h.name}…`}
+										onclick={() => openRestart(h.id)}>Restart…</button
+									>
+								{/if}
+								{#if confirming !== h.id && restartFor !== h.id}
 									<button
 										type="button"
 										id={`host-remove-${h.id}`}
 										class="hk-btn-ghost hk-btn-sm hk-btn-ghost--touch"
 										aria-label={`Remove ${h.name}…`}
-										onclick={() => (confirming = h.id)}>Remove…</button
+										onclick={() => {
+											restartFor = undefined;
+											confirming = h.id;
+										}}>Remove…</button
 									>
 								{/if}
 							</td>
 						</tr>
+						{#if restarted[h.id] && restartFor !== h.id}
+							<tr class="confirm-row">
+								<td colspan="6">
+									<p class="restarted" role="status" data-testid="host-restarted">
+										{restarted[h.id]}
+									</p>
+								</td>
+							</tr>
+						{/if}
+						{#if restartFor === h.id}
+							<tr class="confirm-row">
+								<td colspan="6">
+									<div class="hk-confirm" data-testid="confirm-restart-host">
+										{#if restartRefusal}
+											<p role="alert" data-testid="host-restart-refused">{restartRefusal}</p>
+										{:else}
+											<p>Restart <code>{h.name}</code>? {restartWarning(h)}</p>
+										{/if}
+										<div class="hk-confirm-actions">
+											<button
+												type="button"
+												class={restartRefusal ? 'hk-btn-danger hk-btn-sm' : 'hk-btn hk-btn-sm'}
+												aria-label={restartRefusal
+													? `Restart ${h.name} anyway`
+													: `Restart ${h.name} now`}
+												aria-disabled={restarting ? 'true' : undefined}
+												onclick={() => onRestart(h, !!restartRefusal)}
+												>{restarting
+													? 'Restarting…'
+													: restartRefusal
+														? 'Restart anyway'
+														: 'Restart'}</button
+											>
+											<button
+												type="button"
+												class="hk-btn-ghost hk-btn-sm"
+												use:focusOnMount
+												onclick={() => keepRunning(h.id)}>Cancel</button
+											>
+										</div>
+									</div>
+								</td>
+							</tr>
+						{/if}
 						{#if confirming === h.id}
 							<tr class="confirm-row">
 								<td colspan="6">
@@ -465,13 +608,14 @@
 					<p class="hdlg-once">
 						Run this on the machine you are adding. It is not shown again, and it works once.
 					</p>
-					{#if x86Step}<h3 class="hdlg-where">On a Mac mini</h3>{/if}
+					{#if x86Step}<h3 class="hdlg-where">On a Mac</h3>{/if}
 					<div data-testid="host-install">
 						<CodeCopy command={step} what="the install step" wrap />
 					</div>
 					{#if x86Step}
 						<p class="hdlg-facts" data-testid="host-mac-size">
-							It downloads {MAC_DOWNLOAD} and needs {MAC_FREE_DISK} of free disk.
+							It downloads {MAC_DOWNLOAD}, and the first machine {MAC_BASE} more; it needs {MAC_FREE_DISK}
+							of free disk.
 						</p>
 						<h3 class="hdlg-where">On an x86 box with Ubuntu 24.04</h3>
 						<div data-testid="host-install-x86">
@@ -573,6 +717,15 @@
 	}
 	.c-act button {
 		margin-right: -0.625rem;
+	}
+	.c-act button + button {
+		margin-left: 0.625rem;
+	}
+	.restarted {
+		margin: 0;
+		font-size: 0.8125rem;
+		color: var(--hk-text-2);
+		text-wrap: pretty;
 	}
 	/* The state dot, the same three tones the project rows use. */
 	.dot {

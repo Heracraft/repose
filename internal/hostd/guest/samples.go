@@ -383,7 +383,15 @@ func (m *Manager) CollectSamples(ctx context.Context) *hostdv1.Samples {
 					m.d.Metrics.BurstCPUSecondsTotal.WithLabelValues(g.Class).Add(float64(bd) / 1e9)
 				}
 			}
-			if m.restingMark(g.GuestID) != nil {
+			gsm.Vm = m.vmSize(g)
+			gsm.WaitsFor = m.waitsFor(ctx, g)
+			if since := m.heldSince(g.GuestID); since > 0 {
+				// Parked and held until its Mac's user logs in (park.go,
+				// DECISIONS I-1672): no guest runs and none is asked; the
+				// api reads the mark and says so instead of "not
+				// answering".
+				gsm.ParkedWaitingSince = since
+			} else if m.restingMark(g.GuestID) != nil {
 				// A resting guest is paused, not lost (S4 of
 				// docs/workstreams/18-idle-pause.md): guestd is paused
 				// with it, so there is no Sample to ask for -- and asking
@@ -576,4 +584,22 @@ func (m *Manager) Guests(ctx context.Context) ([]Status, error) {
 		out = append(out, st)
 	}
 	return out, nil
+}
+
+// AnyRunning reports whether a guest's record says it is running (resting
+// included), starting or being created, from the state alone; an
+// unreadable state is true. A Mac holds itself awake while it is
+// (DECISIONS I-1682).
+func (m *Manager) AnyRunning() bool {
+	gs, err := m.d.State.ListGuests()
+	if err != nil {
+		return true
+	}
+	for _, g := range gs {
+		switch g.State {
+		case StateRunning, StateStarting, StateCreating:
+			return true
+		}
+	}
+	return false
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"golang.org/x/sys/unix"
 	"os"
 	"path/filepath"
 	"sort"
@@ -19,6 +18,7 @@ import (
 	"github.com/heracraft/repose/internal/hostd/park"
 	"github.com/heracraft/repose/internal/hostd/state"
 	"github.com/heracraft/repose/internal/hostd/virtiofs"
+	"github.com/heracraft/repose/internal/hostd/vsockclient"
 )
 
 // Guest park (DECISIONS I-652, I-653). When the host is about to restart,
@@ -182,11 +182,38 @@ type ParkDeps struct {
 	// ImageBytes returns what an image directory holds on disk; nil
 	// walks it.
 	ImageBytes func(dir string) uint64
+	// CanRestore reports whether parked guests can be restored now. False
+	// holds them, records, images and state untouched, until
+	// RestoreHeld finds it true: a Mac restores a save file only in the
+	// user's unlocked session (DECISIONS I-1662, I-1666). Nil is always.
+	CanRestore func(ctx context.Context) bool
+	// CanPark reports whether a running guest can be parked, with a fixed
+	// reason when not: a Mac VM started with nobody logged in cannot
+	// (I-1664). Nil is always.
+	CanPark func(ctx context.Context, id string) (bool, string)
+	// ImageEstimate is what a guest's park image will take, when the host
+	// can tell better than the class's memory: on a Mac VZ writes the
+	// memory the guest touched, about its VM's footprint, not its
+	// configured size (three 12 GiB machines were refused a park on 47 GB
+	// free, d2-lab 2026-11-26). ok false falls back to the class.
+	ImageEstimate func(ctx context.Context, id string) (bytes uint64, ok bool)
+	// GuestTouched says a park image is the guest's touched memory, so
+	// the park asks each answering guest for MemTotal less MemFree and
+	// counts that before ImageEstimate: VZ saves every page the guest has
+	// written, and after a restore the VM's footprint is its whole
+	// configured memory while its next save is the size of the last (lab
+	// Mac, 2026-11-27: footprint 9414 MB for an 8 GiB machine, images
+	// 1248, 1250 and 1252 MB; ENG-263, DECISIONS I-1680). False on Linux.
+	GuestTouched bool
 }
 
 // ParkResult is one guest's outcome, for the operator and the log.
 type ParkResult struct {
 	GuestID string `json:"guest_id"`
+	// Project is the guest's project slug, the name its user knows it by
+	// (the control socket's caller prints it); empty from a hostd before
+	// I-1682.
+	Project string `json:"project,omitempty"`
 	OK      bool   `json:"ok"`
 	// Outcome is a fixed word: parked, unparked, skipped, failed, discarded.
 	Outcome string `json:"outcome"`
@@ -195,6 +222,23 @@ type ParkResult struct {
 	Ms         int64  `json:"ms"`
 	ImageBytes uint64 `json:"image_bytes,omitempty"`
 }
+
+// SkipNotRunning is a park result's reason for a guest that was not
+// running.
+const SkipNotRunning = "guest is not running"
+
+// SkipParked is a park result's reason for a guest parked already.
+const SkipParked = "guest already parked"
+
+// SkipLocked is a park result's reason on a Mac whose screen is locked: a
+// save there fails and can end the VM, so nothing is saved until the user
+// unlocks it (lab Mac, 2026-11-27; DECISIONS I-1682).
+const SkipLocked = "this Mac's screen is locked"
+
+// ReasonHeldForUnlock is an unpark result's reason (outcome "held") for a
+// guest whose restore the Mac refused because its session could not
+// restore a save file at that moment; it is restored at the unlock.
+const ReasonHeldForUnlock = "waits for the Mac's session to be unlocked"
 
 // Fixed park reasons, the record's Reason.
 const (
@@ -295,8 +339,16 @@ func (m *Manager) ParkAll(ctx context.Context, reason string) []ParkResult {
 	room := m.parkRoom(ctx)
 	results := make([]ParkResult, len(run))
 	take := make([]bool, len(run))
+	touched := m.touchedBytes(ctx, run)
 	for i, g := range run {
 		need := m.classOf(g.Class).MemMiB << 20
+		if b := touched[i]; b > 0 {
+			need = b + b/8 // an eighth over: the guest runs until it pauses
+		} else if est := m.d.Park.ImageEstimate; est != nil {
+			if b, ok := est(ctx, g.GuestID); ok {
+				need = b + b/8
+			}
+		}
 		if room >= 0 && need > uint64(room) {
 			results[i] = ParkResult{GuestID: g.GuestID, Outcome: "skipped", Reason: "pool has no room for the image"}
 			continue
@@ -411,6 +463,12 @@ func (m *Manager) ParkAll(ctx context.Context, reason string) []ParkResult {
 					return
 				}
 				mem := m.memoryBytes(ctx, g)
+				if b := touched[i]; b > 0 {
+					// What the image will hold, the guest's own figure
+					// (GuestTouched): on a Mac the hypervisor unit's
+					// memory is repose-vm's, not the VM's.
+					mem = b
+				}
 				if dl, ok := ctx.Deadline(); ok {
 					if est, ok := rate.admit(mem, time.Until(dl)); !ok {
 						m.log(g).Error("guest not parked: its snapshot would outlast the deadline", "event", "guest_park",
@@ -447,15 +505,80 @@ func (m *Manager) ParkAll(ctx context.Context, reason string) []ParkResult {
 	}
 	wg.Wait()
 	n := 0
-	for _, r := range results {
+	for i, r := range results {
 		if r.OK {
 			n++
+		}
+		if i < len(run) {
+			results[i].Project = run[i].ProjectSlug
 		}
 	}
 	left := m.reportSkipped(reason, run, results)
 	m.d.Log.Info("guests parked", "event", "guest_park", "reason", reason, "parked", n, "guests", len(run),
 		"skipped", left, "duration_ms", m.d.Now().Sub(start).Milliseconds())
 	return results
+}
+
+// touchedBytes is, for each guest of run on a host whose park image is
+// the guest's touched memory (ParkDeps.GuestTouched), MemTotal less
+// MemFree as the guest reads it; 0 where it is not known (another host, a
+// resting guest, one that does not answer within a few seconds), which
+// the room then counts as before. The guests are asked at once.
+func (m *Manager) touchedBytes(ctx context.Context, run []*state.Guest) []uint64 {
+	out := make([]uint64, len(run))
+	if !m.d.Park.GuestTouched {
+		return out
+	}
+	var wg sync.WaitGroup
+	for i, g := range run {
+		if m.restingMark(g.GuestID) != nil {
+			continue
+		}
+		sess, err := m.session(g.GuestID)
+		if err != nil {
+			continue
+		}
+		wg.Add(1)
+		go func(i int, sess vsockclient.Session) {
+			defer wg.Done()
+			ectx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			defer cancel()
+			r, err := sess.Exec(ectx, []string{"/bin/sh", "-c", "grep -E '^(MemTotal|MemFree):' /proc/meminfo"}, 5, "")
+			if err != nil || r.ExitCode != 0 {
+				return
+			}
+			out[i] = touchedFromMeminfo(r.Stdout)
+		}(i, sess)
+	}
+	wg.Wait()
+	return out
+}
+
+// touchedFromMeminfo is MemTotal less MemFree, in bytes, from those two
+// /proc/meminfo lines; 0 when either is missing.
+func touchedFromMeminfo(b []byte) uint64 {
+	var total, free uint64
+	var haveFree bool
+	for _, line := range strings.Split(string(b), "\n") {
+		f := strings.Fields(line)
+		if len(f) < 2 {
+			continue
+		}
+		n, err := strconv.ParseUint(f[1], 10, 64)
+		if err != nil {
+			continue
+		}
+		switch f[0] {
+		case "MemTotal:":
+			total = n << 10
+		case "MemFree:":
+			free, haveFree = n<<10, true
+		}
+	}
+	if total == 0 || !haveFree || free > total {
+		return 0
+	}
+	return total - free
 }
 
 // A park that leaves a running guest skipped costs that guest
@@ -484,6 +607,8 @@ func skippedReason(r ParkResult) string {
 			return "deadline"
 		case "snapshot would outlast the deadline":
 			return "estimate"
+		case SkipLocked:
+			return "locked"
 		}
 	}
 	return ""
@@ -799,8 +924,14 @@ func (m *Manager) parkGuest(ctx context.Context, id, reason string, wall time.Ti
 		return res
 	}
 	if g.State != StateRunning {
-		res.Outcome, res.Reason = "skipped", "guest is not running"
+		res.Outcome, res.Reason = "skipped", SkipNotRunning
 		return res
+	}
+	if cp := m.d.Park.CanPark; cp != nil {
+		if ok, why := cp(ctx, id); !ok {
+			res.Outcome, res.Reason = "skipped", why
+			return res
+		}
 	}
 	// Checked again here, on the guest's worker: a guest parked since it
 	// was listed has no hypervisor and a record, and a second park would
@@ -809,11 +940,11 @@ func (m *Manager) parkGuest(ctx context.Context, id, reason string, wall time.Ti
 	// fails on the pause and is counted, rather than leaving the guest
 	// out of the park and out of the tally.
 	if !m.unitRunning(ctx, g) {
-		res.Outcome, res.Reason = "skipped", "guest is not running"
+		res.Outcome, res.Reason = "skipped", SkipNotRunning
 		return res
 	}
 	if r, _ := m.records().Get(id); r != nil {
-		res.Outcome, res.Reason = "skipped", "guest already parked"
+		res.Outcome, res.Reason = "skipped", SkipParked
 		return res
 	}
 	fz, ok := m.d.CH.(ch.Parker)
@@ -901,6 +1032,13 @@ func (m *Manager) parkGuest(ctx context.Context, id, reason string, wall time.Ti
 	scancel()
 	if err != nil {
 		if !m.resumeAfterFailedSnapshot(context.WithoutCancel(ctx), g, sock, wall) {
+			if a, aerr := m.d.Systemd.IsActive(context.WithoutCancel(ctx), GuestUnit(id)); aerr == nil && !a {
+				// The hypervisor is gone, so nothing writes into the
+				// image: the park is settled now, record and image
+				// removed, and reconcile (or RestartOnExit) takes the
+				// guest whose VM ended.
+				return fail("snapshot failed; the VM ended", err)
+			}
 			// The hypervisor may still be writing into the image: it is not
 			// removed under it. The `writing` record stays, so the next
 			// UnparkAll (hostd's next start, or `hostd unpark`) resumes the
@@ -1073,6 +1211,13 @@ func (m *Manager) resumeAfterFailedSnapshot(ctx context.Context, g *state.Guest,
 		if ierr != nil {
 			last = ierr
 		}
+		// A VM that ended under the failed snapshot (a save on a locked
+		// Mac does that, I-1682) will never resume: waiting out
+		// ResumeWait for it held `repose host restart` for 120 s.
+		if a, aerr := m.d.Systemd.IsActive(ctx, GuestUnit(g.GuestID)); aerr == nil && !a {
+			m.log(g).Error("guest ended under a park that did not finish", "event", "guest_park", "err", errText(last))
+			return false
+		}
 		select {
 		case <-ctx.Done():
 			return false
@@ -1160,6 +1305,35 @@ func (m *Manager) UnparkAll(ctx context.Context) []ParkResult {
 	m.sweepImageVolumes(ctx, ids)
 	if len(ids) == 0 {
 		return nil
+	}
+	if cr := m.d.Park.CanRestore; cr != nil && !cr(ctx) {
+		// Only a finished image waits for the session. A park that never
+		// finished (its record still `writing`: the snapshot failed, or the
+		// VM died under it, as a save on a locked Mac does) has nothing to
+		// restore, so it is settled now as it is anywhere: its image
+		// discarded, its guest resumed or left to reconcile. Held, such a
+		// record carried no park time and was thrown away at once as
+		// "parked more than 6 hours", its machine stopped (lab Mac,
+		// 2026-11-27).
+		m.mu.Lock()
+		m.held = map[string]bool{}
+		var settle []string
+		for _, id := range ids {
+			if r, err := recs.Get(id); err == nil && r != nil && (r.State == park.StateComplete || r.State == park.StateWritten) {
+				m.held[id] = true
+			} else {
+				settle = append(settle, id)
+			}
+		}
+		n := len(m.held)
+		m.mu.Unlock()
+		if n > 0 {
+			m.d.Log.Warn("parked guests held until they can be restored", "event", "guest_unpark", "images", n)
+		}
+		if len(settle) == 0 {
+			return nil
+		}
+		ids = settle
 	}
 	results := make([]ParkResult, len(ids))
 	preps := make([]*unparkPrep, len(ids))
@@ -1554,7 +1728,7 @@ func syncDir(dir string) error {
 		return err
 	}
 	defer f.Close() //nolint:errcheck // read-only handle
-	return unix.Syncfs(int(f.Fd()))
+	return syncfs(f)
 }
 
 // unparkGuest restores one checked image, or discards it.
@@ -1580,8 +1754,27 @@ func (m *Manager) unparkGuest(ctx context.Context, p *unparkPrep) ParkResult {
 	}
 	phase("image_open")
 	if err := m.restoreGuest(ctx, g, rec); err != nil {
-		m.log(g).Warn("restore failed; the guest starts cold", "event", "guest_unpark", "err", err.Error())
 		m.teardown(context.WithoutCancel(ctx), g)
+		if cr := m.d.Park.CanRestore; cr != nil && !cr(ctx) {
+			// A Mac whose session locked after it was read: VZ refuses the
+			// save file until the unlock (I-1662). The image is as good as
+			// one never tried, so it is held for RestoreHeld like one, and
+			// the machine keeps its memory (vz_test.go).
+			if err := m.d.Park.Image.Close(ctx, id, m.imageMount(id)); err != nil {
+				m.log(g).Warn("image not closed after a refused restore", "event", "guest_unpark", "err", err.Error())
+			}
+			m.mu.Lock()
+			if m.held == nil {
+				m.held = map[string]bool{}
+			}
+			m.held[id] = true
+			m.mu.Unlock()
+			m.log(g).Warn("restore refused while the session cannot restore; held until it can", "event", "guest_unpark", "err", err.Error())
+			res.Outcome, res.Reason = "held", ReasonHeldForUnlock
+			res.Ms = m.d.Now().Sub(p.start).Milliseconds()
+			return res
+		}
+		m.log(g).Warn("restore failed; the guest starts cold", "event", "guest_unpark", "err", err.Error())
 		return discard("restore failed")
 	}
 	phase("restore")
@@ -1707,6 +1900,7 @@ func (m *Manager) restoreGuest(ctx context.Context, g *state.Guest, rec *park.Re
 	if r, err := sess.Exec(ctx, []string{"date", "-u", "-s", "@" + sec}, 10, ""); err != nil || r.ExitCode != 0 {
 		m.log(g).Warn("guest clock not set after the restore", "event", "guest_unpark")
 	}
+	m.rebindAuthShare(ctx, g, sess)
 	phase("guestd")
 	m.log(g).Info("restore phases", append([]any{"event", "guest_unpark"}, phases...)...)
 	m.markGood(g, g.SystemClosure)
@@ -1757,4 +1951,109 @@ func diskBytes(fi os.FileInfo) uint64 {
 		return uint64(st.Blocks) * 512
 	}
 	return uint64(fi.Size())
+}
+
+// isHeld reports whether a parked guest waits for CanRestore: reconcile
+// leaves it as the park left it.
+func (m *Manager) isHeld(id string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.held[id]
+}
+
+// RestoreHeld restores the parked guests UnparkAll held, once CanRestore
+// says they can be, through a reconcile (whose UnparkAll restores them and
+// settles any it could not). It reports whether it ran.
+func (m *Manager) RestoreHeld(ctx context.Context) (bool, error) {
+	m.expireHeld(ctx)
+	m.mu.Lock()
+	n := len(m.held)
+	m.mu.Unlock()
+	if n == 0 || m.d.Park.CanRestore == nil || !m.d.Park.CanRestore(ctx) {
+		return false, nil
+	}
+	m.mu.Lock()
+	m.held = nil
+	m.mu.Unlock()
+	m.d.Log.Info("restoring held parked guests", "event", "guest_unpark", "images", n)
+	return true, m.Reconcile(ctx)
+}
+
+// HeldGuests is how many parked guests wait for CanRestore.
+func (m *Manager) HeldGuests() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.held)
+}
+
+// parkedAt is when r's park finished, or when it began for a record that
+// has no finish time (a `written` image whose close never ran).
+func parkedAt(r *park.Record) time.Time {
+	if !r.DoneAt.IsZero() {
+		return r.DoneAt
+	}
+	return r.CreatedAt
+}
+
+// heldSince is when a held guest was parked, unix seconds, or 0 when it
+// is not held (I-1672).
+func (m *Manager) heldSince(id string) int64 {
+	if !m.isHeld(id) {
+		return 0
+	}
+	r, err := m.records().Get(id)
+	if err != nil || r == nil {
+		return 0
+	}
+	return parkedAt(r).Unix()
+}
+
+// ReasonHeldTooLong is the stop reason of a held guest whose image passed
+// the park's MaxAge without a login (I-653, I-1386): its memory is gone and
+// its next start boots it.
+const ReasonHeldTooLong = "parked more than 6 hours with no login; it starts fresh"
+
+// expireHeld applies the park's age limit to held guests (I-653: an image
+// is removed once read, and after six hours whether read or not; I-1386
+// keeps it for a host the customer owns). A held guest's image is never
+// read by a start, so without this it would wait for a login forever. Its
+// image goes and the guest is stopped with ReasonHeldTooLong; the api's
+// own resume window is six hours too (resume.Window), so a start is the
+// user's.
+func (m *Manager) expireHeld(ctx context.Context) {
+	m.mu.Lock()
+	ids := make([]string, 0, len(m.held))
+	for id := range m.held {
+		ids = append(ids, id)
+	}
+	m.mu.Unlock()
+	maxAge := m.fcfg().MaxAge
+	for _, id := range ids {
+		r, err := m.records().Get(id)
+		if err != nil || r == nil || m.d.Now().Sub(parkedAt(r)) <= maxAge {
+			continue
+		}
+		m.discardImage(ctx, id, "held past the age limit")
+		m.mu.Lock()
+		delete(m.held, id)
+		m.mu.Unlock()
+		g, gerr := m.getGuest(id)
+		if gerr != nil {
+			continue
+		}
+		m.teardown(ctx, g)
+		if err := m.setState(g, StateStopped, ReasonHeldTooLong); err != nil {
+			m.log(g).Warn("held guest past the age limit not stopped", "event", "guest_unpark", "err", err.Error())
+			continue
+		}
+		m.log(g).Warn("parked guest held past the age limit; its memory is not kept", "event", "guest_unpark", "parked_s", int64(m.d.Now().Sub(parkedAt(r)).Seconds()))
+	}
+}
+
+// errText is err's text, or "no answer" for none.
+func errText(err error) string {
+	if err == nil {
+		return "no answer"
+	}
+	return err.Error()
 }

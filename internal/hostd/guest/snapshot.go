@@ -114,6 +114,16 @@ func (m *Manager) takeSnapshotAs(ctx context.Context, g *state.Guest, reason, lv
 		_, e = t.fail(e)
 		return nil, e
 	}
+	if m.d.FileVolumes {
+		// A machine whose disk is gone (a restore that did not finish)
+		// has nothing to snapshot. Said as guest_unresponsive, which the
+		// api's destroy answers by stopping it, asking once more and then
+		// skipping the final snapshot with a notice, so such a machine can
+		// still be removed (DECISIONS I-1666; e2e-pocketmail, 2026-11-26).
+		if ok, err := m.d.LVM.VolumeExists(ctx, vol); err == nil && !ok {
+			return failed(errf(CodeGuestUnresponsive, "the machine's disk is gone; there is nothing to snapshot"))
+		}
+	}
 	if g.State == StateRunning {
 		// The fsfreeze needs guestd, so a resting guest is woken first:
 		// without this every resting guest produced one failed snapshot
@@ -159,7 +169,15 @@ func (m *Manager) takeSnapshotAs(ctx context.Context, g *state.Guest, reason, lv
 // LVM snapshot whatever happened. It reads only what takeSnapshot fixed,
 // so it may run while the guest stops (stopCmd) or keeps running.
 func (m *Manager) uploadSnapshot(ctx context.Context, g *state.Guest, t *takenSnapshot) (*hostdv1.SnapshotResult, *Error) {
+	kept := ""
 	defer func() {
+		if kept != "" {
+			// Kept as the snapshot's clone (SnapshotClones), under a name
+			// the stale-snapshot sweep does not take.
+			if err := m.d.LVM.Clone(context.Background(), t.lv, kept); err != nil {
+				t.log.Warn("snapshot clone not kept", "event", "snapshot_done", "err", err.Error())
+			}
+		}
 		_ = m.d.LVM.RemoveVolume(context.Background(), t.lv) // always, even on upload failure; a leftover snapshot is found by reconcile
 		m.snapDone(t.lv)                                     // after the remove, so the sweep never races it
 	}()
@@ -223,6 +241,9 @@ func (m *Manager) uploadSnapshot(ctx context.Context, g *state.Guest, t *takenSn
 	t.log.Info("snapshot done", "event", "snapshot_done", "bytes", n, "duration_ms", m.d.Now().Sub(t.start).Milliseconds(), "base_version", g.BaseVersion,
 		"freeze_ms", t.freeze.Milliseconds(), "read_wait_ms", readWaitMs,
 		"format", format, "raw_reason", why, "journal_replayed", replayed, "used_bytes", used, "volume_bytes", g.VolumeBytes)
+	if m.d.SnapshotClones {
+		kept = KeptCloneName(blobPath)
+	}
 	m.emitEvent(&hostdv1.Event_SnapshotDone{SnapshotDone: &hostdv1.SnapshotDone{GuestId: g.GuestID, BlobPath: blobPath, Bytes: n, Sha256: sum, BaseVersion: g.BaseVersion}})
 	return &hostdv1.SnapshotResult{BlobPath: blobPath, Bytes: n, Sha256: sum, BaseVersion: g.BaseVersion}, nil
 }
@@ -366,6 +387,24 @@ func (m *Manager) restore(ctx context.Context, c *hostdv1.Restore) (*hostdv1.Cre
 		// source's would (I-701).
 		log.Info("restore done", "event", "restore_done", "source", "clone", "duration_ms", m.d.Now().Sub(start).Milliseconds(),
 			"point_ms", pointMs, "clone_ms", cloneMs, "volume_bytes", g.VolumeBytes)
+	} else if kc := m.keptClone(ctx, c.BlobPath); kc != "" {
+		// The snapshot's own frozen volume, kept beside its stream on a
+		// host whose volumes are APFS files (SnapshotClones): a clone of
+		// it takes no time and no space, where the stream wrote every
+		// used byte again (4.4 GB a restore, d2-lab 2026-11-26).
+		if err := m.d.LVM.Clone(ctx, kc, vol); err != nil {
+			return fail(lvmErr("clone", err))
+		}
+		if size, _, err := m.d.LVM.VolumeStats(ctx, vol); err == nil {
+			if c.VolumeBytes > size {
+				if err := m.d.LVM.ExtendVolume(ctx, vol, c.VolumeBytes); err != nil {
+					return fail(lvmErr("extend", err))
+				}
+			} else if size > g.VolumeBytes {
+				g.VolumeBytes = size
+			}
+		}
+		log.Info("restore done", "event", "restore_done", "source", "kept_clone", "duration_ms", m.d.Now().Sub(start).Milliseconds(), "volume_bytes", g.VolumeBytes)
 	} else {
 		if err := m.d.LVM.CreateVolume(ctx, vol, g.VolumeBytes); err != nil {
 			return fail(lvmErr("lvcreate", err))
@@ -407,6 +446,14 @@ func (m *Manager) restore(ctx context.Context, c *hostdv1.Restore) (*hostdv1.Cre
 		}
 		if code > 1 {
 			return fail(errf(CodeInternal, "filesystem check failed after restore (e2fsck exit %d)", code))
+		}
+		if m.d.FileVolumes {
+			// The restore grew the file to its snapshot's size when that
+			// was bigger (snapshot.Pipeline.GrowToSnapshot): the record
+			// says what the machine has.
+			if size, _, err := m.d.LVM.VolumeStats(ctx, vol); err == nil && size > g.VolumeBytes {
+				g.VolumeBytes = size
+			}
 		}
 		// The stages a slow restore spent its time on: the download and
 		// the write overlap, the check follows (I-403). verify_ms stays,
@@ -518,4 +565,47 @@ func (m *Manager) deleteSnapshot(ctx context.Context, c *hostdv1.DeleteSnapshot)
 	}
 	m.d.Log.Info("snapshot deleted", "event", "snapshot_delete")
 	return nil
+}
+
+// KeptCloneName is the volume a snapshot's frozen clone is kept under
+// (SnapshotClones): derived from its store path, so a restore of that
+// snapshot finds it, and not a name the stale-snapshot sweep takes.
+func KeptCloneName(blobPath string) string {
+	h := sha256.Sum256([]byte(blobPath))
+	return "kept-" + hex.EncodeToString(h[:12])
+}
+
+// keptClone is the kept clone of the snapshot at blobPath, or "" when the
+// host keeps none or it is gone.
+func (m *Manager) keptClone(ctx context.Context, blobPath string) string {
+	if !m.d.SnapshotClones || blobPath == "" {
+		return ""
+	}
+	name := KeptCloneName(blobPath)
+	if ok, err := m.d.LVM.VolumeExists(ctx, name); err != nil || !ok {
+		return ""
+	}
+	return name
+}
+
+// SweepKeptClones removes every kept clone whose snapshot is not among
+// present, the store paths the store holds (expired or removed snapshots
+// are not), so a clone never outlives its snapshot. It is given the
+// store's whole list; an empty list removes every kept clone.
+func (m *Manager) SweepKeptClones(ctx context.Context, present []string) {
+	want := map[string]bool{}
+	for _, p := range present {
+		want[KeptCloneName(p)] = true
+	}
+	vols, err := m.d.LVM.ListVolumes(ctx)
+	if err != nil {
+		return
+	}
+	for _, v := range vols {
+		if strings.HasPrefix(v, "kept-") && !want[v] {
+			if err := m.d.LVM.RemoveVolume(ctx, v); err != nil {
+				m.d.Log.Warn("kept snapshot clone not removed", "event", "snapshot_prune", "err", err.Error())
+			}
+		}
+	}
 }

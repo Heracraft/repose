@@ -166,7 +166,8 @@ beyond the commands every hostd takes: `local_clone`, a `Restore` with
 `clone`; `pause` (I-818), `PauseGuest` and `WakeGuest`; `burst` (I-1126),
 `SetBurst`, and with it a host that boots guests at their class ceiling
 and runs the `cpu.max` controller; `nix` and `erofs` (I-1458), which
-guests the host can run, below. The api keeps it
+guests the host can run, below; `restart` (I-1690), `RestartHost`, named
+only by hostd on a Mac without the appliance. The api keeps it
 in `hosts.features` and sends a shape only to a host that names it, so a
 host without `pause` is never asked to rest a machine and a host without
 `burst` is never sent a `SetBurst`. A hostd older than
@@ -336,6 +337,7 @@ command_id returns the stored result) and one of:
 | `StartGuest` | guest_id, base_image and menu (I-1458, erofs guests; "erofs guests"), plus optionally the same delivery fields as CreateGuest: secrets, env, ssh_ca_pub, principals, hooks_config, host_key, host_cert, project_json (I-26: hostd keeps none of them on disk, so the api sends them on every start; a StartGuest with only guest_id is accepted while hostd still has them in memory), and class (I-260: the project's class; when it differs from the recorded one, hostd boots at the new class and records it; empty keeps the recorded class, so an api that does not send it is still accepted) | `StartResult {booted_closure, failed_closure, boot_error}` (I-590; field 16 of the payload, absent from a hostd before it): the closure the guest runs; after a boot that never reached Ready and fell back to the guest's last good closure, `failed_closure` is the one that failed and `boot_error` why (`code`, hostd's fixed `message`, `console_tail`). An api that ignores it reads ok as before. `boot` (I-707) is the BootTimings of the boot that reached running, as on CreateResult. `guest_ip` (field 5) and `vsock_cid` (field 6) are the started guest's address, as on CreateResult (I-720): a start after a create or restore that failed past the guest's own boot is what gives the api an address it never received. Empty and 0 from a hostd before I-720, which the api reads as "unchanged"; an api before it ignores them |
 | `StopGuest` | guest_id, snapshot_first (bool), timeout_s | snapshot_id if taken (assigned by the api), blob_path, bytes (I-26), sha256 (I-462), snapshot_error (field 6, I-1636: the guest stopped and its snapshot could not be written, `<code>: <message>`; the stop is ok, there is no blob, and the api keeps the project `stopped` with `last_error` `snapshot_failed: ...` and a `snapshot_failed` notification. A hostd before it failed the whole stop instead, which an api of either age reads as a failed stop) |
 | `DeleteSnapshot` | blob_path | (none) (DECISIONS I-1636). Removes one snapshot this host keeps on its own disk (`--snapshot-dir`, an owned host), with its `.meta` and any `.part`; a snapshot already gone is ok. Sent by the api's daily retention for each expired row whose host is an owned host still registered, outside any op, through `hostmgr.Send`: a host with no stream keeps the row for the next run. Error codes: `invalid_argument` (a path with `..` or a leading `/`, or a hostd whose store is Blob), `internal` (the delete failed). A hostd before it answers `invalid_argument` (unknown command) and keeps the file |
+| `RestartHost` | force (bool) | `RestartResult {parked, not_parked: [guest_id], restarting, park_ms, not_parked_reasons: [string]}` (DECISIONS I-1690; only to a host whose Hello names `restart`). Parks every running guest as the operator's park does, then restarts the machine hostd runs on about 2 s after this answer is sent, so the guests come back with their memory when the host is up and its user's session is unlocked. `parked` counts the guests whose memory is saved (parked now or before); `not_parked` names each running guest that is not, a guest the park left out of its results included, and `not_parked_reasons` gives the park's fixed reason for each, in the same order (`the park did not reach it` for one left out). With `not_parked` non-empty and `force` false, the parked guests are restored, nothing restarts, and `restarting` is false; with `force` the host restarts and those guests start fresh. A host still up 3 minutes after it asked for the restart (on a Mac, an app with unsaved work can cancel it), or whose restart could not be asked for, restores the parked guests. A resent `command_id` gets the stored answer, so a host back from the restart does not restart again. Error codes: `invalid_argument` (this host does not restart: every Linux host), `internal` (the guests could not be listed). A hostd before it answers `invalid_argument` (unknown command) |
 | `DestroyGuest` | guest_id, keep_volume (bool) | |
 | `ResizeVolume` | guest_id, new_bytes | none; refused with `insufficient_capacity` while the thin pool is 85 percent used or more, data or metadata (as `CreateGuest` and `Restore` are; DECISIONS I-586, which replaced I-449's bound on the sum of the volumes' sizes). `StartGuest` is refused the same way at 95 percent. A running guest's filesystem grows at once (`GrowFs`); a stopped guest's volume only grows, and hostd asks guestd for `GrowFs` once each boot reaches running, which does nothing on a filesystem that already fills its volume (I-1660) |
 | `Build` | (Nix guests only; never sent for an erofs project, I-1458) project_id, revision_id, fragment (bytes), base_ref (git rev of nix/ in the platform repo), limits {eval_s, build_s, cores, closure_bytes}, base_version (the `base_versions` label the closure is stamped with, `[A-Za-z0-9._-]{1,64}`; optional, I-118: empty keeps the flake's own stamp), personal (bytes, field 7: the account's machine.nix written as `personal.nix` beside the fragment; optional, I-490: empty is the build without it, and a hostd that predates the field ignores it) | system_closure, closure_bytes, kernel_changed (bool) |
@@ -457,7 +459,9 @@ GuestSample { string guest_id; string state; string class; uint64 cpu_ns_delta;
               optional uint64 net_egress_bytes_delta;              // I-1063
               optional uint64 burst_cpu_ns_delta;                  // I-1126
               uint32 burst_cap_millicores;                         // I-1126
-              int64 parked_waiting_since; }                        // I-1672
+              int64 parked_waiting_since;                          // I-1672
+              VmSize vm;                                           // I-1680
+              string waits_for; }                                  // I-1682
 GuestSignals { uint32 ssh_sessions; uint32 tmux_clients; repeated AgentProc agents;
                uint32 docker_containers; bool guestd_ok;
                uint64 last_input_unix; }                             // I-1272
@@ -644,6 +648,26 @@ the user's unlocked session, I-1662); its `guestd_ok` is false, since no
 guest runs, and the api reads the field before that. The api keeps it only
 from a host an account owns. 0 from every other hostd.
 
+What a Mac's saved memory waits for (DECISIONS I-1682). `waits_for`
+(field 23) is `unlock` while the guest's memory is in a save file (it
+rests as a save, or it is a held park) and the Mac's user is logged in
+with the screen locked, `login` while it is in one and nobody is logged
+in, and empty otherwise: VZ reads a save only in the user's unlocked
+session (I-1662). Only hostd on a Mac without the appliance sets it; the
+api keeps it only from a host an account owns.
+
+The size a VM got (DECISIONS I-1680). `VmSize {uint32 vcpus; uint64
+mem_mib; uint32 full_vcpus; uint64 full_mem_mib}` is what a running
+guest's VM was booted with and what it gets with the host to itself. Only
+a host that sizes each start to what its running machines leave sends it
+(hostd on a Mac without the appliance, I-1666): on `GuestSample.vm`
+(field 22) while the guest runs, on `CreateResult.vm` (field 5) and on
+`StartResult.vm` (field 9). `vcpus` below `full_vcpus`, or `mem_mib`
+below `full_mem_mib`, is a machine started smaller than it would be on its
+own; a VM's size is fixed until it stops. Absent from every other hostd,
+where a machine is its class; an api older than I-1680 ignores it. The api
+keeps it only from a host an account owns.
+
 Resting (DECISIONS I-818). A resting guest's sample keeps `guestd_ok`
 **true** and repeats the last guest-written figures (`signals`,
 `guest_mem_used_bytes`, `root_used_bytes`, `root_size_bytes`), with
@@ -683,7 +707,9 @@ configurable delay with a fake closure path, and can be told to fail any
 command with any error code. The api's tests and the CLI's end-to-end tests
 use it. It names `nix` in `Hello.features` unless `Options.NoNix`, and
 `erofs` with `Options.Erofs`; it records each guest's `base_image` and
-`menu` (`Guest.BaseImage`, `Guest.BaseVersion`, `Guest.Menu`), reports
+`menu` (`Guest.BaseImage`, `Guest.BaseVersion`, `Guest.Menu`), names
+`restart` and takes `RestartHost` with `Options.Restart` (refusing it
+`invalid_argument` otherwise, as a Linux hostd does), reports
 `base_version` and `booted_base_version`, and refuses every shape in
 "erofs guests" "Refusals" with hostd's code. `SetMenuFail` fails menus:
 `ApplyConfig` answers the code, and a boot reports it as `menu_error` with

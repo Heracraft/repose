@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { notAnsweringSince, notAnsweringText, parkedText } from './answering';
+import {
+	notAnsweringSince,
+	notAnsweringText,
+	parkedText,
+	restingWaitText,
+	sizedDownText
+} from './answering';
 import { bytes } from './format';
 
 describe('notAnswering (I-1652)', () => {
@@ -61,6 +67,62 @@ describe('dashboardWords (pass2-dash N2)', () => {
 			)
 		).toBe(
 			"your host mac-mini runs as many machines at once as its cores allow, and a and b are running there. Stopping one of them frees room, or New project can make it on repose's servers"
+		);
+	});
+});
+
+describe('sizedDownText (I-1680)', () => {
+	const G = 1024 * 1024 * 1024;
+	it('says what the VM got and what it gets alone, in the CLI words', () => {
+		expect(
+			sizedDownText({
+				state: 'running',
+				vm: {
+					vcpus: 2,
+					mem_bytes: 3968 * 1024 * 1024,
+					full_vcpus: 5,
+					full_mem_bytes: 8 * G,
+					sized_down: true
+				}
+			})
+		).toBe(
+			'Runs with 2 vCPUs and 3.9 GB of its 5 and 8 GB: the machines running beside it held the rest when it started. A start after one of them stops gives it all.'
+		);
+	});
+	it('says nothing for a full-size, stopped or unsized machine', () => {
+		const vm = {
+			vcpus: 5,
+			mem_bytes: 8 * G,
+			full_vcpus: 5,
+			full_mem_bytes: 8 * G,
+			sized_down: false
+		};
+		expect(sizedDownText({ state: 'running', vm })).toBe('');
+		expect(sizedDownText({ state: 'stopped', vm: { ...vm, sized_down: true } })).toBe('');
+		expect(sizedDownText({ state: 'running' })).toBe('');
+	});
+});
+
+describe('waits for the unlock (I-1682)', () => {
+	it('a parked machine on a locked Mac waits for the unlock', () => {
+		expect(
+			parkedText({
+				state: 'running',
+				host_name: 'mac-mini',
+				parked: { since: '2026-11-27T03:00:00Z', waits_for: 'unlock' }
+			})
+		).toBe('Parked: waits for you to unlock mac-mini; its memory is kept');
+	});
+	it('a machine resting as a save says what wakes it, and nothing otherwise', () => {
+		expect(
+			restingWaitText({
+				state: 'running',
+				host_name: 'mac-mini',
+				resting: { since: '2026-11-27T03:00:00Z', waits_for: 'unlock' }
+			})
+		).toBe('Resting: wakes once you unlock mac-mini; its memory is kept');
+		expect(restingWaitText({ state: 'running', resting: { since: '2026-11-27T03:00:00Z' } })).toBe(
+			''
 		);
 	});
 });

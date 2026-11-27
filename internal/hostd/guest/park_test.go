@@ -208,11 +208,21 @@ type parkHarness struct {
 
 func newParkHarness(t *testing.T, mut func(*ParkConfig)) *parkHarness {
 	t.Helper()
+	return newParkHarnessWith(t, mut, nil)
+}
+
+// newParkHarnessWith is newParkHarness with the rest of the Config open to
+// a test (vz_test.go puts the guests where a unix socket path fits).
+func newParkHarnessWith(t *testing.T, mut func(*ParkConfig), cmut func(*Config)) *parkHarness {
+	t.Helper()
 	recDir := t.TempDir()
 	h := newHarness(t, func(c *Config) {
 		c.Park = ParkConfig{Enabled: true, RecordDir: recDir, Settle: -1, UnwrapTimeout: 200 * time.Millisecond, RestoreTimeout: 3 * time.Second}
 		if mut != nil {
 			mut(&c.Park)
+		}
+		if cmut != nil {
+			cmut(c)
 		}
 	})
 	fh := &parkHarness{harness: h, img: newFakeImage(), sealer: &fakeSealer{}, fp: map[string]string{}}

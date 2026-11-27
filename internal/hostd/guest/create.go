@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	guestdv1 "github.com/heracraft/repose/internal/gen/guestd/v1"
@@ -89,6 +90,9 @@ func (m *Manager) capacityCheck(guestID, class string, volumeBytes uint64, needM
 		if err := m.memRoom(class); err != nil {
 			return err
 		}
+		if err := m.commitRoom(guestID, class); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -127,7 +131,7 @@ func (m *Manager) create(ctx context.Context, c *hostdv1.CreateGuest) (*hostdv1.
 	if existing != nil {
 		switch existing.State {
 		case StateRunning:
-			return &hostdv1.CreateResult{GuestIp: existing.IP, VsockCid: existing.CID}, nil
+			return &hostdv1.CreateResult{GuestIp: existing.IP, VsockCid: existing.CID, Vm: m.vmSize(existing)}, nil
 		case StateCreating, StateError:
 			// A re-run after a crash or a failed attempt: continue with the
 			// same record; every step below tolerates what already exists.
@@ -264,7 +268,7 @@ func (m *Manager) create(ctx context.Context, c *hostdv1.CreateGuest) (*hostdv1.
 	if err := m.boot(ctx, g, stepRunner, "create", volume); err != nil {
 		return nil, err
 	}
-	return &hostdv1.CreateResult{GuestIp: g.IP, VsockCid: g.CID, Boot: m.lastBoot(g.GuestID), MenuError: m.lastMenuErr(g.GuestID)}, nil
+	return &hostdv1.CreateResult{GuestIp: g.IP, VsockCid: g.CID, Boot: m.lastBoot(g.GuestID), MenuError: m.lastMenuErr(g.GuestID), Vm: m.vmSize(g)}, nil
 }
 
 // fail records a create or start failure, rolling back everything but the
@@ -292,6 +296,19 @@ func (m *Manager) boot(ctx context.Context, g *state.Guest, firstStep int, op st
 	bootStart := m.d.Now()
 	m.setMenuErr(g.GuestID, nil)
 	class := m.classOf(g.Class)
+	if m.cfg.CommitMemMiB > 0 {
+		// Sized to what the running machines leave of the host's memory
+		// (commit.go); refused when that is too little.
+		mib, e := m.commitSize(g)
+		if e != nil {
+			return m.fail(g, firstStep, e)
+		}
+		g.MemMiB, class.MemMiB = mib, mib
+	}
+	if m.cfg.CommitVCPUs > 0 {
+		v := m.commitVCPUs(g, class.VCPUs)
+		g.VCPUs, class.VCPUs, class.CeilingVCPUs, class.MilliVCPUs = v, v, v, v*1000
+	}
 	dir := m.guestDir(g.GuestID)
 	if err := m.prepareGuestDir(dir); err != nil {
 		return m.fail(g, firstStep, err)
@@ -308,6 +325,7 @@ func (m *Manager) boot(ctx context.Context, g *state.Guest, firstStep int, op st
 		VolumeDev: m.d.LVM.DevPath(VolumeName(g.GuestID)), VCPUs: m.bootVCPUs(class), MemMiB: class.MemMiB, StoreTag: m.cfg.StoreTag,
 		DiskIOPS: class.DiskIOPS, DiskBytesPerSec: class.DiskMBps * 1_000_000,
 		Hostname:          ch.Hostname(g.ProjectSlug),
+		MTU:               m.cfg.GuestMTU,
 		FreePageReporting: m.cfg.FreePageReporting,
 		NoTHP:             m.cfg.Owned && m.cfg.OwnedGuestNoTHP,
 	}
@@ -416,7 +434,11 @@ func (m *Manager) boot(ctx context.Context, g *state.Guest, firstStep int, op st
 		return m.fail(g, stepReady, err)
 	}
 	mon := m.startMonitor(g)
-	sess, err := mon.waitReady(ctx, m.cfg.ReadyTimeout)
+	wctx, ended := m.watchBootExit(ctx, g)
+	sess, err := mon.waitReady(wctx, m.cfg.ReadyTimeout)
+	if why := ended(); err != nil && why != "" {
+		err = errors.New(why)
+	}
 	if err != nil {
 		// The console is read before capture ends; what a boot that
 		// failed early printed is in the log long before the wait ends.
@@ -751,7 +773,9 @@ func (m *Manager) start(ctx context.Context, commandID string, c *hostdv1.StartG
 		}
 		// Nothing booted for this command, so it carries no timings, as
 		// create's running case does not (I-707).
-		return startResult(g, resent, "", nil), nil
+		r := startResult(g, resent, "", nil)
+		r.Vm = m.vmSize(g)
+		return r, nil
 	case StateStopped, StateError, StateStarting:
 	default:
 		return nil, errf(CodeInvalidArgument, "guest is %s; start needs stopped", g.State)
@@ -829,6 +853,9 @@ func (m *Manager) start(ctx context.Context, commandID string, c *hostdv1.StartG
 		m.log(g).Info("guest class changed", "event", "guest_start", "class", c.Class, "prev", g.Class)
 		g.Class = c.Class
 	}
+	if err := m.commitRoom(g.GuestID, g.Class); err != nil {
+		return nil, err
+	}
 	if err := m.memRoom(g.Class); err != nil {
 		return nil, err
 	}
@@ -884,6 +911,7 @@ func (m *Manager) start(ctx context.Context, commandID string, c *hostdv1.StartG
 		}
 		r := startResult(g, resent, "", m.lastBoot(g.GuestID))
 		r.MenuError = m.lastMenuErr(g.GuestID)
+		r.Vm = m.vmSize(g)
 		return r, nil
 	}
 	// A fallback another command made is over once this one boots.
@@ -894,6 +922,7 @@ func (m *Manager) start(ctx context.Context, commandID string, c *hostdv1.StartG
 	}
 	r := startResult(g, fb, tail, m.lastBoot(g.GuestID))
 	r.MenuError = m.lastMenuErr(g.GuestID)
+	r.Vm = m.vmSize(g)
 	return r, nil
 }
 
@@ -1074,6 +1103,54 @@ func (m *Manager) resendTriggers(mon *monitor) {
 }
 
 // waitReady blocks until guestd reports Ready or answers a Ping.
+// watchBootExit ends the wait for guestd's Ready as soon as the VM's
+// process has ended, on a host where a VM is one process of its own (a
+// Mac: Deps.RestartOnExit). There a launcher that cannot start (launchd
+// refused its job, status 78, when its log was out of the user's reach:
+// lab Mac, 2026-11-27) used to hold a create for the whole ready window,
+// five minutes, and then say only that guestd never answered. ended
+// returns why the process ended, or "" while it runs or on any other
+// host, which keeps waiting as before.
+func (m *Manager) watchBootExit(ctx context.Context, g *state.Guest) (context.Context, func() string) {
+	if !m.d.RestartOnExit {
+		return ctx, func() string { return "" }
+	}
+	wctx, cancel := context.WithCancel(ctx)
+	var why atomic.Value
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		unit := GuestUnit(g.GuestID)
+		t := time.NewTicker(time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-wctx.Done():
+				return
+			case <-t.C:
+			}
+			if a, err := m.d.Systemd.IsActive(wctx, unit); err != nil || a {
+				continue
+			}
+			status := "unknown"
+			if props, err := m.d.Systemd.Show(wctx, unit, "ExecMainStatus"); err == nil && props["ExecMainStatus"] != "" {
+				status = props["ExecMainStatus"]
+			}
+			why.Store(fmt.Sprintf("the VM's process ended before guestd answered (exit status %s)", status))
+			cancel()
+			return
+		}
+	}()
+	return wctx, func() string {
+		cancel()
+		<-done
+		if w, ok := why.Load().(string); ok {
+			return w
+		}
+		return ""
+	}
+}
+
 func (mon *monitor) waitReady(ctx context.Context, timeout time.Duration) (vsockclient.Session, error) {
 	t := time.NewTimer(timeout)
 	defer t.Stop()
@@ -1323,6 +1400,9 @@ func (mon *monitor) checkUnits() {
 	if err != nil {
 		return
 	}
+	if !active && m.restSaved(g) {
+		return // resting as a save file (restsave.go): no hypervisor is expected
+	}
 	if !active {
 		if m.cfg.Owned && m.oomExit(mon.ctx, g) {
 			// On a host its user owns the OOM killer may take a guest
@@ -1364,7 +1444,53 @@ func (m *Manager) unexpectedExit(ctx context.Context, id, reason string) {
 	}
 	m.log(g).Error("guest died", "event", "guest_state", "reason", reason)
 	m.teardown(ctx, g)
+	if m.d.RestartOnExit && m.mayRestart(id) {
+		// A Mac's VM is one process; one that ends under a running
+		// machine (killed, crashed) is booted again at once, as D1's
+		// launcher relaunched its VM (DECISIONS I-1664). What was in its
+		// memory is gone, and the state says so.
+		_ = m.setState(g, StateStarting, ReasonRestartedAfterExit) // boot writes the state from here
+		if err := m.boot(ctx, g, stepRunner, "restart", 0); err == nil {
+			m.log(g).Warn("guest booted again after its hypervisor exited; its memory was lost", "event", "guest_start", "reason", reason)
+			return
+		}
+		return // boot set the error state and logged why
+	}
 	_ = m.setState(g, StateError, reason) // the failure is already logged above; the state write is best effort here
+}
+
+// ReasonRestartedAfterExit is the state reason of a machine booted again
+// because its hypervisor process ended while it ran.
+const ReasonRestartedAfterExit = "its process ended unexpectedly; it is starting again, and what was in its memory is lost"
+
+// restartBudget bounds RestartOnExit: a machine whose process ends this
+// many times inside restartWindow stays in error, so one that cannot run
+// is not booted for ever.
+const (
+	restartBudget = 3
+	restartWindow = 10 * time.Minute
+)
+
+// mayRestart counts a restart of id against the budget.
+func (m *Manager) mayRestart(id string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.restarts == nil {
+		m.restarts = map[string][]time.Time{}
+	}
+	now := m.d.Now()
+	kept := m.restarts[id][:0]
+	for _, t := range m.restarts[id] {
+		if now.Sub(t) < restartWindow {
+			kept = append(kept, t)
+		}
+	}
+	if len(kept) >= restartBudget {
+		m.restarts[id] = kept
+		return false
+	}
+	m.restarts[id] = append(kept, now)
+	return true
 }
 
 // flushNeigh removes the host's neighbour entry for g's address on the

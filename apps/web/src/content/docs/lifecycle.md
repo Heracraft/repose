@@ -72,7 +72,7 @@ A start is when a machine takes a [new base](/docs/machine#base-updates): one pu
 
 ## When a machine's server restarts
 
-Servers restart for maintenance and after faults. A machine whose server restarts comes back as it was: programs, tmux windows and agents carry on where they were. It takes a few minutes, longer on a server with a lot of memory in use, however much your own machine is holding. An attached terminal reconnects itself; connections that were open drop, SSH sessions and forwarded ports included. The machine's clock is set when it comes back. While the server restarts, the machine's memory, [secrets](/docs/secrets) included, is kept as an encrypted image on that server. The image is removed once the machine is back, and after 6 hours either way. A machine on [your own Mac](/docs/own-hardware#restart-your-mac-and-your-machines-start-fresh) does not: a restart of the Mac starts it fresh, with its disk as it was.
+Servers restart for maintenance and after faults. A machine whose server restarts comes back as it was: programs, tmux windows and agents carry on where they were. It takes a few minutes, longer on a server with a lot of memory in use, however much your own machine is holding. An attached terminal reconnects itself; connections that were open drop, SSH sessions and forwarded ports included. The machine's clock is set when it comes back. While the server restarts, the machine's memory, [secrets](/docs/secrets) included, is kept as an encrypted image on that server. The image is removed once the machine is back, and after 6 hours either way. A machine on [your own Mac](/docs/own-hardware#restart-your-mac-through-repose-and-your-machines-keep-their-memory) does the same only when you restart the Mac through repose; any other restart of the Mac starts it fresh, with its disk as it was.
 
 A machine that can't come back that way stops instead. Its disk is kept; processes and memory are lost, the agent's turn with them ([When the machine ends without a stop](/docs/run-and-attach#when-the-machine-ends-without-a-stop)). That's what happens if the server loses power or crashes, if there isn't time or room to keep the memory, or if the machine is changed while the server is down.
 
@@ -121,7 +121,7 @@ An unused machine's memory still counts against what your plan runs at once, so 
 
 A running machine nobody is using has its cores paused after about 15 minutes of quiet: no SSH session, no tmux or herdr client, every agent finished or waiting on you, and next to no CPU or network. `repose ls`, `repose status` and the dashboard mark it `frozen`.
 
-Its state is still `running`, and nothing is ended: every process, open file and socket stays as it was, and its memory is untouched, so [what it holds against your plan](#unused-machines) doesn't change.
+Its state is still `running`, and nothing is ended: every process, open file and socket stays as it was, and its memory is untouched, so [what it holds against your plan](#unused-machines) doesn't change. On [your own Mac](/docs/own-hardware#what-fits-on-a-mac) a frozen machine's memory is saved to an encrypted file instead, so the Mac gets that memory back, and the wake reads it back.
 
 Anything that reaches the machine wakes it first, and that first connection takes a second or two: `attach`, `run`, `ssh`, `code`, your editor, a forwarded port, the dashboard's **Browser** tab, a [secret](/docs/secrets) you set, a configuration change, a [webhook delivery](/docs/webhooks), a [scheduled job](/docs/machine#scheduled-jobs) on the machine coming due.
 

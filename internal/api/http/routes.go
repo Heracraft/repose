@@ -30,6 +30,8 @@ func (s *Server) registerUserRoutes() {
 	s.route(m, "GET /v1/hosts", a(s.listHosts))
 	s.route(m, "POST /v1/hosts", a(s.createHost))
 	s.route(m, "DELETE /v1/hosts/{id}", a(s.deleteHost))
+	s.route(m, "POST /v1/hosts/{id}/restart", a(s.restartHost))
+	s.route(m, "GET /v1/hosts/{id}/ops/{op_id}", a(s.getHostOp))
 	// Projects
 	s.route(m, "GET /v1/projects", a(s.listProjects))
 	s.route(m, "POST /v1/projects", a(s.createProject))
@@ -40,6 +42,7 @@ func (s *Server) registerUserRoutes() {
 	s.route(m, "DELETE /v1/projects/{id}", a(s.destroyProject))
 	s.route(m, "POST /v1/projects/{id}/start", a(s.startProject))
 	s.route(m, "POST /v1/projects/{id}/stop", a(s.stopProject))
+	s.route(m, "POST /v1/projects/{id}/wake", a(s.wakeProject))
 	s.route(m, "GET /v1/projects/{id}/ops/{op_id}", a(s.getOp))
 	s.route(m, "GET /v1/projects/{id}/ops/{op_id}/log", s.authed(s.opLog, true))
 	s.route(m, "POST /v1/projects/{id}/resize", a(s.resizeProject))

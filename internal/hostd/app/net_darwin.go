@@ -1,0 +1,191 @@
+//go:build darwin
+
+package app
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net"
+	"net/netip"
+	"os"
+	"path/filepath"
+	"reflect"
+	"sync"
+	"time"
+
+	hnet "github.com/heracraft/repose/internal/hostd/net"
+	"github.com/heracraft/repose/internal/hostd/register"
+	"github.com/heracraft/repose/internal/hostd/unet"
+)
+
+// The Mac's userspace network (DECISIONS I-1668) and its edge tunnel
+// (I-1670): one of each per hostd. prepareMacNet brings the stack and
+// the tunnel up before registration, so Register and the Session reach
+// the api at the hub address through it; NewMacNet hands the stack to the
+// guest manager once the host's range is known.
+var macNet struct {
+	mu   sync.Mutex
+	n    *unet.Net
+	e    *unet.Edge
+	last unet.EdgeConfig
+}
+
+func init() {
+	NewMacNet = newMacNet
+	meshListen = macMeshListen
+}
+
+// macMeshListen opens the metrics listener on the mesh address inside the
+// netstack (on Linux the kernel's wg0 carries it); any other address is
+// the kernel's (nil).
+func macMeshListen(addr string) (net.Listener, error) {
+	ap, err := netip.ParseAddrPort(addr)
+	if err != nil {
+		return nil, nil // not an address: Serve reports it
+	}
+	macNet.mu.Lock()
+	e := macNet.e
+	macNet.mu.Unlock()
+	if e == nil || e.Addr() != ap.Addr() {
+		return nil, nil
+	}
+	return e.Listen(ap.Port())
+}
+
+// watchEdge applies a changed host.json (a rotation's new WireGuard key,
+// a registration replacing the bundle's) to the running tunnel within
+// edgeWatch, with no restart: on Linux the renderer restarts wg-quick.
+func watchEdge(ctx context.Context, o Options, log *slog.Logger) {
+	host, _ := edgeFiles(o)
+	var last time.Time
+	if st, err := os.Stat(host); err == nil {
+		last = st.ModTime()
+	}
+	t := time.NewTicker(edgeWatch)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		st, err := os.Stat(host)
+		if err != nil || !st.ModTime().After(last) {
+			continue
+		}
+		last = st.ModTime()
+		macNet.mu.Lock()
+		if err := refreshEdgeLocked(o, log); err != nil {
+			log.Warn("edge not reconfigured", "event", "edge", "err", err.Error())
+		}
+		macNet.mu.Unlock()
+	}
+}
+
+// edgeWatch is how often host.json is looked at.
+const edgeWatch = 5 * time.Second
+
+func edgeFiles(o Options) (hostJSON, hubJSON string) {
+	return filepath.Join(o.StateDir, register.HostFile), filepath.Join(o.StateDir, "hub.json")
+}
+
+// prepareMacNet starts the stack and, when host.json or hub.json carries
+// WireGuard material, the edge, and points the api dial at it. With no
+// --mac-net-dir it does nothing: the runtime's lab mode on VZ NAT.
+func prepareMacNet(ctx context.Context, o Options, log *slog.Logger) (Options, error) {
+	m := macDefaults(o)
+	if m.NetDir == "" {
+		return o, nil
+	}
+	if err := os.MkdirAll(m.NetDir, 0o700); err != nil {
+		return o, fmt.Errorf("hostd: network dir: %w", err)
+	}
+	macNet.mu.Lock()
+	defer macNet.mu.Unlock()
+	if macNet.n == nil {
+		guests := o.GuestsDir
+		n, err := unet.New(unet.Config{
+			MTU: uint32(m.NetMTU), SocketDir: m.NetDir, Log: log,
+			// The counters outlive a hostd restart, as nft's do (I-1668).
+			CounterFile: filepath.Join(o.StateDir, "unet-counters.json"),
+			Reconnect:   unet.LauncherReconnect(func(id string) string { return filepath.Join(guests, id, "ch.sock") }),
+			// A connection for a machine resting as a save file wakes it
+			// (I-1666), and the edge dials the guest once the wake is done:
+			// the NIC comes back while the restored VM is still paused, and
+			// a SYN sent then waited for TCP's one-second retransmit (first
+			// exec 3.6-3.7 s against a 2.0 s wake, lab Mac 2026-11-27).
+			OnWake: MacWake,
+		})
+		if err != nil {
+			return o, err
+		}
+		macNet.n = n
+		go watchEdge(context.WithoutCancel(ctx), o, log)
+	}
+	if err := refreshEdgeLocked(o, log); err != nil {
+		return o, err
+	}
+	o.APIDial = func(ctx context.Context, addr string) (net.Conn, error) {
+		macNet.mu.Lock()
+		e := macNet.e
+		macNet.mu.Unlock()
+		if e == nil {
+			return nil, errors.New("hostd: no WireGuard material yet (host.json or hub.json)")
+		}
+		return e.DialContext(ctx, "tcp", addr)
+	}
+	return o, nil
+}
+
+// refreshEdgeLocked starts the edge, or reconfigures it when the material
+// changed (registration replaces the bundle's key with host.json's).
+func refreshEdgeLocked(o Options, log *slog.Logger) error {
+	host, hub := edgeFiles(o)
+	cfg, ok, err := unet.LoadEdgeConfig(host, hub)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		log.Warn("no WireGuard material: the api is unreachable until host.json or hub.json exists", "event", "start", "part", "edge")
+		return nil
+	}
+	if macNet.e != nil && reflect.DeepEqual(cfg, macNet.last) {
+		return nil
+	}
+	if macNet.e == nil {
+		e, err := macNet.n.StartEdge(cfg)
+		if err != nil {
+			return err
+		}
+		macNet.e = e
+	} else if err := macNet.e.Reconfigure(cfg); err != nil {
+		return err
+	}
+	macNet.last = cfg
+	log.Info("edge tunnel configured", "event", "start", "part", "edge", "addr", macNet.e.Addr().String())
+	return nil
+}
+
+// newMacNet is NewMacNet: after registration, so host.json names the
+// guest range (its .1 is the guests' gateway) and the registration's key.
+func newMacNet(ctx context.Context, o Options, log *slog.Logger) (hnet.Net, error) {
+	if _, err := prepareMacNet(ctx, o, log); err != nil {
+		return nil, err
+	}
+	id, err := register.Load(o.StateDir)
+	if err != nil {
+		return nil, fmt.Errorf("hostd: network: %w", err)
+	}
+	p, err := netip.ParsePrefix(id.Host.GuestCIDR)
+	if err != nil {
+		return nil, fmt.Errorf("hostd: network: guest range %q", id.Host.GuestCIDR)
+	}
+	macNet.mu.Lock()
+	defer macNet.mu.Unlock()
+	if err := macNet.n.SetGateway(p.Masked().Addr().Next()); err != nil {
+		return nil, err
+	}
+	return macNet.n, nil
+}

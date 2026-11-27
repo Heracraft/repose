@@ -15,6 +15,7 @@ import (
 	"github.com/heracraft/repose/internal/hostd/ch"
 	"github.com/heracraft/repose/internal/hostd/state"
 	"github.com/heracraft/repose/internal/hostd/virtiofs"
+	"github.com/heracraft/repose/internal/hostd/vsockclient"
 )
 
 // The Claude login share (DECISIONS I-278). A user signs in to Claude Code
@@ -216,6 +217,13 @@ func (m *Manager) startAuthShare(ctx context.Context, g *state.Guest, dir string
 	if m.cfg.NoAuthShare || !hasAuthShare(g) {
 		return false
 	}
+	if m.d.DirectAuthShare {
+		if err := m.prepareDirectAuthShare(g, dir); err != nil {
+			m.log(g).Warn("guest starts without the login share", "event", "auth_share", "err", err.Error())
+			return false
+		}
+		return true
+	}
 	cfg, err := m.prepareAuthShare(ctx, g, dir)
 	if err == nil {
 		err = virtiofs.StartAuth(ctx, m.d.Systemd, cfg, g.GuestID, ch.AuthSocket(dir))
@@ -314,4 +322,93 @@ func touch(path string, t time.Time) error {
 		return err
 	}
 	return os.Chtimes(path, t, t)
+}
+
+// AuthShareDirFile names, beside the share's socket path, the directory a
+// hypervisor that shares directories itself attaches under AuthTag
+// (repose-vm on a Mac, DECISIONS I-1666).
+const AuthShareDirFile = "share-dir"
+
+// prepareDirectAuthShare is the login share of a host whose hypervisor
+// shares a directory itself (a Mac: a VZ shared directory, which gives
+// every file the guest's own uid with its mode kept, so no uid mapping and
+// no virtiofsd). The share is a plain directory: no volume bounds it, so
+// on a Mac it is bounded by the user's own disk. hostd never opens what is
+// inside it.
+func (m *Manager) prepareDirectAuthShare(g *state.Guest, dir string) error {
+	lookup := m.cfg.Lookup
+	if lookup == nil {
+		lookup = LookupUser
+	}
+	auid, agid, err := lookup(m.cfg.AuthUser)
+	if err != nil {
+		return fmt.Errorf("login share user %s: %w", m.cfg.AuthUser, err)
+	}
+	_, ggid, err := lookup(m.cfg.GuestUser)
+	if err != nil {
+		return fmt.Errorf("guest user %s: %w", m.cfg.GuestUser, err)
+	}
+	defer m.lockUser(g.UserID)()
+	udir := m.authUserDir(g.UserID)
+	share := filepath.Join(udir, "claude-auth")
+	sock := filepath.Dir(ch.AuthSocket(dir))
+	if err := os.MkdirAll(filepath.Dir(m.cfg.UsersDir), 0o755); err != nil {
+		return err
+	}
+	for _, d := range []struct {
+		path     string
+		mode     os.FileMode
+		uid, gid int
+	}{
+		{m.cfg.UsersDir, 0o711, -1, -1},
+		{udir, 0o711, -1, -1},
+		{share, 0o700, auid, agid},
+		{sock, 0o750, auid, ggid},
+	} {
+		if err := ensureDir(d.path, d.mode, d.uid, d.gid); err != nil {
+			return err
+		}
+	}
+	if m.d.BoundAuthShare != nil {
+		// The bound filesystem's own root is what the guest sees: it is
+		// given to the user after the mount, as the volume's root is on
+		// Linux.
+		if err := m.d.BoundAuthShare(context.Background(), udir, share, m.cfg.AuthVolumeBytes); err != nil {
+			return fmt.Errorf("login share bound: %w", err)
+		}
+		if err := ensureDir(share, 0o700, auid, agid); err != nil {
+			return err
+		}
+	}
+	if err := touch(filepath.Join(udir, authLastGuest), m.d.Now()); err != nil {
+		return err
+	}
+	p := filepath.Join(sock, AuthShareDirFile)
+	tmp := p + ".new"
+	if err := os.WriteFile(tmp, []byte(share+"\n"), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, p)
+}
+
+// rebindAuthScript binds the login file again inside the guest without
+// naming it: every bind whose source is a file inside the claude-auth
+// share (findmnt shows it as claude-auth[/<file>]) is dropped with a lazy
+// unmount, and the guest's own script makes its bind afresh, as at boot
+// (it does nothing without a share). hostd never names or opens what is in
+// the share (I-278).
+const rebindAuthScript = `findmnt -rn -t virtiofs -o TARGET,SOURCE | awk '$2 ~ /^claude-auth\[\// {print $1}' | while read -r t; do umount -l "$t"; done; exec /usr/local/libexec/repose/repose-claude-auth`
+
+// rebindAuthShare runs after a restore of a guest with the login share on
+// a host whose hypervisor shares the directory itself (a Mac): there the
+// guest's bind of the login file went stale across a VZ restore while the
+// directory still worked (DECISIONS I-1666). Best
+// effort: a failure leaves the share's directory as it was.
+func (m *Manager) rebindAuthShare(ctx context.Context, g *state.Guest, sess vsockclient.Session) {
+	if !m.d.DirectAuthShare || !m.argsHaveAuthShare(g.GuestID) || sess == nil {
+		return
+	}
+	if r, err := sess.Exec(ctx, []string{"/bin/sh", "-c", rebindAuthScript}, 20, ""); err != nil || r.GetExitCode() != 0 {
+		m.log(g).Warn("login file not bound again after the restore", "event", "auth_share")
+	}
 }

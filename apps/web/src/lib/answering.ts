@@ -1,5 +1,5 @@
 import type { Project } from './api/types';
-import { uptime } from './format';
+import { bytes, uptime } from './format';
 
 /** When a running machine stopped answering, or undefined (I-1652): its
  * guestd has been silent for about three minutes. Never for a machine
@@ -21,9 +21,32 @@ export function notAnsweringText(
 	return `Not answering for ${uptime(since, now) === '0m' ? '1m' : uptime(since, now)}`;
 }
 
+/** The line for a running machine whose VM got less than it gets with
+ * the host to itself (I-1680), in the CLI's words (`repose status`). */
+export function sizedDownText(p: Pick<Project, 'state' | 'vm'>): string {
+	const v = p.vm;
+	if (p.state !== 'running' || !v || !v.sized_down) return '';
+	const cpus = v.vcpus === 1 ? '1 vCPU' : `${v.vcpus} vCPUs`;
+	return `Runs with ${cpus} and ${bytes(v.mem_bytes)} of its ${v.full_vcpus} and ${bytes(v.full_mem_bytes)}: the machines running beside it held the rest when it started. A start after one of them stops gives it all.`;
+}
+
 /** The words for a machine parked on a Mac that waits for its user to
  * log in (I-1672): its memory is kept, so nothing here offers a restart. */
 export function parkedText(p: Pick<Project, 'state' | 'parked' | 'host_name'>): string {
 	if (p.state !== 'running' || !p.parked) return '';
-	return `Parked: waits for you to log in to ${p.host_name || 'its Mac'}; its memory is kept`;
+	const mac = p.host_name || 'its Mac';
+	// A Mac that is logged in but locked waits for the unlock (I-1682).
+	if (p.parked.waits_for === 'unlock')
+		return `Parked: waits for you to unlock ${mac}; its memory is kept`;
+	return `Parked: waits for you to log in to ${mac}; its memory is kept`;
+}
+
+/** The words for a machine resting as a save that its locked Mac cannot
+ * read (I-1682): it wakes at the unlock, not at a connection. */
+export function restingWaitText(p: Pick<Project, 'state' | 'resting' | 'host_name'>): string {
+	if (p.state !== 'running' || !p.resting?.waits_for) return '';
+	const mac = p.host_name || 'its Mac';
+	if (p.resting.waits_for === 'login')
+		return `Resting: wakes once you log in to ${mac}; its memory is kept`;
+	return `Resting: wakes once you unlock ${mac}; its memory is kept`;
 }

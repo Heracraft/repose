@@ -1,23 +1,31 @@
-# The own-hardware hosts' release (DECISIONS I-1494, I-1496, I-1498).
+# The own-hardware hosts' release (DECISIONS I-1494, I-1496, I-1498,
+# I-1684, I-1686).
 #
 # On a pull request touching them: the installer carries exactly the
-# files the appliance is built from (embed.sh --check), every script
-# is shellcheck clean, and the kernel check passes its tests.
+# files the x86 hosts are built from (embed.sh --check), every script
+# is shellcheck clean, and the kernel check passes its tests; and on a
+# macOS runner the Mac's bundle builds twice, in two directories, to the
+# same bytes (ops/mac/build-bundle.sh --twice).
 #
-# On a tag `appliance-<version>` (`git tag appliance-2026.11.22 && git push
-# origin appliance-2026.11.22`):
-#   hostd     hostd for amd64 and arm64 at <version> and their
-#             manifest.json, signed with the release key, published
-#             together as the release hostd-<version>. Every appliance and
-#             x86 host finds the newest such release through the releases
-#             API every 30 minutes (repose-hostd-update.timer). There is no
-#             moving channel release: releases here are immutable, and
-#             hostd-stable is a dead name (I-1496).
-#   kernel    kernel.org 6.18.57 with Debian's cloud-arm64 config.
-#   image     the Mac appliance image, published as the release
-#             appliance-<version>: repose-appliance-aarch64.raw.zst and
-#             its .sha256, refused over 350 MB compressed or 4 GiB
-#             apparent.
+# On a tag `appliance-<version>` (`git tag appliance-2026.11.28.1 && git push
+# origin appliance-2026.11.28.1`):
+#   mac       the Mac's bundle, repose-host-darwin-arm64.tar.gz, on a
+#             macOS runner: hostd and repose-hostd-update for darwin,
+#             repose-vm signed ad hoc with the virtualization
+#             entitlement, e2fsprogs and zstd from their pinned sources.
+#   hostd     hostd for linux amd64 and arm64 at <version>, manifest.json
+#             for them (unchanged, I-1496), and manifest-darwin.json for
+#             the Mac's bundle, both signed with the release key, published
+#             together as the release hostd-<version>. Every x86 host finds
+#             the newest such release through the releases API every 30
+#             minutes (repose-hostd-update.timer), and every Mac too
+#             (run.repose.hostd-update). There is no moving channel
+#             release: releases here are immutable, and hostd-stable is a
+#             dead name (I-1496). `repose host add` on a Mac installs the
+#             version internal/cli/machost.go pins (macHostVersion), so
+#             this release is published before the CLI that pins it.
+# The Mac appliance image (design 1) is no longer built: no CLI from
+# design 2 on fetches it (I-1684).
 # Every release here is --latest=false: releases/latest is the CLI's, and
 # install.sh and `repose version` read it.
 #
@@ -30,9 +38,17 @@ on:
       - images/appliance-arm64/**
       - ops/install-host-x86.sh
       - ops/install-host-x86-test
+      - ops/mac/**
+      - cmd/repose-vm/**
+      - cmd/repose-hostd-update/**
+      - internal/machost/**
       - .github/workflows/appliance-image.yml
   push:
     tags: ["appliance-*"]
+    # The design 2 program's branches run check and mac (never hostd, which
+    # only a tag reaches), as no pull request of theirs exists before the
+    # program merges to main (DECISIONS I-1688). Drop with that merge.
+    branches: ["design2", "d2-*"]
 permissions: {}
 jobs:
   check:
@@ -44,14 +60,40 @@ jobs:
       - name: the installer carries the appliance's files
         run: images/appliance-arm64/embed.sh --check
       - name: shellcheck
-        run: shellcheck ops/install-host-x86.sh ops/install-host-x86-test images/appliance-arm64/*.sh images/appliance-arm64/host/bin/* images/appliance-arm64/x86/bin/*
+        run: shellcheck ops/install-host-x86.sh ops/install-host-x86-test images/appliance-arm64/*.sh images/appliance-arm64/host/bin/* images/appliance-arm64/x86/bin/* ops/mac/build-bundle.sh cmd/repose-vm/build.sh
       - name: the installer's kernel check
         run: ops/install-host-x86-test
       - name: the installer's dry run
         run: bash ops/install-host-x86.sh --dry-run --join e30 --loop-file "$RUNNER_TEMP/guests.img" --size 20 --uplink eth0
 
+  mac:
+    runs-on: macos-15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: build the Mac's bundle twice and compare
+        env:
+          REF: ${{ github.ref_name }}
+        run: |
+          swiftc --version
+          v=0.0.0
+          case $REF in appliance-*) v=${REF#appliance-} ;; esac
+          mkdir dist
+          ops/mac/build-bundle.sh --twice "$v" dist/repose-host-darwin-arm64.tar.gz
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mac
+          path: dist/
+
   hostd:
     if: startsWith(github.ref, 'refs/tags/appliance-')
+    needs: [mac]
     runs-on: ubuntu-24.04
     environment: release
     permissions:
@@ -75,11 +117,11 @@ jobs:
               -o "dist/hostd-linux-$a" ./cmd/hostd
           done
           (cd dist && sha256sum hostd-linux-* > SHA256SUMS)
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: hostd
+          name: mac
           path: dist/
-      - name: publish hostd-<version> with its signed manifest
+      - name: publish hostd-<version> with its signed manifests
         env:
           REPOSE_RELEASE_SIGNING_KEY: ${{ secrets.REPOSE_RELEASE_SIGNING_KEY }}
         run: |
@@ -94,77 +136,20 @@ jobs:
           images/appliance-arm64/hostd-manifest.sh "$v" \
             dist/hostd-linux-amd64 "$base/hostd-linux-amd64" \
             dist/hostd-linux-arm64 "$base/hostd-linux-arm64" "$key" > dist/manifest.json
+          go run ./ops/mac/bundle manifest --version "$v" --bundle dist/repose-host-darwin-arm64.tar.gz \
+            --url "$base/repose-host-darwin-arm64.tar.gz" --key "$key" > dist/manifest-darwin.json
           rm -f "$key"
+          (cd dist && sha256sum hostd-linux-* repose-host-darwin-arm64.tar.gz > SHA256SUMS)
           # One create with every asset: the repository's releases are
           # immutable once published, so nothing can be added later, and a
           # host finds this release by its manifest.json (I-1496).
           gh release create "hostd-$v" --repo "$GITHUB_REPOSITORY" --latest=false \
-            --title "hostd $v" --notes "hostd $v for hosts without Nix (the Mac appliance and ops/install-host-x86.sh)." \
-            dist/hostd-linux-amd64 dist/hostd-linux-arm64 dist/SHA256SUMS dist/manifest.json
+            --title "hostd $v" --notes "hostd $v for hosts without Nix: x86 machines (ops/install-host-x86.sh) and Macs (repose host add)." \
+            dist/hostd-linux-amd64 dist/hostd-linux-arm64 dist/SHA256SUMS dist/manifest.json \
+            dist/repose-host-darwin-arm64.tar.gz dist/manifest-darwin.json
           # The binaries and the manifest answer anonymously.
-          for f in hostd-linux-amd64 hostd-linux-arm64 manifest.json; do
+          for f in hostd-linux-amd64 hostd-linux-arm64 manifest.json repose-host-darwin-arm64.tar.gz manifest-darwin.json; do
             curl -fsSL -o "$RUNNER_TEMP/h" "$base/$f"
             cmp "$RUNNER_TEMP/h" "dist/$f"
           done
 
-  kernel:
-    if: startsWith(github.ref, 'refs/tags/appliance-')
-    runs-on: ubuntu-24.04-arm
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: build the kernel
-        run: |
-          sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
-            build-essential flex bison bc libssl-dev libelf-dev kmod cpio zstd python3 rsync bsdextrautils
-          images/appliance-arm64/kernel.sh "$RUNNER_TEMP/kernel"
-          mkdir kernel && mv "$RUNNER_TEMP"/kernel/kernel-*-arm64.tar.zst kernel/
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: kernel
-          path: kernel/
-
-  image:
-    needs: [hostd, kernel]
-    runs-on: ubuntu-24.04-arm
-    permissions:
-      contents: write
-    env:
-      GH_TOKEN: ${{ github.token }}
-      VERSION: ${{ github.ref_name }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          path: art
-      - name: build the image
-        # --allow-branch: a tag checkout has no main ref to compare with;
-        # appliance-* tags are cut on main, and hostd is this commit's.
-        run: |
-          v=${VERSION#appliance-}
-          docker run --rm --privileged -v "$PWD:/src:ro" -v "$PWD/art:/art" -v "$RUNNER_TEMP:/out" debian:trixie bash -c "
-            set -e
-            apt-get update -qq
-            DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends git mmdebstrap arch-test e2fsprogs dosfstools mtools gdisk zstd curl jq ca-certificates systemd >/dev/null
-            /src/images/appliance-arm64/build.sh --version $v --kernel /art/kernel/kernel-*-arm64.tar.zst \
-              --hostd /art/hostd/hostd-linux-arm64 --hostd-commit $GITHUB_SHA --allow-branch --out /out/image" | tee "$RUNNER_TEMP/build.log"
-      - name: the image is inside its budget
-        run: |
-          line=$(grep '^build.sh: ' "$RUNNER_TEMP/build.log")
-          compressed=$(echo "$line" | sed -E 's/.*compressed_bytes=([0-9]+).*/\1/')
-          apparent=$(echo "$line" | sed -E 's/.*apparent_bytes=([0-9]+).*/\1/')
-          echo "$line"
-          test "$compressed" -lt $((350 * 1000 * 1000)) || { echo "::error::$compressed bytes compressed, over 350 MB"; exit 1; }
-          test "$apparent" -lt $((4 << 30)) || { echo "::error::$apparent bytes apparent, over 4 GiB"; exit 1; }
-          want=$(sed -nE 's/^\s*applianceImageApparentBytes = ([0-9]+) << 20.*/\1/p' internal/cli/appliance.go)
-          test "$apparent" -eq $((want << 20)) || { echo "::error::the image is $apparent bytes; internal/cli/appliance.go pins $((want << 20))"; exit 1; }
-      - name: publish appliance-<version>
-        run: |
-          gh release create "$VERSION" --repo "$GITHUB_REPOSITORY" --latest=false \
-            --title "Mac appliance ${VERSION#appliance-}" \
-            --notes "The Mac mini appliance image ${VERSION#appliance-}: Debian 13 arm64, kernel 6.18.57, hostd ${VERSION#appliance-}. \`repose host add\` on a Mac fetches it." \
-            "$RUNNER_TEMP/image/repose-appliance-aarch64.raw.zst" "$RUNNER_TEMP/image/repose-appliance-aarch64.raw.zst.sha256"

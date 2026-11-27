@@ -13,10 +13,13 @@ import (
 	"io"
 	"log/slog"
 	"math/rand"
+	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
 
@@ -43,6 +46,11 @@ type Dialer interface {
 type GRPCDialer struct {
 	Addr string
 	TLS  *tls.Config
+	// NetDial, when set, opens the connection under gRPC: on macOS the api's
+	// hub address is reached through hostd's own WireGuard netstack
+	// (unet.Edge.DialContext, DECISIONS I-1670). Nil is gRPC's own dial,
+	// as on every Linux host.
+	NetDial func(ctx context.Context, addr string) (net.Conn, error)
 }
 
 // Dial implements Dialer.
@@ -54,6 +62,15 @@ func (d GRPCDialer) Dial(ctx context.Context) (hostdv1.HostService_SessionClient
 		grpc.WithTransportCredentials(credentials.NewTLS(d.TLS)),
 		grpc.WithKeepaliveParams(keepalive.ClientParameters{Time: 30 * time.Second, Timeout: 10 * time.Second, PermitWithoutStream: true}),
 	}, instrument.GRPCDialOptions()...)
+	if d.NetDial != nil {
+		// A Mac's dial goes through its own WireGuard (I-1670), which the
+		// edge peers within its 30 s sync after a registration: a 3 s
+		// connect window retries within seconds of the peer appearing,
+		// where gRPC's 20 s default left a just-joined Mac waiting up to
+		// 20 s more (d2-core, 2026-11-27). Linux keeps the default.
+		opts = append(opts, grpc.WithContextDialer(d.NetDial),
+			grpc.WithConnectParams(grpc.ConnectParams{Backoff: backoff.Config{BaseDelay: time.Second, Multiplier: 1.6, Jitter: 0.2, MaxDelay: 10 * time.Second}, MinConnectTimeout: 3 * time.Second}))
+	}
 	conn, err := grpc.NewClient(d.Addr, opts...)
 	if err != nil {
 		return nil, nil, err
@@ -71,17 +88,25 @@ type Config struct {
 	HeartbeatInterval time.Duration
 	SampleBuffer      int
 	MaxBackoff        time.Duration
+	// FirstMaxBackoff caps the wait between tries until the stream has
+	// connected once, where set (0 is MaxBackoff): a Mac just registered
+	// waits for the edge to peer its new key within the edge's 30 s sync,
+	// and a wait grown to 10 s found it late (d2-core, 2026-11-27).
+	FirstMaxBackoff time.Duration
 	// Backoff overrides the schedule (tests).
 	BackoffBase time.Duration
 }
 
 // Stream is the running connection manager. It implements guest.Emitter.
 type Stream struct {
-	cfg     Config
-	dialer  Dialer
-	host    Host
-	metrics *metrics.M
-	log     *slog.Logger
+	cfg Config
+	// everConnected is set by the first connected session
+	// (FirstMaxBackoff).
+	everConnected atomic.Bool
+	dialer        Dialer
+	host          Host
+	metrics       *metrics.M
+	log           *slog.Logger
 
 	out       chan *hostdv1.HostMessage
 	mu        sync.Mutex
@@ -266,6 +291,9 @@ func (s *Stream) Dropped() uint64 {
 }
 
 func (s *Stream) setConnected(v bool) {
+	if v {
+		s.everConnected.Store(true)
+	}
 	s.mu.Lock()
 	s.connected = v
 	s.mu.Unlock()
@@ -294,6 +322,9 @@ func (s *Stream) Run(ctx context.Context) {
 			s.metrics.StreamReconnectsTotal.Inc()
 		}
 		d := s.backoff(attempt)
+		if f := s.cfg.FirstMaxBackoff; f > 0 && !s.everConnected.Load() && d > f {
+			d = f
+		}
 		attempt++
 		if err != nil {
 			s.log.Warn("stream disconnected", "event", "stream_disconnect", "err", err.Error(), "retry_ms", d.Milliseconds())
