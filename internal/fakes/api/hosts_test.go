@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/base64"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -390,5 +391,17 @@ func TestFakeOldHostdPlacesByClass(t *testing.T) {
 	r.json(t, &body)
 	if want := "your host mac-mini has 1 GB of memory free for machines, and a tiny machine needs 2 GB. A machine holds its memory while it runs, so stopping one frees room for it"; body.Error.Message != want {
 		t.Fatalf("message %q, want %q", body.Error.Message, want)
+	}
+}
+
+// The fake's refusal of a live grow on a Mac is hostd's own sentence, so
+// a dashboard or CLI test reads what a customer reads.
+func TestMacLiveGrowRefusalIsHostdsWords(t *testing.T) {
+	src, err := os.ReadFile("../../hostd/guest/stop.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(src), `"`+MacLiveGrowRefusal+`"`) {
+		t.Fatalf("hostd's refusal no longer reads %q; update MacLiveGrowRefusal", MacLiveGrowRefusal)
 	}
 }
