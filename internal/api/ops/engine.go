@@ -719,6 +719,9 @@ func (e *Engine) advance(ctx context.Context, op *store.Op) {
 			if e.skipFailedApply(ctx, op, code, msg) {
 				return
 			}
+			if e.skipFailedAgentStart(ctx, op, code, msg) {
+				return
+			}
 			e.failWithLines(ctx, op, code, msg, line, pline)
 			return
 		}

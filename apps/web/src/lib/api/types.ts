@@ -467,6 +467,10 @@ export interface OpStatus {
 	state: 'pending' | 'running' | 'done' | 'error';
 	error?: string;
 	log_url?: string;
+	/** What the op left: an agent op's (and a create's that started one)
+	 * `agent`, `window` and `existed`, or `agent_error` when the create's
+	 * agent did not start (I-1702). */
+	result?: { agent?: string; window?: string; existed?: boolean; agent_error?: string };
 }
 
 /** One menu item (docs/interfaces/api.md "MenuSelection"): a catalog entry

@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1169 entries.
+1170 entries.
 
 ## Scope
 
@@ -1201,3 +1201,4 @@ pointer, not a summary.
 - **I-1688** hostd's darwin paths are tested against vzfake, a stand-in for the Mac's launcher that answers Cloud Hypervisor's API with repose-vm's bodies and refuses what Virtualization.framework refuses, through hostd's real client; a restore VZ refuses because the session cannot restore at that moment holds the machine for the unlock instead of throwing its image away; and a macOS CI job runs the darwin Go tests and builds the launcher (d2-int, design 2 build, 2026-11-27) — L39796
 - **I-1692** The api reads a Mac without the appliance as what it is, not as D1's nested Mac: no `running_limit` for it, so the dashboard's New project form never holds Create at D1's count (d2-surface, design 2 build, 2026-11-27) — L39806
 - **I-1694** Design 2 is built for customers and replaces design 1 on the Mac, with no migration; idle machines on a Mac give their memory back by rest by save (conductor, design 2 build, 2026-11-27) — L39815
+- **I-1702** The dashboard starts agents: a machine made there starts its agent, the form asks which when the account has none to go by, and a running machine's page has Start agent with Claude Code's Remote Control as an option (sweep-dash, 2026-11-27) — L39823
