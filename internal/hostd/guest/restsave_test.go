@@ -263,6 +263,9 @@ func TestLockRestoresOnlyWhatFits(t *testing.T) {
 	res := fh.mustOK(cmd(&hostdv1.WakeGuest{GuestId: left, Reason: "connect"}))
 	if w := res.GetWake(); w.GetWaitsFor() != WaitsForUnlock || fh.unitActive(left) {
 		t.Fatalf("locked wake: %+v, active %v", w, fh.unitActive(left))
+	}
+}
+
 // A machine resting as a save holds none of the Mac's memory, so its
 // sample carries no memory in use; paused, it repeats its last figure
 // (review-dash P2 #4).
