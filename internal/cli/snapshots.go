@@ -328,7 +328,7 @@ func restoredAsLine(ctx context.Context, e *Env, src *Project, newID, newSlug, s
 	}
 	line := fmt.Sprintf("Restored %s from %s in %s", newSlug, from, fmtElapsed(took))
 	if p, err := e.Client.GetProject(ctx, newID); err == nil {
-		return fmt.Sprintf("%s; it is %s (%s).", line, stateWords(p.State), p.Class)
+		return fmt.Sprintf("%s; it is %s%s.", line, stateWords(p.State), classNote(p))
 	}
 	return line + "."
 }
