@@ -59,7 +59,16 @@ func (s *Server) projectSamples(w http.ResponseWriter, r *http.Request) error {
 		var hm int64
 		var arch *string
 		err := s.d.Pool.QueryRow(ctx, "select vcpus, mem_bytes, arch from hosts where id = $1 and owner_account_id = $2 and $3 = any(features)", *p.HostID, p.UserID, scheduler.SharedFeature).Scan(&hv, &hm, &arch)
-		if err == nil && arch != nil && *arch == "aarch64" {
+		switch {
+		case err == nil && p.VMSize != nil && p.VMSize.VCPUs > 0:
+			// A Mac without the appliance says what the machine's VM
+			// got (I-1680): its CPU is a share of those vCPUs, not of
+			// the Mac's nor of D1's two (I-1692).
+			hv = int64(p.VMSize.VCPUs)
+			if p.VMSize.MemMiB > 0 {
+				hm = int64(p.VMSize.MemMiB) << 20
+			}
+		case err == nil && arch != nil && *arch == "aarch64":
 			// A Mac runs its guests nested, two vCPUs each (I-1640), so
 			// a machine's CPU is a share of its two: drawn against the
 			// host's eight, a pegged machine read 23% (I-1654).

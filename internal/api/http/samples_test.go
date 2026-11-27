@@ -265,3 +265,44 @@ func TestNestedOwnedMachineDrawsAgainstItsCores(t *testing.T) {
 		t.Fatalf("points %v, want one of the machine's two vCPUs, 0.5", pts)
 	}
 }
+
+// TestDesignTwoMacMachineDrawsAgainstItsVM: on a Mac without the appliance
+// the api knows what the machine's VM got (Project.vm, I-1680), so its CPU
+// and memory are shares of those, not of D1's two vCPUs nor of the whole
+// host (I-1692).
+func TestDesignTwoMacMachineDrawsAgainstItsVM(t *testing.T) {
+	e := newEnv(t)
+	ctx := e.h.Ctx
+	tok := e.signIn(t, "sub-mac2", "mac2")
+	uid := e.exempt(t, "sub-mac2")
+	r := e.do(t, tok, "POST", "/projects", map[string]any{"name": "vz", "class": "large"})
+	if r.status != 201 {
+		t.Fatalf("create: %d %s", r.status, r.raw)
+	}
+	id := r.body["id"].(string)
+	if op := e.waitOp(t, r); op.State != "done" {
+		t.Fatalf("create op: %+v", op.Error)
+	}
+	if _, err := e.h.Pool.Exec(ctx, "delete from meter_samples where project_id = $1", id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.h.Pool.Exec(ctx, `insert into meter_samples (ts, project_id, state, class, cpu_ns, mem_used)
+		values (now(), $1, 'running', 'large', $2, $3)`, id, int64(60e9), int64(1<<30)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.h.Pool.Exec(ctx, "update hosts set owner_account_id = $1, vcpus = 10, mem_bytes = 24::bigint << 30, arch = 'aarch64' where id = $2", uid, e.h.HostID); err != nil {
+		t.Fatal(err)
+	}
+	shareHost(t, e)
+	if _, err := e.h.Pool.Exec(ctx, `update projects set vm_size = '{"vcpus":4,"mem_mib":8192,"full_vcpus":5,"full_mem_mib":8192}'::jsonb where id = $1`, id); err != nil {
+		t.Fatal(err)
+	}
+	s := e.do(t, tok, "GET", "/projects/"+id+"/samples", nil)
+	if s.status != 200 || s.body["vcpus"] != float64(4) || s.body["memory_bytes"] != float64(8<<30) {
+		t.Fatalf("samples header %s, want the VM's 4 vCPUs and 8 GiB", s.raw)
+	}
+	pts := s.body["points"].([]any)
+	if len(pts) == 0 || pts[len(pts)-1].(map[string]any)["cpu"] != 0.25 {
+		t.Fatalf("points %v, want one of the VM's four vCPUs, 0.25", pts)
+	}
+}

@@ -177,3 +177,86 @@ test('a parked machine waits for the login and keeps its memory', async ({ page 
 		await removeOwnedHosts(api).catch(() => {});
 	}
 });
+
+async function fakeAdmin(path: string, body: object): Promise<void> {
+	const res = await fetch(`${process.env.FAKEAPI_ADMIN_URL}${path}`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(body)
+	});
+	if (!res.ok) throw new Error(`${path}: ${res.status}`);
+}
+
+// I-1682: a machine parked on a Mac that is logged in but locked waits for
+// the unlock, and says so in the row, the rail and the page.
+test('a parked machine on a locked Mac waits for the unlock', async ({ page }) => {
+	const api = apiURLFromEnv();
+	await removeOwnedHosts(api);
+	const hostID = await ownedHost({ name: 'mac-mini' });
+	const p = await createProject(api, {
+		name: 'locked-app',
+		remote_url: 'github.com/heracraft/locked-app'
+	});
+	try {
+		await ownedHost({ project_id: p.id, host_id: hostID });
+		await setParked(p.id, 5);
+		await fakeAdmin('/waits-for', { project_id: p.id, waits: 'unlock' });
+		await page.goto('/projects');
+		const row = page
+			.locator('table.ptable tbody tr')
+			.filter({ has: page.getByRole('link', { name: p.name, exact: true }) });
+		await expect(row.getByTestId('row-parked')).toHaveText(
+			'Parked: waits for you to unlock mac-mini; its memory is kept'
+		);
+		await expect(
+			page.getByRole('link', { name: `${p.name}, parked, waiting for you to unlock` })
+		).toBeVisible();
+		await page.goto(`/projects/${p.id}`);
+		await expect(page.getByTestId('parked')).toHaveText(
+			'Parked: waits for you to unlock mac-mini; its memory is kept'
+		);
+	} finally {
+		await destroyProject(api, p.id).catch(() => {});
+		await removeOwnedHosts(api).catch(() => {});
+	}
+});
+
+// I-1680: a start a Mac sized down says so on the machine card, in the
+// CLI's words.
+test('a machine a Mac started smaller says so on its page', async ({ page }) => {
+	const api = apiURLFromEnv();
+	await removeOwnedHosts(api);
+	const hostID = await ownedHost({ name: 'mac-mini' });
+	const p = await createProject(api, {
+		name: 'small-app',
+		remote_url: 'github.com/heracraft/small-app'
+	});
+	try {
+		await ownedHost({ project_id: p.id, host_id: hostID });
+		const G = 1024 * 1024 * 1024;
+		await fakeAdmin('/vm', {
+			project_id: p.id,
+			vcpus: 2,
+			mem_bytes: 3968 * 1024 * 1024,
+			full_vcpus: 5,
+			full_mem_bytes: 8 * G
+		});
+		await page.goto(`/projects/${p.id}`);
+		await expect(page.getByTestId('sized-down')).toHaveText(
+			'Runs with 2 vCPUs and 3.9 GB of its 5 and 8 GB: the machines running beside it held the rest when it started. A start after one of them stops gives it all.'
+		);
+		await shots(page, 'sized-down-page');
+		await fakeAdmin('/vm', {
+			project_id: p.id,
+			vcpus: 5,
+			mem_bytes: 8 * G,
+			full_vcpus: 5,
+			full_mem_bytes: 8 * G
+		});
+		await page.reload();
+		await expect(page.getByTestId('sized-down')).toHaveCount(0);
+	} finally {
+		await destroyProject(api, p.id).catch(() => {});
+		await removeOwnedHosts(api).catch(() => {});
+	}
+});

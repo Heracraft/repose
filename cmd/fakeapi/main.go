@@ -74,6 +74,8 @@ func (a *adminServer) Close() error { return a.Server.Close() }
 //	POST /unfail     {"method","path"}        -> f.Unfail
 //	POST /not-answering {"project_id","minutes"} -> f.SetNotAnswering: guestd silent that long (I-1652)
 //	POST /parked {"project_id","minutes"} -> f.SetParked: parked on a Mac that long ago, waiting for its user to log in (I-1672)
+//	POST /vm     {"project_id","vcpus","mem_bytes","full_vcpus","full_mem_bytes"} -> f.SetVM: what a Mac's start gave the machine (I-1680)
+//	POST /waits-for {"project_id","waits"} -> f.SetWaitsFor: a parked or resting machine waits for "unlock" or "login" (I-1682)
 //	POST /refuse-create {"message"}           -> f.RefuseNextCreate: the host refuses the next create
 //	                 for room and the project is gone (I-1648)
 //	POST /billing    api.BillingState as JSON -> f.SetBillingState: {"mode": off|none|trial|active|past_due|suspended|exempt,
@@ -172,6 +174,29 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 			since = &t
 		}
 		f.SetParked(body.ProjectID, since)
+	})
+	mux.HandleFunc("POST /vm", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			ProjectID string `json:"project_id"`
+			api.VM
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		vm := body.VM
+		f.SetVM(body.ProjectID, &vm)
+	})
+	mux.HandleFunc("POST /waits-for", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			ProjectID string `json:"project_id"`
+			Waits     string `json:"waits"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		f.SetWaitsFor(body.ProjectID, body.Waits)
 	})
 	// {project_id, minutes}: the project's guestd has not answered since
 	// that many minutes ago; minutes < 0 clears it (DECISIONS I-1652).
