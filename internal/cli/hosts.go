@@ -667,7 +667,7 @@ func allDestroying(ctx context.Context, e *Env, slugs []string) bool {
 // user reads: an api from before these routes, a name that is taken, a
 // host that is not theirs, a plan's host limit (none is sold since
 // I-1594; an api from before it answers one), and an account with no
-// Own hardware plan.
+// plan.
 func hostErr(err error, name string) error {
 	var apiErr *APIError
 	if !errors.As(err, &apiErr) {
@@ -686,7 +686,9 @@ func hostErr(err error, name string) error {
 	case reason == "waiting_limit":
 		return exitf(ExitGeneric, "%s have not joined yet. Install repose on one, or `repose host rm` one, before you add another.", hostCount(detailInt(apiErr.Detail["limit"])))
 	case reason == "own_hardware_plan_required":
-		return exitf(ExitPaymentRequired, "Hardware of your own needs the Own hardware plan: https://repose.run/billing")
+		// Every plan includes hosts since I-1704, so this is an account
+		// with no plan; an older api also says it to a hosted plan.
+		return exitf(ExitPaymentRequired, "Hardware of your own needs a plan: Own hardware, or any hosted plan. Choose one at https://repose.run/billing")
 	case reason == "host_has_projects":
 		// A machine moves host only by restore (DESIGN §3), so the api
 		// refuses rather than leave them with nowhere to run. It names

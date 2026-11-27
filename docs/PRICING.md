@@ -23,7 +23,10 @@ I-77, I-179 to I-185 and I-205; the hourly design is kept in
 
 These three are the hosted plans: they sell memory, disk and egress on
 repose's own fleet. A user who runs their projects on a machine of their
-own buys "Own hardware" instead, below.
+own buys "Own hardware" instead, below. Each hosted plan also includes
+any number of hosts of the user's own at no extra price (DECISIONS
+I-1704): a machine on one counts nothing against the plan's memory,
+disk or egress, which stay the fleet's.
 
 **The `tiny` line is *proposed*, not the owner's yet (DECISIONS I-1168).**
 A plan sells memory that may run at once and no machine count, so `tiny`
@@ -169,7 +172,8 @@ The plan sells none of repose's compute, so it caps none of it:
 - **Seats.** None. An owned host is outside the seat count, the waitlist
   and the pool gauges (I-1366), so a checkout for this plan is never
   waitlisted and a full fleet does not block it.
-- **Hosts.** No limit (I-1594, which replaced one per account). `GET /me`
+- **Hosts.** No limit (I-1594, which replaced one per account), and the
+  same on the hosted plans since I-1704. `GET /me`
   reports `limits.hosts` as 2147483647 (`billing.UnlimitedHosts`), a
   number `POST /hosts`'s count never reaches. A billing-exempt account
   has the same rule, so an operator adds machines of their own without

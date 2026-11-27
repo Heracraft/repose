@@ -73,7 +73,7 @@ test('the pricing section offers a Mac mini or Linux server as a flush row under
 	await expect(own.getByRole('heading', { level: 3, name: 'Your machine' })).toBeVisible();
 	await expect(own.locator('.hw-price .n')).toHaveText('$10');
 	await expect(own).toContainText(
-		'Any number of hosts you own. Each runs as many sandboxes as its memory and disk hold.'
+		'Any number of hosts you own. Each runs as many sandboxes as its memory and disk hold. Every cloud plan includes them.'
 	);
 	await expect(own).not.toContainText(/own hardware|box you own|x86/i);
 	await expect(own.locator(':is(a, button)')).toHaveCount(0);

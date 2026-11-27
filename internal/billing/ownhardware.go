@@ -117,26 +117,39 @@ func (g *Gate) FleetAllowed(ctx context.Context, q store.Querier, userID uuid.UU
 }
 
 // OwnHardwareRequiredMessage is what `POST /hosts` answers an account
-// whose plan sells no host of its own. It names the price, because the
-// customer review found a buyer who committed hardware to the product
-// and was never told it costs anything: the CLI has no plan, billing or
-// price command, and until the public copy is unheld this refusal is
-// the only place in the product that can say the number to someone who
-// asked for a host (ENG-39, ENG-36).
+// whose plan sells no host of its own: since I-1704 every plan includes
+// them, so that is an account with no live plan. It names the price,
+// because the customer review found a buyer who committed hardware to
+// the product and was never told it costs anything: the CLI has no plan,
+// billing or price command, and this refusal is the one place in the
+// product that says the number to someone who asked for a host (ENG-39,
+// ENG-36).
 //
-// The figure comes from the plan table rather than a literal, so it
-// cannot drift from PRICING.md the way a second copy of a price does.
-// url is Config.BillingURL(). The fake api says the same sentence and
-// TestOwnHardwareRefusalIsTheApis holds the two equal.
+// The figure and the hosted plans' names come from the plan table rather
+// than literals, so they cannot drift from PRICING.md the way a second
+// copy of a price does. url is Config.BillingURL(). The fake api says the
+// same sentence and TestOwnHardwareRefusalIsTheApis holds the two equal.
 func OwnHardwareRequiredMessage(url string) string {
+	var hosted []string
+	for _, p := range HostedPlans() {
+		if p.Hosts > 0 {
+			hosted = append(hosted, p.Name)
+		}
+	}
 	plan, ok := OwnPlan()
-	if !ok {
-		// No own-hardware plan in the table at all: say what is true
+	switch {
+	case !ok && len(hosted) == 0:
+		// No plan in the table sells a host at all: say what is true
 		// rather than quote a price for a plan nobody sells.
 		return "Your plan does not include a host of your own. See " + url + "."
+	case !ok:
+		return fmt.Sprintf("A host of your own needs a plan: %s include them. Choose one at %s.", joinAnd(hosted), url)
+	case len(hosted) == 0:
+		return fmt.Sprintf("Your plan does not include a host of your own. The %s plan is %s a month for %s: choose it at %s.",
+			plan.Name, Dollars(plan.PriceCents), HostsPhrase(plan.Hosts), url)
 	}
-	return fmt.Sprintf("Your plan does not include a host of your own. The %s plan is %s a month for %s: choose it at %s.",
-		plan.Name, Dollars(plan.PriceCents), HostsPhrase(plan.Hosts), url)
+	return fmt.Sprintf("A host of your own needs a plan. %s is %s a month for %s, and %s include them: choose one at %s.",
+		plan.Name, Dollars(plan.PriceCents), HostsPhrase(plan.Hosts), joinAnd(hosted), url)
 }
 
 // Dollars prints a price the way the product says it: "$10", and "$10.50"

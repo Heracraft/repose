@@ -122,7 +122,7 @@ func TestHostAddListRm(t *testing.T) {
 	// A plan that sells no host at all is 0; a figure below 0 puts the
 	// fake's default plan back, which sells any number (I-1390's knob).
 	fake.SetHostLimit(0)
-	if err := HostAddCmd(ctx, e, "spare"); err == nil || !strings.Contains(err.Error(), "needs the Own hardware plan") {
+	if err := HostAddCmd(ctx, e, "spare"); err == nil || !strings.Contains(err.Error(), "Hardware of your own needs a plan") {
 		t.Fatalf("no plan: %v", err)
 	}
 	fake.SetHostLimit(2)

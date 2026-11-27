@@ -46,8 +46,14 @@ const maxWaitingHosts = 10
 // price: the refusal is the one place in the product that tells a
 // buyer what a host costs while the public copy is held (ENG-39).
 func ownHardwareRequired() string {
-	return fmt.Sprintf("Your plan does not include a host of your own. The %s plan is %s a month for %s: choose it at %s/billing.",
-		OwnPlan.Name, dollars(OwnPlan.PriceCents), hostsPhrase(OwnPlan.Hosts), FakeDashboard)
+	var hosted []string
+	for _, p := range Plans {
+		if p.Hosts > 0 {
+			hosted = append(hosted, p.Name)
+		}
+	}
+	return fmt.Sprintf("A host of your own needs a plan. %s is %s a month for %s, and %s include them: choose one at %s/billing.",
+		OwnPlan.Name, dollars(OwnPlan.PriceCents), hostsPhrase(OwnPlan.Hosts), joinAnd(hosted), FakeDashboard)
 }
 
 // hostsPhrase is billing.HostsPhrase: "one host", "3 hosts", or "any
@@ -758,4 +764,12 @@ func quietFor(d time.Duration) string {
 	default:
 		return fmt.Sprintf("%dd", int(d.Hours()/24))
 	}
+}
+
+// joinAnd is billing's joinAnd: "Solo, Plus and Pro".
+func joinAnd(s []string) string {
+	if len(s) <= 1 {
+		return strings.Join(s, "")
+	}
+	return strings.Join(s[:len(s)-1], ", ") + " and " + s[len(s)-1]
 }

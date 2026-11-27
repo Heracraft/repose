@@ -179,10 +179,10 @@ export interface Plan {
 	memory_gb: number;
 	disk_gb: number;
 	egress_gb: number;
-	/** How many hosts of their own the plan allows: 1 on Own hardware, 0 on
-	 *  the hosted plans (I-1364). A plan with hosts > 0 sells none of
-	 *  repose's memory, disk or egress, so those three read 0 and mean
-	 *  "the plan caps nothing"; the host's own memory and disk do. */
+	/** How many hosts of their own the plan allows: any number on every plan
+	 *  since I-1704 (2147483647; I-1364, I-1594). On Own hardware, the one
+	 *  plan with memory_gb 0, memory, disk and egress read 0 and mean "the
+	 *  plan caps nothing"; the host's own memory and disk do. */
 	hosts?: number;
 	/** Whether this plan's seats are free for this user right now. */
 	available: boolean;

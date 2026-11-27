@@ -36,11 +36,15 @@ export interface PlanRoom {
 export function planRoom(
 	mode: BillingMode,
 	billing: Pick<Billing, 'usage'> | undefined,
-	projects: Pick<Project, 'id' | 'name' | 'slug' | 'class' | 'state' | 'sized'>[] | undefined
+	projects:
+		| Pick<Project, 'id' | 'name' | 'slug' | 'class' | 'state' | 'sized' | 'host_name'>[]
+		| undefined
 ): PlanRoom | undefined {
 	const limitGB = billing?.usage.memory_gb ?? 0;
 	if (!METERED.has(mode) || limitGB <= 0 || !projects) return undefined;
-	const holders = projects.filter((p) => holdsMemory(p) && !unsized(p));
+	// A machine on a host of the account's own (host_name set, sized or
+	// not) holds none of the plan (internal/billing's RunningMemory, I-1704).
+	const holders = projects.filter((p) => holdsMemory(p) && !unsized(p) && !p.host_name);
 	return {
 		limitGB,
 		usedGB: holders.reduce((n, p) => n + classMemoryGB(p.class), 0),

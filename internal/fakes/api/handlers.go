@@ -418,13 +418,17 @@ func (f *Fake) stop(p *project, snapshot bool) *Snapshot {
 }
 
 func (f *Fake) create(u *userRec, name, remoteURL, class string) (*project, *apiError) {
-	return f.createGated(u, name, remoteURL, class, class)
+	return f.createGated(u, name, remoteURL, class, class, false)
 }
 
 // createGated is create with the class the memory gate is asked about:
 // "" for a project that is not started, as a restore with start: false
 // (the api's gateClass).
-func (f *Fake) createGated(u *userRec, name, remoteURL, class, gateClass string) (*project, *apiError) {
+//
+// own is a create that placement puts on a host the account owns, which
+// counts nothing against the plan (I-1704): only the account's standing
+// is gated.
+func (f *Fake) createGated(u *userRec, name, remoteURL, class, gateClass string, own bool) (*project, *apiError) {
 	if !nameRe.MatchString(name) {
 		return nil, invalid("name: must match [A-Za-z0-9._-]{1,64}")
 	}
@@ -437,8 +441,12 @@ func (f *Fake) createGated(u *userRec, name, remoteURL, class, gateClass string)
 	}
 	// The billing gate runs on every create and restore as on a
 	// start (I-290): no plan, no compute; a plan, its memory and disk.
-	if e := f.gate(u, gateClass, &diskAsk{addGB: newProjectHeldGB, volumeBytes: classes[class]}, nil); e != nil {
-		return nil, e
+	gate := f.gate(u, gateClass, &diskAsk{addGB: newProjectHeldGB, volumeBytes: classes[class]}, nil)
+	if own {
+		gate = f.standingGate(u)
+	}
+	if gate != nil {
+		return nil, gate
 	}
 	if e := f.projectCap(u, 1); e != nil {
 		return nil, e
@@ -566,7 +574,7 @@ func (f *Fake) createProject(w http.ResponseWriter, r *http.Request) *apiError {
 	if e != nil {
 		return e
 	}
-	p, e := f.create(u, body.Name, body.RemoteURL, body.Class)
+	p, e := f.createGated(u, body.Name, body.RemoteURL, body.Class, body.Class, ownHostID != "")
 	if e != nil {
 		return e
 	}
@@ -1198,7 +1206,7 @@ func (f *Fake) resizeProject(w http.ResponseWriter, r *http.Request) *apiError {
 	if body.VolumeBytes <= p.VolumeBytes {
 		return invalid("volume_bytes: volumes only grow").withDetail(map[string]any{"volume_bytes": p.VolumeBytes})
 	}
-	if e := f.gate(userFrom(r), "", &diskAsk{volumeBytes: body.VolumeBytes}, nil); e != nil {
+	if e := f.gate(userFrom(r), "", &diskAsk{volumeBytes: body.VolumeBytes}, p); e != nil {
 		return e
 	}
 	if p.State == "running" && f.ownedHostProvider(p.HostID) == "mac" {
@@ -1893,7 +1901,9 @@ func (f *Fake) restoreAsNew(u *userRec, p *project, snap *Snapshot, name string)
 			return nil, errf("conflict", "a project named %s already exists; pick another name for the restored one", slugOf(name)).withDetail(map[string]any{"reason": "name_taken", "name": slugOf(name)})
 		}
 	}
-	np, e := f.create(u, name, remote, p.Class)
+	// A copy of a machine on a host the account owns counts nothing
+	// against the plan (I-1704).
+	np, e := f.createGated(u, name, remote, p.Class, p.Class, f.onOwnedHost(p))
 	if e != nil {
 		return nil, e
 	}

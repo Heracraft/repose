@@ -134,8 +134,11 @@
 	});
 	// Memory running, split into what frozen machines hold and the rest;
 	// the total is the api's, so the meter agrees with the plan's gate.
+	// A machine on a host of the account's own (host_name set) holds none
+	// of the plan, on any plan (I-1704), so it is in neither figure.
+	let fleetProjects = $derived(projects.filter((p) => !p.host_name));
 	let memFrozen = $derived(
-		projects
+		fleetProjects
 			.filter((p) => holdsMemory(p) && frozenSince(p))
 			.reduce((n, p) => n + planMemoryGB(p), 0)
 	);
@@ -150,7 +153,7 @@
 	let noFleetLimits = $derived(!!billing && (accountStatus === 'exempt' || limits.memory === 0));
 	let diskOver = $derived(!!billing && !noFleetLimits && limits.disk > 0 && diskHeld > limits.disk);
 	let heaviest = $derived(
-		projects
+		fleetProjects
 			.filter((p) => (p.root_used_bytes ?? 0) > 0)
 			.sort((a, b) => (b.root_used_bytes ?? 0) - (a.root_used_bytes ?? 0))
 			.slice(0, 3)

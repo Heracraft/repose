@@ -28,7 +28,7 @@ type RunningProject struct {
 // Running as 8 GB a machine (pass2-dash N4, I-1658).
 func RunningMemory(ctx context.Context, q store.Querier, userID uuid.UUID, except uuid.UUID) ([]RunningProject, int, error) {
 	rows, err := q.Query(ctx, `select id, slug, class, state from projects p where user_id = $1 and destroyed_at is null and state in (`+memoryStates+`) and id <> $2
-		  and not exists (select 1 from hosts h where h.id = p.host_id and h.owner_account_id = p.user_id)
+		  and not `+ownHostSQL+`
 		order by created_at, slug`, userID, except)
 	if err != nil {
 		return nil, 0, err
@@ -66,6 +66,21 @@ func HeldDisk(ctx context.Context, q store.Querier, userID uuid.UUID) (int64, in
 	var bytes int64
 	var n int
 	err := q.QueryRow(ctx, "select coalesce(sum("+HeldSQL+"), 0)::bigint, count(*) from projects where user_id = $1 and destroyed_at is null and state <> 'destroying'", userID).Scan(&bytes, &n)
+	return bytes, n, err
+}
+
+// ownHostSQL is true for a projects row p that lives on a host its
+// account owns: RunningMemory's term, and HeldFleetDisk's.
+const ownHostSQL = "exists (select 1 from hosts h where h.id = p.host_id and h.owner_account_id = p.user_id)"
+
+// HeldFleetDisk is HeldDisk for what a plan's disk counts: the projects
+// on repose's servers, since a machine on a host the account owns holds
+// that host's disk and none of the plan's (DECISIONS I-1704). The count
+// is of every live project, as HeldDisk's.
+func HeldFleetDisk(ctx context.Context, q store.Querier, userID uuid.UUID) (int64, int, error) {
+	var bytes int64
+	var n int
+	err := q.QueryRow(ctx, "select coalesce(sum("+HeldSQL+") filter (where not "+ownHostSQL+"), 0)::bigint, count(*) from projects p where user_id = $1 and destroyed_at is null and state <> 'destroying'", userID).Scan(&bytes, &n)
 	return bytes, n, err
 }
 
@@ -129,7 +144,13 @@ func LoadUsage(ctx context.Context, q store.Querier, userID uuid.UUID, plan Plan
 	if u.Running, u.RunningGB, err = RunningMemory(ctx, q, userID, uuid.Nil); err != nil {
 		return u, err
 	}
-	if u.DiskHeldBytes, u.Projects, err = HeldDisk(ctx, q, userID); err != nil {
+	// A plan that sells disk is measured on its servers' disk alone
+	// (I-1704); Own hardware's figure is what its hosts hold.
+	held := HeldDisk
+	if plan.DiskGB > 0 {
+		held = HeldFleetDisk
+	}
+	if u.DiskHeldBytes, u.Projects, err = held(ctx, q, userID); err != nil {
 		return u, err
 	}
 	if u.EgressBytes, err = PeriodEgress(ctx, q, userID, p); err != nil {
