@@ -18,7 +18,7 @@
 	import { bytes, classMemoryGB, gb, gbs, unsized } from '$lib/format';
 	import type { Project } from '$lib/api/types';
 	import { frozenSince } from '$lib/frozen';
-	import { notAnsweringSince, parkedText } from '$lib/answering';
+	import { notAnsweringSince, parkedText, sizedDownText } from '$lib/answering';
 
 	let {
 		project,
@@ -87,7 +87,11 @@
 			<div class="line">
 				<span class="line-label">{memLabel}</span>
 				<span class="line-value line-value--off"
-					>{parkedText(project) ? 'parked, kept' : notAnsweringSince(project) ? 'not answering' : 'not running'}</span
+					>{parkedText(project)
+						? 'parked, kept'
+						: notAnsweringSince(project)
+							? 'not answering'
+							: 'not running'}</span
 				>
 			</div>
 		{/if}
@@ -128,6 +132,10 @@
 				>
 			</div>
 		</div>
+
+		{#if sizedDownText(project)}
+			<p class="sized-down" data-testid="sized-down">{sizedDownText(project)}</p>
+		{/if}
 
 		{#if egressGb !== undefined}
 			<div class="line" data-testid="egress-period">
@@ -193,5 +201,11 @@
 		.resize {
 			margin-right: 0;
 		}
+	}
+	.sized-down {
+		margin: 0;
+		font-size: 0.8125rem;
+		color: var(--hk-text-2);
+		text-wrap: pretty;
 	}
 </style>

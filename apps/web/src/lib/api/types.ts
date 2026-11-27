@@ -310,6 +310,15 @@ export interface Project {
 	 * waits for the Mac's user to log in: its memory is kept and it runs
 	 * again at the login (I-1672). Never with not_answering. */
 	parked?: { since: string; waits_for: string } | null;
+	/** On a running machine of a host that sizes each start (a Mac), the
+	 * size its VM got and its size with the host to itself (I-1680). */
+	vm?: {
+		vcpus: number;
+		mem_bytes: number;
+		full_vcpus: number;
+		full_mem_bytes: number;
+		sized_down: boolean;
+	} | null;
 	/** The machine is never frozen while idle (I-818, I-826); the switch
 	 * is on its Config page. Absent from an older api, which means off. */
 	keep_awake?: boolean;
