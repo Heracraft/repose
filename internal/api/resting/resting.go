@@ -90,13 +90,14 @@ const (
 	Feature = "pause"
 	// TickInterval is how often the rule runs.
 	TickInterval = time.Minute
-	// WakeTimeout is the api's own deadline for a wake: short, because
-	// everything waiting on one is a user waiting -- an SSH dial, an
-	// answer being delivered, an op's first guest-bound phase. It is
-	// under the gateway's 10 s api client timeout on purpose, so a wake
-	// the gateway asked for fails with this deadline's reason rather
-	// than with its HTTP client's.
-	WakeTimeout = 8 * time.Second
+	// WakeTimeout is the api's own deadline for a wake. A pause wakes in
+	// milliseconds, but a Mac's rest by save is a restore that took 9 to
+	// 31 s after builds (d2-lab, 2026-11-27 09:15Z), and at 8 s every
+	// first ssh to such a machine failed: the user is waiting either way,
+	// and a wake that finishes late is still the answer they wanted
+	// (DECISIONS I-1696). It stays under the gateway's WakeTimeout, so a
+	// wake the gateway asked for fails with this deadline's reason.
+	WakeTimeout = 120 * time.Second
 )
 
 // Reasons a pause or a wake carries, for the host's log line and the

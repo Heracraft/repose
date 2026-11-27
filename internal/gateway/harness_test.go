@@ -73,6 +73,8 @@ type harnessOpts struct {
 	keepalive   time.Duration
 	revRefresh  time.Duration
 	dialTimeout time.Duration
+	// apiTimeout is the api client's timeout (5 s when zero).
+	apiTimeout time.Duration
 }
 
 func genKey(t *testing.T) (ed25519.PrivateKey, ssh.Signer) {
@@ -111,7 +113,11 @@ func newHarness(t *testing.T, o harnessOpts) *harness {
 	h.guest = newFakeGuest(t, ca, project.ID, h.login)
 	h.route(project.GuestIP, h.guest.addr())
 
-	client, err := NewClient(api.URL(), nil, 5*time.Second)
+	apiTimeout := 5 * time.Second
+	if o.apiTimeout > 0 {
+		apiTimeout = o.apiTimeout
+	}
+	client, err := NewClient(api.URL(), nil, apiTimeout)
 	if err != nil {
 		t.Fatal(err)
 	}

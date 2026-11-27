@@ -112,6 +112,14 @@ func (f *Fake) Wakes() int {
 	return f.wakes
 }
 
+// SetWakeDelay makes every POST /internal/wake take d, as a Mac restoring
+// a machine from its rest save takes tens of seconds (DECISIONS I-1696).
+func (f *Fake) SetWakeDelay(d time.Duration) {
+	f.mu.Lock()
+	f.wakeDelay = d
+	f.mu.Unlock()
+}
+
 // SetWakeFails makes every POST /internal/wake answer an error, so a
 // gateway test can see what a wake that fails does to a dial and what the
 // user is told (DECISIONS I-818).

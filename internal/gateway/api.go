@@ -19,6 +19,8 @@ import (
 type Client struct {
 	base string
 	http *http.Client
+	// long has no timeout of its own: the wake's (I-1696).
+	long *http.Client
 }
 
 // APIError is an error envelope the api returned.
@@ -52,6 +54,10 @@ func NewClient(baseURL string, tlsConfig *tls.Config, timeout time.Duration) (*C
 	return &Client{
 		base: strings.TrimRight(baseURL, "/") + "/v1/internal",
 		http: &http.Client{Transport: tr, Timeout: timeout},
+		// The wake waits as long as its caller's context, the dial's
+		// WakeTimeout: a Mac restoring a machine from a save takes tens
+		// of seconds, past the other calls' timeout (I-1696).
+		long: &http.Client{Transport: tr},
 	}, nil
 }
 
@@ -114,6 +120,13 @@ type EdgeEvent struct {
 }
 
 func (c *Client) do(ctx context.Context, method, path string, body, out any) error {
+	return c.doWith(ctx, c.http, method, path, body, out)
+}
+
+func (c *Client) doWith(ctx context.Context, hc *http.Client, method, path string, body, out any) error {
+	if hc == nil {
+		hc = c.http
+	}
 	var rd io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -130,7 +143,7 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 		req.Header.Set("Content-Type", "application/json")
 	}
 	req.Header.Set("Accept", "application/json")
-	resp, err := c.http.Do(req)
+	resp, err := hc.Do(req)
 	if err != nil {
 		return fmt.Errorf("api: %s %s: %w", method, path, err)
 	}
@@ -180,7 +193,7 @@ func (c *Client) Route(ctx context.Context, login string) (*Route, error) {
 func (c *Client) Wake(ctx context.Context, projectID, reason string) (*WakeResult, error) {
 	var out WakeResult
 	body := map[string]string{"project_id": projectID, "reason": reason}
-	if err := c.do(ctx, http.MethodPost, "/wake", body, &out); err != nil {
+	if err := c.doWith(ctx, c.long, http.MethodPost, "/wake", body, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil

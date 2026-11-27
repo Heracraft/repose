@@ -95,7 +95,7 @@ Two CAs, both ed25519, private keys in the api's secret store:
    the two (session, `direct-tcpip` for `-L`, `forwarded-tcpip` for `-R`,
    pty requests, window changes, signals, exit status).
    A route that said `resting` is woken first: `POST /internal/wake`,
-   awaited under its own `WakeTimeout` (8 s), and only then the dial with
+   awaited under its own `WakeTimeout` (125 s since I-1696: a Mac's rest by save wakes by restoring the machine, tens of seconds after builds; 8 s before), and only then the dial with
    its own full budget (DECISIONS I-818). This is the one point every
    user-facing SSH action converges on -- plain `ssh`, `scp`, VS Code
    Remote-SSH, every `repose` command and the fast attach, which makes no
