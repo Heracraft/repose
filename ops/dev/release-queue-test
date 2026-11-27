@@ -1228,6 +1228,8 @@ t_add_says_the_gh_command_and_uses_the_title() {
 t_ls_reads_ships_of_an_agent_opened_pr_from_its_diff() {
   local log=$root/pr-events.log db=$root/pr-db.json body=$root/pr-body.md
   : > "$log"; install_pr_gh_stub "$log" "$db"; write_pr_body "$body"
+  # a live line and no ships: labels; the two used to share one tab-split field
+  sed -i 's/^```record$/```record\nlive: repose ls shows it/' "$body"
   git -C "$root/woker" push -q origin "main:refs/heads/integrated"
   git -C "$root/woker" fetch -q origin
   local wt o; wt=$(branch woker agent-pr)
@@ -1242,6 +1244,7 @@ t_ls_reads_ships_of_an_agent_opened_pr_from_its_diff() {
   local f; f=$(state_of woker)/release-queue/entries/agent-pr
   assert_eq "the entry says where needs came from" "$(field_of "$f" needs_from)" "diff" || return 1
   assert_eq "and that it was not compared" "$(field_of "$f" exact)" "no" || return 1
+  assert_eq "the live line is the record's" "$(sed -n 's/^live=//p' "$f" | tail -n1)" "repose ls shows it" || return 1
 }
 
 t_pr_record_title_rule() {

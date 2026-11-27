@@ -82,7 +82,7 @@ pr_sync() {
   json=$(gh pr list --state open --label queued --limit 200 \
     --json number,headRefName,headRefOid,baseRefName,labels,body,createdAt 2>/dev/null) || return 0
   local n head sha base ships live order=0
-  while IFS=$'\t' read -r n head sha base ships live; do
+  while IFS=$'\x1f' read -r n head sha base ships live; do
     [ -n "$n" ] || continue
     order=$((order + 1))
     if [ "$base" = skip ]; then
@@ -129,7 +129,9 @@ pr_sync() {
       [ -f "$f" ] && grep -E '^(said|read_through|live_state|live_result|live_at)=' "$f" || true
     } > "$tmpf"
     mv "$tmpf" "$f"
-  # The JSON goes in through the environment: stdin is the program. Until
+  # Fields are split on \x1f, not a tab: a tab is whitespace to `read`, so
+  # an empty ships field took the live line's text. The JSON goes in
+  # through the environment: stdin is the program. Until
   # 2026-11-27 it was `python3 - <<'EOF' <<<"$json"`, two redirections of
   # the same stdin, so python ran the JSON as its program, printed nothing,
   # and this loop read no PR at all; the queue was only what `add` wrote on
@@ -147,7 +149,7 @@ def live(p):
         if l.startswith("live:"): return l[5:].strip().replace("\t", " ")
     return ""
 def emit(p):
-    out.append("\t".join([str(p["number"]), p["headRefName"], p["headRefOid"], p["baseRefName"], ships(p), live(p)]))
+    out.append("\x1f".join([str(p["number"]), p["headRefName"], p["headRefOid"], p["baseRefName"], ships(p), live(p)]))
 for p in sorted(prs, key=lambda p: p["number"]):
     if p["baseRefName"] == integ: emit(p); done.add(p["headRefName"])
 changed = True
@@ -159,7 +161,7 @@ while changed:
         if p["baseRefName"] in done: emit(p); done.add(h); changed = True
 for p in sorted(prs, key=lambda p: p["number"]):
     if p["headRefName"] not in done:
-        out.append("\t".join([str(p["number"]), p["headRefName"], p["headRefOid"], "skip", "", p["baseRefName"]]))
+        out.append("\x1f".join([str(p["number"]), p["headRefName"], p["headRefOid"], "skip", "", p["baseRefName"]]))
 print("\n".join(out))
 EOF
 )
