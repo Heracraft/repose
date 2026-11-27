@@ -319,10 +319,9 @@ func TestVZHeldMachineStoppedBeforeTheUnlockStaysStopped(t *testing.T) {
 // fake's refusal through the manager; hostd's own guard against trying is
 // the darwin CanPark (d2-core).
 func TestVZParkOnALockedSessionLosesTheVM(t *testing.T) {
-	// Red on design2 at d7128eb6: the park waits 120 s for the dead VM and
-	// leaves a record behind (d2-core's 02:42Z finding on the lab Mac, which
-	// d2-core is fixing in park.go). Drop this skip with that fix.
-	t.Skip("d2-core: a failed save leaves a park record (design2-build.log 02:42Z)")
+	// Red on design2 at d7128eb6: the park waited 120 s for the dead VM and
+	// left a record behind (d2-core's 02:42Z finding on the lab Mac). A
+	// Mac's CanPark now refuses while locked; this holds without it too.
 	vh := newVZHarness(t)
 	vh.create(gid1)
 	vh.lock(true)

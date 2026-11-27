@@ -280,6 +280,59 @@ const (
 	SessionNone     = "none"
 )
 
+// ReasonRestTooLong is the stop reason of a machine whose rest save
+// passed the park's age limit while the Mac could not restore it: its
+// memory is gone and its next start boots it (DECISIONS I-1682).
+const ReasonRestTooLong = "rested as a save more than 6 hours while this Mac was locked; it starts fresh"
+
+// ExpireRestSaves applies the park's age limit (6 hours, I-653) to rest
+// saves, which hold a guest's memory on disk as a park image does: one
+// that old is restored into a paused machine where the session can read
+// it, so its memory stays in memory and the file goes; where it cannot,
+// the file is removed and the machine stopped with ReasonRestTooLong.
+func (m *Manager) ExpireRestSaves(ctx context.Context) {
+	gs, err := m.d.State.ListGuests()
+	if err != nil {
+		return
+	}
+	maxAge := m.fcfg().MaxAge
+	for _, g := range gs {
+		if !m.restSaved(g) {
+			continue
+		}
+		st, err := os.Stat(filepath.Join(m.restDir(g.GuestID), "repose-vm.json"))
+		if err != nil || m.d.Now().Sub(st.ModTime()) <= maxAge {
+			continue
+		}
+		id := g.GuestID
+		l := m.wakeLock(id)
+		l.Lock()
+		cur, gerr := m.getGuest(id)
+		if gerr != nil || !m.restSaved(cur) {
+			l.Unlock()
+			continue
+		}
+		if cr := m.d.Park.CanRestore; cr == nil || cr(ctx) {
+			_, rerr := m.restoreRest(ctx, cur, ch.APISocket(m.guestDir(id)))
+			if rerr == nil {
+				m.log(cur).Info("rest save past the age limit restored; the machine rests paused", "event", "guest_resting")
+				l.Unlock()
+				continue
+			}
+			m.log(cur).Warn("rest save past the age limit not restored", "event", "guest_resting", "err", rerr.Error())
+		}
+		_ = os.RemoveAll(m.restDir(id))
+		m.teardown(ctx, cur)
+		cur.Resting = nil
+		if err := m.setState(cur, StateStopped, ReasonRestTooLong); err != nil {
+			m.log(cur).Warn("rest save past the age limit: machine not stopped", "event", "guest_resting", "err", err.Error())
+		} else {
+			m.log(cur).Warn("rest save past the age limit removed; its memory is not kept", "event", "guest_resting")
+		}
+		l.Unlock()
+	}
+}
+
 // WakeTap wakes the resting guest behind a switch port: what a Mac's
 // userspace switch calls when a connection arrives for a guest whose VM
 // rests as a save file (d2-net's unet OnWake). A guest that is not

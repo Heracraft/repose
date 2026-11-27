@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
 )
@@ -136,6 +137,40 @@ func TestSampleSaysWhatARestSaveWaitsFor(t *testing.T) {
 		state = st
 		if w := waits(); w != want {
 			t.Fatalf("session %s: waits_for %q, want %q", st, w, want)
+		}
+	}
+}
+
+// A rest save holds a guest's memory on disk as a park image does, so the
+// park's age limit holds for it too (I-653, DECISIONS I-1682): past 6
+// hours it is restored into a paused machine where the session can read
+// it, and otherwise removed with the machine stopped and said why.
+func TestRestSavePastTheAgeLimit(t *testing.T) {
+	for _, canRestore := range []bool{true, false} {
+		fh := newParkHarness(t, nil)
+		fh.m.d.CH = saveCH{parkCH{Fake: fh.chc, h: fh.harness}}
+		fh.m.d.RestBySave = func(context.Context, string) bool { return true }
+		fh.create(gid1)
+		fh.pauseOK(gid1)
+		fh.m.ExpireRestSaves(context.Background())
+		if !fh.m.restSaved(fh.guest(gid1)) {
+			t.Fatal("a fresh rest save was expired")
+		}
+		old := fh.m.d.Now().Add(-7 * time.Hour)
+		if err := os.Chtimes(filepath.Join(fh.m.restDir(gid1), "repose-vm.json"), old, old); err != nil {
+			t.Fatal(err)
+		}
+		fh.m.d.Park.CanRestore = func(context.Context) bool { return canRestore }
+		fh.m.ExpireRestSaves(context.Background())
+		g := fh.guest(gid1)
+		if _, err := os.Stat(fh.m.restDir(gid1)); !os.IsNotExist(err) {
+			t.Fatalf("canRestore %v: the save is still on disk", canRestore)
+		}
+		if canRestore && (g.State != StateRunning || g.Resting == nil || !fh.unitActive(gid1)) {
+			t.Fatalf("unlocked: state %s resting %v active %v, want restored and paused", g.State, g.Resting, fh.unitActive(gid1))
+		}
+		if !canRestore && (g.State != StateStopped || g.Reason != ReasonRestTooLong) {
+			t.Fatalf("locked: state %s reason %q", g.State, g.Reason)
 		}
 	}
 }

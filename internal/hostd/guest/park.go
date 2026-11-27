@@ -1032,6 +1032,13 @@ func (m *Manager) parkGuest(ctx context.Context, id, reason string, wall time.Ti
 	scancel()
 	if err != nil {
 		if !m.resumeAfterFailedSnapshot(context.WithoutCancel(ctx), g, sock, wall) {
+			if a, aerr := m.d.Systemd.IsActive(context.WithoutCancel(ctx), GuestUnit(id)); aerr == nil && !a {
+				// The hypervisor is gone, so nothing writes into the
+				// image: the park is settled now, record and image
+				// removed, and reconcile (or RestartOnExit) takes the
+				// guest whose VM ended.
+				return fail("snapshot failed; the VM ended", err)
+			}
 			// The hypervisor may still be writing into the image: it is not
 			// removed under it. The `writing` record stays, so the next
 			// UnparkAll (hostd's next start, or `hostd unpark`) resumes the
@@ -1203,6 +1210,13 @@ func (m *Manager) resumeAfterFailedSnapshot(ctx context.Context, g *state.Guest,
 		}
 		if ierr != nil {
 			last = ierr
+		}
+		// A VM that ended under the failed snapshot (a save on a locked
+		// Mac does that, I-1682) will never resume: waiting out
+		// ResumeWait for it held `repose host restart` for 120 s.
+		if a, aerr := m.d.Systemd.IsActive(ctx, GuestUnit(g.GuestID)); aerr == nil && !a {
+			m.log(g).Error("guest ended under a park that did not finish", "event", "guest_park", "err", errText(last))
+			return false
 		}
 		select {
 		case <-ctx.Done():
@@ -2034,4 +2048,12 @@ func (m *Manager) expireHeld(ctx context.Context) {
 		}
 		m.log(g).Warn("parked guest held past the age limit; its memory is not kept", "event", "guest_unpark", "parked_s", int64(m.d.Now().Sub(parkedAt(r)).Seconds()))
 	}
+}
+
+// errText is err's text, or "no answer" for none.
+func errText(err error) string {
+	if err == nil {
+		return "no answer"
+	}
+	return err.Error()
 }

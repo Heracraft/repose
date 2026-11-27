@@ -98,6 +98,7 @@ func platformFor(o Options) platform {
 					swept = time.Now()
 					mgr.SweepKeptClones(ctx, newestPerProject(storedSnapshots(o.SnapshotDir), keptPerProject))
 				}
+				mgr.ExpireRestSaves(ctx)
 				if _, err := mgr.RestoreHeld(ctx); err != nil {
 					log.Warn("held parked machines not restored", "event", "guest_unpark", "err", err.Error())
 				}
@@ -313,8 +314,12 @@ func adaptMac(ctx context.Context, o Options, m MacOptions, u macUser, r shell.R
 	// it happens: the moment the screen locks, every machine resting as a
 	// save is restored and rests by pause through the lock (loop below,
 	// Manager.UnsaveRests), and a while after the unlock it is saved again.
-	d.RestBySave = func(ctx context.Context, id string) bool {
-		return ld.Domain(ctx, guest.GuestUnit(id)) == "gui" && session(ctx).Unlocked()
+	// --mac-rest-by-save, off by default: the owner's call on the secrets
+	// promise (conductor 03:50Z); without it a rest is a pause.
+	if m.RestBySave {
+		d.RestBySave = func(ctx context.Context, id string) bool {
+			return ld.Domain(ctx, guest.GuestUnit(id)) == "gui" && session(ctx).Unlocked()
+		}
 	}
 	d.SessionState = func(ctx context.Context) string {
 		switch s := session(ctx); {
