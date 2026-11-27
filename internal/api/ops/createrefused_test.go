@@ -156,3 +156,29 @@ func TestMacFullRefusalIsPlain(t *testing.T) {
 		t.Fatalf("Mac full: %+v\nwant message %q", op.Error, want)
 	}
 }
+
+// Review pass 2, P1-2: on a locked Mac the machines that hold its memory
+// rest (paused, not saved). The refusal says they are resting, by name,
+// and that stopping one makes room.
+func TestMacFullOfRestingMachinesSaysSo(t *testing.T) {
+	h := apitest.New(t, apitest.Options{})
+	u := h.NewUser("owner")
+	if _, err := h.Pool.Exec(h.Ctx, "update hosts set name = 'e2e-d2lab', arch = 'aarch64', owner_account_id = $1 where id = $2", u.ID, h.HostID); err != nil {
+		t.Fatal(err)
+	}
+	for _, slug := range []string{"beta", "alpha"} {
+		if _, err := h.Pool.Exec(h.Ctx, `insert into projects (id, user_id, name, slug, class, state, host_id, volume_bytes, started_at, resting_since)
+			values ($1, $2, $3, $3, 'large', 'running', $4, 1, now(), now())`, store.NewID(), u.ID, slug, h.HostID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h.Fake.SetFail("CreateGuest", "insufficient_capacity")
+	h.Fake.SetFailMessage("CreateGuest", "the machines running on this host hold 16384 of the 17408 MiB it gives its machines, and one starts with at least 2048 MiB: stop one first")
+	p := h.NewProject(u, "e2e-p2d", "small")
+	pid := p.ID
+	op := h.WaitOp(h.Enqueue(ops.NewOp{Kind: ops.KindCreate, ProjectID: &pid, Phases: ops.PlanCreate()}))
+	want := "your Mac e2e-d2lab is full: alpha and beta are resting there and hold its memory. Stop one of them, or run it on repose's servers: repose run --host repose"
+	if op.Error["message"] != want {
+		t.Fatalf("Mac full of resting machines: %+v\nwant message %q", op.Error, want)
+	}
+}

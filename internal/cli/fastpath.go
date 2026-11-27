@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -182,6 +183,9 @@ func connectFast(ctx context.Context, e *Env, project *Project) (target sshTarge
 		_, err = ensureCert(ctx, e.Client, certParams{Handle: me.Handle, Projects: projects, Force: true, CheckAlias: true}, nil)
 		return err
 	}))
+	if errors.Is(err, errHostOffline) {
+		return sshTarget{}, true, offlineError(ctx, e, project)
+	}
 	if err != nil {
 		return sshTarget{}, true, err
 	}

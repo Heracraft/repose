@@ -443,36 +443,57 @@ func (e *Engine) ownHostMemoryRefusal(ctx context.Context, hostID, projectID uui
 // is full, and the machines to stop (I-1724). ok is false for a host
 // repose runs and when the rows cannot be read.
 func (e *Engine) ownHostFullRefusal(ctx context.Context, hostID, projectID uuid.UUID) (string, bool) {
-	name, arch, slugs, ok := e.ownHostRunning(ctx, hostID, projectID)
+	name, arch, slugs, resting, ok := e.ownHostRunning(ctx, hostID, projectID)
 	if !ok {
 		return "", false
+	}
+	// Machines that rest still hold their memory on a Mac until they are
+	// saved (a locked Mac keeps them paused, I-1666): "running" was false
+	// there and named nothing to stop (review pass 2, P1-2).
+	if len(resting) > 0 && len(resting) == len(slugs) {
+		if len(resting) == 1 {
+			return ownLabel(name, arch) + " is full: " + resting[0] + " is resting there and holds its memory. Stop it", true
+		}
+		return ownLabel(name, arch) + " is full: " + andWords(resting) + " are resting there and hold its memory. Stop one of them", true
 	}
 	return ownLabel(name, arch) + " is full. " + stopWhich(slugs), true
 }
 
+// andWords is "a and b", "a, b and c".
+func andWords(s []string) string {
+	if len(s) < 2 {
+		return strings.Join(s, "")
+	}
+	return strings.Join(s[:len(s)-1], ", ") + " and " + s[len(s)-1]
+}
+
 // ownHostRunning is a host of the user's own's name and arch and the
 // other machines running there.
-func (e *Engine) ownHostRunning(ctx context.Context, hostID, projectID uuid.UUID) (name string, arch *string, slugs []string, ok bool) {
+func (e *Engine) ownHostRunning(ctx context.Context, hostID, projectID uuid.UUID) (name string, arch *string, slugs, resting []string, ok bool) {
 	err := e.pool.QueryRow(ctx, "select name, arch from hosts where id = $1 and owner_account_id is not null", hostID).Scan(&name, &arch)
 	if err != nil {
-		return "", nil, nil, false
+		return "", nil, nil, nil, false
 	}
-	rows, err := e.pool.Query(ctx, `select slug from projects
+	rows, err := e.pool.Query(ctx, `select slug, resting_since is not null from projects
 		 where host_id = $1 and id <> $2 and destroyed_at is null and state in ('creating', 'building', 'starting', 'running', 'restoring')
 		 order by slug`, hostID, projectID)
 	if err != nil {
-		return "", nil, nil, false
+		return "", nil, nil, nil, false
 	}
 	for rows.Next() {
 		var slug string
-		if err := rows.Scan(&slug); err != nil {
+		var rests bool
+		if err := rows.Scan(&slug, &rests); err != nil {
 			rows.Close()
-			return "", nil, nil, false
+			return "", nil, nil, nil, false
 		}
 		slugs = append(slugs, slug)
+		if rests {
+			resting = append(resting, slug)
+		}
 	}
 	rows.Close()
-	return name, arch, slugs, rows.Err() == nil
+	return name, arch, slugs, resting, rows.Err() == nil
 }
 
 // stopWhich is the action for a full host: stop the machine running
@@ -500,7 +521,7 @@ func orList(s []string) string {
 // the machines running there, which are what a user stops to make room.
 // ok is false for a host repose runs and when the rows cannot be read.
 func (e *Engine) ownHostCPURefusal(ctx context.Context, hostID, projectID uuid.UUID) (string, bool) {
-	name, arch, slugs, ok := e.ownHostRunning(ctx, hostID, projectID)
+	name, arch, slugs, _, ok := e.ownHostRunning(ctx, hostID, projectID)
 	if !ok {
 		return "", false
 	}
