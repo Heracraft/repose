@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	guestdv1 "github.com/heracraft/repose/internal/gen/guestd/v1"
@@ -433,7 +434,11 @@ func (m *Manager) boot(ctx context.Context, g *state.Guest, firstStep int, op st
 		return m.fail(g, stepReady, err)
 	}
 	mon := m.startMonitor(g)
-	sess, err := mon.waitReady(ctx, m.cfg.ReadyTimeout)
+	wctx, ended := m.watchBootExit(ctx, g)
+	sess, err := mon.waitReady(wctx, m.cfg.ReadyTimeout)
+	if why := ended(); err != nil && why != "" {
+		err = errors.New(why)
+	}
 	if err != nil {
 		// The console is read before capture ends; what a boot that
 		// failed early printed is in the log long before the wait ends.
@@ -1098,6 +1103,54 @@ func (m *Manager) resendTriggers(mon *monitor) {
 }
 
 // waitReady blocks until guestd reports Ready or answers a Ping.
+// watchBootExit ends the wait for guestd's Ready as soon as the VM's
+// process has ended, on a host where a VM is one process of its own (a
+// Mac: Deps.RestartOnExit). There a launcher that cannot start (launchd
+// refused its job, status 78, when its log was out of the user's reach:
+// lab Mac, 2026-11-27) used to hold a create for the whole ready window,
+// five minutes, and then say only that guestd never answered. ended
+// returns why the process ended, or "" while it runs or on any other
+// host, which keeps waiting as before.
+func (m *Manager) watchBootExit(ctx context.Context, g *state.Guest) (context.Context, func() string) {
+	if !m.d.RestartOnExit {
+		return ctx, func() string { return "" }
+	}
+	wctx, cancel := context.WithCancel(ctx)
+	var why atomic.Value
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		unit := GuestUnit(g.GuestID)
+		t := time.NewTicker(time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-wctx.Done():
+				return
+			case <-t.C:
+			}
+			if a, err := m.d.Systemd.IsActive(wctx, unit); err != nil || a {
+				continue
+			}
+			status := "unknown"
+			if props, err := m.d.Systemd.Show(wctx, unit, "ExecMainStatus"); err == nil && props["ExecMainStatus"] != "" {
+				status = props["ExecMainStatus"]
+			}
+			why.Store(fmt.Sprintf("the VM's process ended before guestd answered (exit status %s)", status))
+			cancel()
+			return
+		}
+	}()
+	return wctx, func() string {
+		cancel()
+		<-done
+		if w, ok := why.Load().(string); ok {
+			return w
+		}
+		return ""
+	}
+}
+
 func (mon *monitor) waitReady(ctx context.Context, timeout time.Duration) (vsockclient.Session, error) {
 	t := time.NewTimer(timeout)
 	defer t.Stop()

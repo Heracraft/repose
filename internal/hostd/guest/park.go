@@ -201,6 +201,10 @@ type ParkDeps struct {
 // ParkResult is one guest's outcome, for the operator and the log.
 type ParkResult struct {
 	GuestID string `json:"guest_id"`
+	// Project is the guest's project slug, the name its user knows it by
+	// (the control socket's caller prints it); empty from a hostd before
+	// I-1682.
+	Project string `json:"project,omitempty"`
 	OK      bool   `json:"ok"`
 	// Outcome is a fixed word: parked, unparked, skipped, failed, discarded.
 	Outcome string `json:"outcome"`
@@ -216,6 +220,11 @@ const SkipNotRunning = "guest is not running"
 
 // SkipParked is a park result's reason for a guest parked already.
 const SkipParked = "guest already parked"
+
+// SkipLocked is a park result's reason on a Mac whose screen is locked: a
+// save there fails and can end the VM, so nothing is saved until the user
+// unlocks it (lab Mac, 2026-11-27; DECISIONS I-1682).
+const SkipLocked = "this Mac's screen is locked"
 
 // Fixed park reasons, the record's Reason.
 const (
@@ -473,9 +482,12 @@ func (m *Manager) ParkAll(ctx context.Context, reason string) []ParkResult {
 	}
 	wg.Wait()
 	n := 0
-	for _, r := range results {
+	for i, r := range results {
 		if r.OK {
 			n++
+		}
+		if i < len(run) {
+			results[i].Project = run[i].ProjectSlug
 		}
 	}
 	left := m.reportSkipped(reason, run, results)
@@ -510,6 +522,8 @@ func skippedReason(r ParkResult) string {
 			return "deadline"
 		case "snapshot would outlast the deadline":
 			return "estimate"
+		case SkipLocked:
+			return "locked"
 		}
 	}
 	return ""
@@ -1194,14 +1208,33 @@ func (m *Manager) UnparkAll(ctx context.Context) []ParkResult {
 		return nil
 	}
 	if cr := m.d.Park.CanRestore; cr != nil && !cr(ctx) {
+		// Only a finished image waits for the session. A park that never
+		// finished (its record still `writing`: the snapshot failed, or the
+		// VM died under it, as a save on a locked Mac does) has nothing to
+		// restore, so it is settled now as it is anywhere: its image
+		// discarded, its guest resumed or left to reconcile. Held, such a
+		// record carried no park time and was thrown away at once as
+		// "parked more than 6 hours", its machine stopped (lab Mac,
+		// 2026-11-27).
 		m.mu.Lock()
 		m.held = map[string]bool{}
+		var settle []string
 		for _, id := range ids {
-			m.held[id] = true
+			if r, err := recs.Get(id); err == nil && r != nil && (r.State == park.StateComplete || r.State == park.StateWritten) {
+				m.held[id] = true
+			} else {
+				settle = append(settle, id)
+			}
 		}
+		n := len(m.held)
 		m.mu.Unlock()
-		m.d.Log.Warn("parked guests held until they can be restored", "event", "guest_unpark", "images", len(ids))
-		return nil
+		if n > 0 {
+			m.d.Log.Warn("parked guests held until they can be restored", "event", "guest_unpark", "images", n)
+		}
+		if len(settle) == 0 {
+			return nil
+		}
+		ids = settle
 	}
 	results := make([]ParkResult, len(ids))
 	preps := make([]*unparkPrep, len(ids))
@@ -1835,6 +1868,15 @@ func (m *Manager) HeldGuests() int {
 	return len(m.held)
 }
 
+// parkedAt is when r's park finished, or when it began for a record that
+// has no finish time (a `written` image whose close never ran).
+func parkedAt(r *park.Record) time.Time {
+	if !r.DoneAt.IsZero() {
+		return r.DoneAt
+	}
+	return r.CreatedAt
+}
+
 // heldSince is when a held guest was parked, unix seconds, or 0 when it
 // is not held (I-1672).
 func (m *Manager) heldSince(id string) int64 {
@@ -1845,7 +1887,7 @@ func (m *Manager) heldSince(id string) int64 {
 	if err != nil || r == nil {
 		return 0
 	}
-	return r.DoneAt.Unix()
+	return parkedAt(r).Unix()
 }
 
 // ReasonHeldTooLong is the stop reason of a held guest whose image passed
@@ -1870,7 +1912,7 @@ func (m *Manager) expireHeld(ctx context.Context) {
 	maxAge := m.fcfg().MaxAge
 	for _, id := range ids {
 		r, err := m.records().Get(id)
-		if err != nil || r == nil || m.d.Now().Sub(r.DoneAt) <= maxAge {
+		if err != nil || r == nil || m.d.Now().Sub(parkedAt(r)) <= maxAge {
 			continue
 		}
 		m.discardImage(ctx, id, "held past the age limit")
@@ -1886,6 +1928,6 @@ func (m *Manager) expireHeld(ctx context.Context) {
 			m.log(g).Warn("held guest past the age limit not stopped", "event", "guest_unpark", "err", err.Error())
 			continue
 		}
-		m.log(g).Warn("parked guest held past the age limit; its memory is not kept", "event", "guest_unpark", "parked_s", int64(m.d.Now().Sub(r.DoneAt).Seconds()))
+		m.log(g).Warn("parked guest held past the age limit; its memory is not kept", "event", "guest_unpark", "parked_s", int64(m.d.Now().Sub(parkedAt(r)).Seconds()))
 	}
 }

@@ -212,3 +212,33 @@ func TestNoSessionRunsInSystemDomainAsTheUser(t *testing.T) {
 		t.Fatalf("bootstrap %v", c)
 	}
 }
+
+// A job's log is opened by launchd as the job's user. A root hostd keeps
+// Dir under its 0700 state directory, so a log there could not be opened
+// and every VM job ended with status 78 before repose-vm ran (lab Mac,
+// 2026-11-27). LogFor puts it where the user reaches it, and the job's
+// plist names that path.
+func TestLogForPutsTheJobLogWhereTheUserReachesIt(t *testing.T) {
+	dir, guests := t.TempDir(), t.TempDir()
+	r := &shell.Fake{Scripts: []shell.Script{
+		{Prefix: []string{"launchctl", "print"}, Err: &shell.ExitError{Argv: []string{"launchctl"}, Result: shell.Result{ExitCode: 113}}},
+	}}
+	var chowned []string
+	l := &Launchd{R: r, UID: 501, Dir: dir, Launcher: "/opt/repose-vm",
+		ChownLog: func(p string) error { chowned = append(chowned, p); return nil },
+		LogFor:   func(unit string) string { return filepath.Join(guests, strings.TrimPrefix(unit, "guest@"), "vm.log") }}
+	if err := os.MkdirAll(filepath.Join(guests, "g1"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.Run(context.Background(), "guest@g1", nil, []string{"cloud-hypervisor", "--api-socket", "/g/ch.sock"}); err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(guests, "g1", "vm.log")
+	b, _ := os.ReadFile(filepath.Join(dir, "run.repose.guest@g1.plist"))
+	if !strings.Contains(string(b), "<string>"+want+"</string>") || strings.Contains(string(b), dir+"/run.repose.guest@g1.log") {
+		t.Fatalf("plist does not log to %s:\n%s", want, b)
+	}
+	if _, err := os.Stat(want); err != nil || len(chowned) != 1 || chowned[0] != want {
+		t.Fatalf("log %v, chowned %v", err, chowned)
+	}
+}

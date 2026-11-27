@@ -157,6 +157,31 @@ func adaptMac(ctx context.Context, o Options, m MacOptions, u macUser, r shell.R
 		return errors.New("hostd: VMs never run as root on a Mac; run hostd as the user, or as root with --mac-user (DECISIONS I-1662, I-1664)")
 	}
 	uid, gid := u.uid, u.gid
+	if os.Getuid() != uid {
+		// A root hostd: every VM runs as the user and opens its volume,
+		// its log and its sockets under these directories, so the user
+		// must be able to pass through them. hostd's own state, volume and
+		// switch directories are made 0711 (every file in them stays 0600,
+		// root's or the user's own); a VM whose
+		// volume sat under a 0700 one died at once with "Permission
+		// denied" (lab Mac, 2026-11-27).
+		for _, d := range []string{o.StateDir, m.VolumesDir, m.NetDir} {
+			if d == "" {
+				continue
+			}
+			if err := os.MkdirAll(d, 0o700); err != nil {
+				return fmt.Errorf("hostd: %s: %w", d, err)
+			}
+			if err := os.Chmod(d, 0o711); err != nil {
+				return fmt.Errorf("hostd: %s: %w", d, err)
+			}
+		}
+		for _, d := range []string{cfg.GuestsDir, m.VolumesDir, o.ImagesDir, m.NetDir} {
+			if blocked := unreachable(d, uid, gid); blocked != "" {
+				return fmt.Errorf("hostd: %s, where the machines' files are, is out of reach of the user %s: %s does not let them pass (it needs o+x, or the user or its group as owner)", d, u.name, blocked)
+			}
+		}
+	}
 	cfg.Lookup = func(string) (int, int, error) { return uid, gid, nil }
 	cfg.GuestUser, cfg.VirtiofsUser = u.name, u.name
 	// The login share is a directory VZ shares into each guest of the
@@ -238,6 +263,15 @@ func adaptMac(ctx context.Context, o Options, m MacOptions, u macUser, r shell.R
 		R: r, UID: uid, Dir: m.LaunchdDir, Launcher: m.Launcher,
 		HasSession:  func(ctx context.Context) bool { return session(ctx).LoggedIn },
 		ChownLog:    u.chown,
+		// launchd opens a job's log as the user, and a root hostd's
+		// launchd directory is under its 0700 state directory: a VM's log
+		// goes in its guest directory, which the VM already reaches.
+		LogFor: func(unit string) string {
+			if id, ok := strings.CutPrefix(unit, "guest@"); ok && id != "" && !strings.ContainsAny(id, "/.") {
+				return filepath.Join(cfg.GuestsDir, id, "vm.log")
+			}
+			return ""
+		},
 		ExitTimeOut: 60 * time.Second,
 		ExtraArgs: func(unit string, _ []string) []string {
 			// The volume's VZ caching and synchronization modes (I-1666).
@@ -273,6 +307,12 @@ func adaptMac(ctx context.Context, o Options, m MacOptions, u macUser, r shell.R
 		return memoryTight(memInfo) && ld.Domain(ctx, guest.GuestUnit(id)) == "gui" && session(ctx).Unlocked() && lockOff(ctx)
 	}
 	d.Park.CanPark = func(ctx context.Context, id string) (bool, string) {
+		// A save while the screen is locked fails, and it can end the VM:
+		// "The virtual machine stopped unexpectedly" on the lab Mac's
+		// `repose host restart`, its memory lost (2026-11-27, I-1682).
+		if !session(ctx).Unlocked() {
+			return false, guest.SkipLocked
+		}
 		if ld.Domain(ctx, guest.GuestUnit(id)) == launchd.SystemDomain {
 			return false, "started with nobody logged in"
 		}
@@ -488,3 +528,27 @@ func memoryTight(memInfo func() (uint64, uint64, error)) bool {
 	}
 	return avail < total/4
 }
+
+// unreachable is the first directory on the way to path (path included,
+// where it exists) that uid, whose group is gid, cannot pass through; ""
+// when every one lets it, or path is empty. A directory not made yet is
+// hostd's to make, and is not checked.
+func unreachable(path string, uid, gid int) string {
+	if path == "" {
+		return ""
+	}
+	p := filepath.Clean(path)
+	for {
+		if st, err := os.Stat(p); err == nil && st.IsDir() {
+			if !canPass(st, uid, gid) {
+				return p
+			}
+		}
+		parent := filepath.Dir(p)
+		if parent == p {
+			return ""
+		}
+		p = parent
+	}
+}
+

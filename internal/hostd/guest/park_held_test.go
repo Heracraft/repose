@@ -2,6 +2,7 @@ package guest
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 )
@@ -136,5 +137,42 @@ func TestParkRoomUsesTheImageEstimate(t *testing.T) {
 		if r.Outcome != "parked" {
 			t.Fatalf("with a 1 GiB estimate: %+v", res)
 		}
+	}
+}
+
+// A save on a locked Mac fails and can end the VM (lab Mac, 2026-11-27:
+// "The virtual machine stopped unexpectedly", then "cannot resume in state
+// Shutdown"). The park then leaves its record `writing`, and the resume
+// that follows a refused `repose host restart` ran UnparkAll while the
+// session was locked: it held that record, which had no park time, and
+// expired it at once as "parked more than 6 hours with no login", stopping
+// the machine. A park that never finished is not held: it is settled as
+// anywhere, its image discarded.
+func TestUnfinishedParkIsNotHeld(t *testing.T) {
+	fh := newParkHarness(t, nil)
+	fh.create(gid1)
+	fh.chc.Fail = map[string]error{
+		"snapshot": errors.New("save: Internal Virtualization error. The virtual machine stopped unexpectedly."),
+		"resume":   errors.New("cannot resume in state Shutdown"),
+	}
+	if r := fh.parkOne(gid1); r.OK {
+		t.Fatalf("park: %+v", r)
+	}
+	fh.sd.Exit(GuestUnit(gid1), 0)
+	if rec := fh.record(gid1); rec == nil {
+		t.Fatal("the failed park left no record; this test no longer covers the case")
+	}
+	fh.chc.Fail = nil
+	fh.m.d.Park.CanRestore = func(context.Context) bool { return false }
+	fh.m.UnparkAll(context.Background())
+	if n := fh.m.HeldGuests(); n != 0 {
+		t.Fatalf("%d held: an unfinished park waits for the session", n)
+	}
+	fh.m.expireHeld(context.Background())
+	if fh.record(gid1) != nil {
+		t.Fatal("the unfinished park's record is still there")
+	}
+	if g := fh.guest(gid1); g.Reason == ReasonHeldTooLong {
+		t.Fatalf("stopped as %q", g.Reason)
 	}
 }
