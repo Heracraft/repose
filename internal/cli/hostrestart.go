@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/heracraft/repose/internal/hostd/control"
-	"github.com/heracraft/repose/internal/hostd/guest"
 )
 
 // hostdControlSock is where hostd on a Mac listens (design 2, DECISIONS
@@ -87,10 +86,9 @@ func HostRestartCmd(ctx context.Context, e *Env, force bool) error {
 	}
 	if e.JSON {
 		// Every machine's park, before the Mac goes down (review-cli).
-		if res == nil {
-			res = []guest.ParkResult{}
-		}
-		if err := writeJSONOut(e.Out, res); err != nil {
+		if len(res) == 0 {
+			_, _ = fmt.Fprintln(e.Out, "[]")
+		} else if err := writeJSONOut(e.Out, res); err != nil {
 			return err
 		}
 	}

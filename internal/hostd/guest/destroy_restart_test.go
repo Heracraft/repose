@@ -15,6 +15,12 @@ import (
 func TestDestroyCutOffByAHostdRestartResends(t *testing.T) {
 	h := newHarness(t, nil)
 	h.create(gid1)
+	// The guest does not power off by itself, so the stop reaches the
+	// kill, as a VM that is slow to go down does.
+	h.mu.Lock()
+	srv := h.guestds[gid1]
+	h.mu.Unlock()
+	srv.OnShutdown(func() {})
 	h.m.d.SystemStopping = func(context.Context) bool { return false }
 	d := cmd(&hostdv1.DestroyGuest{GuestId: gid1})
 	ctx, cancel := context.WithCancel(context.Background())
@@ -25,6 +31,8 @@ func TestDestroyCutOffByAHostdRestartResends(t *testing.T) {
 		t.Fatalf("a destroy cut off by a hostd restart answered %v; want nothing stored or sent", res)
 	}
 	h.m.Close()
+	// The next hostd's stop finds a guest that powers off when asked.
+	srv.OnShutdown(func() { h.sd.Exit(GuestUnit(gid1), 0) })
 	m2, err := New(h.cfg, h.m.d)
 	if err != nil {
 		t.Fatal(err)
