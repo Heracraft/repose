@@ -405,14 +405,15 @@ The routes (I-1366):
   when the caller does not, and refuses a name the account already has.
   Names are unique per account: `TestHostNames`, `TestHostAddListRemove`.
 - `POST /hosts` past the plan's figure is `host_limit` with
-  `detail.limit`; from a plan that sells none it is
-  `own_hardware_plan_required`, and that sentence names the plan, its
-  price and its host count, read from the plan table
-  (`billing.OwnHardwareRequiredMessage`): "Your plan does not include a
-  host of your own. The Own hardware plan is $10 a month for any number of hosts:
-  choose it at https://repose.run/billing." It is the only place in the
-  product that tells a buyer what a host costs while the public copy is
-  held, which is what the customer review found missing (ENG-39).
+  `detail.limit`; from an account with no plan (every plan includes
+  hosts since I-1704) it is `own_hardware_plan_required`, and that
+  sentence names the plan, its price and its host count, read from the
+  plan table (`billing.OwnHardwareRequiredMessage`): "A host of your own
+  needs a plan. Own hardware is $10 a month for any number of hosts, and
+  Solo, Plus and Pro include them: choose one at
+  https://repose.run/billing." It is one of the few places in the
+  product that tells a buyer what a host costs, which is what the
+  customer review found missing (ENG-39).
   `TestHostNeedsAPlanThatSellsOne` asserts the figure comes from the
   plan, and `TestOwnHardwareRefusalIsTheApis` holds the fake's copy of
   the sentence equal to it.

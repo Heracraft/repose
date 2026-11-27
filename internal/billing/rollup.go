@@ -95,13 +95,20 @@ func (r *Rollup) Hour(ctx context.Context, hour time.Time) ([]Row, error) {
 	// are added below (I-1120).
 	// burst_cpu_ns is null from a host that does not burst, which sums
 	// to null for the hour and is read as 0 (DECISIONS I-1126).
-	rows, err := r.pool.Query(ctx, `select project_id, count(*) filter (where state = 'running'), count(*), max(disk_alloc), sum(coalesce(net_egress, net_tx)), sum(burst_cpu_ns),
-		(array_agg(class order by ts desc))[1],
-		count(*) filter (where state = 'running' and (ssh_sessions > 0 or tmux_clients > 0)),
-		count(*) filter (where state = 'running' and ssh_sessions = 0 and tmux_clients = 0
-			and exists (select 1 from jsonb_array_elements(coalesce(agents, '[]'::jsonb)) a
+	// A sample from a host an account owns sends its egress over that
+	// user's own network and bursts on that user's own cores, so neither
+	// counts against a plan (DECISIONS I-1364, I-1704): its egress and
+	// burst are left out here, which is what keeps a hosted plan's
+	// allowance, overage and hard stop to repose's servers.
+	rows, err := r.pool.Query(ctx, `select m.project_id, count(*) filter (where m.state = 'running'), count(*), max(m.disk_alloc),
+		sum(coalesce(m.net_egress, m.net_tx)) filter (where h.owner_account_id is null), sum(m.burst_cpu_ns) filter (where h.owner_account_id is null),
+		(array_agg(m.class order by m.ts desc))[1],
+		count(*) filter (where m.state = 'running' and (m.ssh_sessions > 0 or m.tmux_clients > 0)),
+		count(*) filter (where m.state = 'running' and m.ssh_sessions = 0 and m.tmux_clients = 0
+			and exists (select 1 from jsonb_array_elements(coalesce(m.agents, '[]'::jsonb)) a
 				where coalesce(a->>'state', '') not in ('idle', 'needs_input')))
-		from meter_samples where ts >= $1 and ts < $2 group by project_id`, start, end)
+		from meter_samples m left join hosts h on h.id = m.host_id
+		where m.ts >= $1 and m.ts < $2 group by m.project_id`, start, end)
 	if err != nil {
 		return nil, fmt.Errorf("read meter_samples for %s: %w", start.Format(time.RFC3339), err)
 	}

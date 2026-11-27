@@ -154,7 +154,7 @@ test('Settings adds, lists and removes a host of your own', async ({ page }) => 
 	await dialog.getByLabel('Name', { exact: true }).fill('spare-3');
 	await dialog.getByRole('button', { name: 'Add', exact: true }).click();
 	const refusal = dialog.getByTestId('host-add-error');
-	await expect(refusal).toHaveText(/Your plan does not include a host of your own/);
+	await expect(refusal).toHaveText(/A host of your own needs a plan/);
 	// Visible is not enough: a toast is "visible" while sitting under the
 	// dialog's backdrop, because a dialog opened with showModal() is in
 	// the top layer and no z-index reaches it. The customer pressed Add,
@@ -349,13 +349,13 @@ test('the page reads /hosts once, with no hosts and with one', async ({ page }) 
 	expect(reads).toBeLessThanOrEqual(3);
 });
 
-test('a plan that sells no host says so', async ({ page }) => {
+test('an account with no plan is told a host needs one', async ({ page }) => {
 	await clearHosts(page);
 	await ownedHost({ limit: 0 });
 	await page.goto('/settings/hosts');
 	await page.locator('#hosts').getByRole('button', { name: 'Add a host' }).click();
 	await page.getByTestId('host-dialog').getByRole('button', { name: 'Add', exact: true }).click();
-	await expect(page.getByText(/Your plan does not include a host of your own/)).toBeVisible();
+	await expect(page.getByText(/A host of your own needs a plan/)).toBeVisible();
 });
 
 test('the Hosts tab is reachable from Settings at both widths', async ({ page }) => {

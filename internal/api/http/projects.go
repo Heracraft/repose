@@ -289,6 +289,35 @@ func (s *Server) createsUnsized(ctx context.Context, userID uuid.UUID, placement
 	return shares, err
 }
 
+// createsOnOwnHost reports whether a create with this placement and pin
+// lands on a host the account owns (DECISIONS I-1704): `own` placement
+// takes such a host whenever the account has one that is not retired or
+// lost (scheduler.ownedSQL), and a pin names one. The billing gate asks
+// it, because such a machine counts nothing against the plan.
+func (s *Server) createsOnOwnHost(ctx context.Context, userID uuid.UUID, placement string, pin uuid.UUID) (bool, error) {
+	if store.NormalizePlacement(placement) == store.PlacementHosted {
+		return false, nil
+	}
+	if pin != uuid.Nil {
+		return true, nil
+	}
+	var owns bool
+	err := s.d.Pool.QueryRow(ctx, `select exists (select 1 from hosts
+		 where owner_account_id = $1 and state not in ('retired', 'lost'))`, userID).Scan(&owns)
+	return owns, err
+}
+
+// hostOwnedBy reports whether host is one the account owns; nil is a
+// host of repose's or none.
+func (s *Server) hostOwnedBy(ctx context.Context, host *uuid.UUID, userID uuid.UUID) (bool, error) {
+	if host == nil {
+		return false, nil
+	}
+	var own bool
+	err := s.d.Pool.QueryRow(ctx, "select exists (select 1 from hosts where id = $1 and owner_account_id = $2)", *host, userID).Scan(&own)
+	return own, err
+}
+
 // nullUUID is id, or nil for uuid.Nil, as a query argument.
 func nullUUID(id uuid.UUID) any {
 	if id == uuid.Nil {
@@ -511,7 +540,11 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 	// The compute gate (I-289): a plan, its memory for this class and its
 	// disk for the new volume. No waitlist gate here since I-290: checkout
 	// is where the seats question is answered.
-	if err := s.gate(r, u, billing.Request{Class: body.Class, Disk: true, AddHeldBytes: billing.NewProjectHeldBytes, VolumeBytes: volume}); err != nil {
+	onOwn, err := s.createsOnOwnHost(ctx, u.ID, placement, pin)
+	if err != nil {
+		return err
+	}
+	if err := s.gate(r, u, billing.Request{Class: body.Class, Disk: true, AddHeldBytes: billing.NewProjectHeldBytes, VolumeBytes: volume, OwnHost: onOwn}); err != nil {
 		return err
 	}
 	// A plan that sells no memory on repose's own hosts cannot ask for

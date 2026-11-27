@@ -127,7 +127,7 @@ func TestAPlanThatSellsFleetMemoryIsGatedOnIt(t *testing.T) {
 	defer f.Close()
 	ctx := context.Background()
 	hybrid := withFleetMemoryOnOwn(t)
-	if !hybrid.OwnHardware() || !hybrid.SellsFleetMemory() {
+	if hybrid.Hosts == 0 || !hybrid.SellsFleetMemory() {
 		t.Fatalf("the test plan sells a host and fleet memory: %+v", hybrid)
 	}
 	g := newGate(pool, f)
@@ -174,10 +174,11 @@ func TestAPlanThatSellsFleetMemoryIsGatedOnIt(t *testing.T) {
 		t.Fatalf("usage on a plan that sells disk and egress: over %v stopped %v overage %d",
 			usage.DiskOver(), usage.EgressStopped(), usage.OverageCents)
 	}
-	// The product half of the plan is untouched: it is still the Own
-	// hardware product, still any number of hosts, still no change across the kinds.
-	if !billing.SameKind(hybrid, hybrid) || billing.SameKind(hybrid, billing.Solo) {
-		t.Fatal("a plan with a host is still the own-hardware kind")
+	// A plan that sells fleet memory and hosts both is the hosted kind,
+	// which every hosted plan is since I-1704: the memory, not the host
+	// count, says which product a plan is.
+	if !billing.SameKind(hybrid, billing.Solo) || hybrid.OwnHardware() {
+		t.Fatal("a plan with a host and fleet memory is the hosted kind")
 	}
 	if hybrid.Hosts != billing.UnlimitedHosts {
 		t.Fatalf("hosts %d", hybrid.Hosts)
@@ -247,7 +248,8 @@ func TestOwnHardwareUsageAndLimits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n, ml := hosts(solo), billing.LimitsFor(user(t, pool, solo), soloSub).Hosts; n != 0 || ml != 0 {
+	// Solo includes hosts of the user's own since I-1704.
+	if n, ml := hosts(solo), billing.LimitsFor(user(t, pool, solo), soloSub).Hosts; n != billing.UnlimitedHosts || ml != n {
 		t.Fatalf("a Solo account: the route allows %d hosts of its own, /me says %d", n, ml)
 	}
 	// An exempt account gets one without buying a plan from itself.

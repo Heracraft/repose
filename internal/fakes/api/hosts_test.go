@@ -189,7 +189,7 @@ func TestFakeProjectPlacement(t *testing.T) {
 // to every account. The api reads the plan (billing.Gate.HostsAllowed:
 // exempt or enforcement off gets any number, no live subscription gets
 // none, otherwise the plan's Hosts, any number on Own hardware since
-// I-1594), and a fake that said yes where the api says no is how a
+// I-1594 and on every plan since I-1704), and a fake that said yes where the api says no is how a
 // reviewer reports "nothing stopped me" against a contract that does
 // stop them (ENG-36).
 func TestFakeHostFollowsTheBillingMode(t *testing.T) {
@@ -202,7 +202,8 @@ func TestFakeHostFollowsTheBillingMode(t *testing.T) {
 		{"billing off is the exempt account", BillingOff, "", true},
 		{"a billing-exempt account", BillingExempt, "", true},
 		{"no plan at all", BillingNone, "", false},
-		{"a hosted plan sells no host", BillingActive, "solo", false},
+		{"a hosted plan includes hosts (I-1704)", BillingActive, "solo", true},
+		{"Pro includes hosts too", BillingActive, "pro", true},
 		{"the Own hardware plan", BillingActive, "own", true},
 		{"on trial on Own hardware", BillingTrial, "own", true},
 	} {
@@ -403,5 +404,34 @@ func TestMacLiveGrowRefusalIsHostdsWords(t *testing.T) {
 	}
 	if !strings.Contains(string(src), `"`+MacLiveGrowRefusal+`"`) {
 		t.Fatalf("hostd's refusal no longer reads %q; update MacLiveGrowRefusal", MacLiveGrowRefusal)
+	}
+}
+
+// TestFakeHostedPlanRunsOwnHostPastItsMemory mirrors the api's
+// TestHostedPlanCreatesOnOwnHostPastItsMemory (I-1704): on Solo with its
+// 8 GB used on repose's servers, a machine that goes to the account's own
+// host is made and started, and one on repose's servers is refused.
+func TestFakeHostedPlanRunsOwnHostPastItsMemory(t *testing.T) {
+	f := New(Options{})
+	defer f.Close()
+	mode, plan := BillingActive, "solo"
+	if err := f.SetBillingState(BillingState{Mode: &mode, Plan: &plan}); err != nil {
+		t.Fatal(err)
+	}
+	want(t, call(t, f, "POST", "/v1/projects", tok, map[string]any{"name": "fleet", "class": "large"}), 201)
+	mac := f.AddOwnedHost("mac-mini")
+	var p Project
+	r := call(t, f, "POST", "/v1/projects", tok, map[string]any{"name": "mine", "class": "large"})
+	want(t, r, 201)
+	r.json(t, &p)
+	if p.HostID != mac {
+		t.Fatalf("placed on %q, want mac-mini", p.HostID)
+	}
+	want(t, call(t, f, "POST", "/v1/projects/"+p.ID+"/stop", tok, nil), 202)
+	want(t, call(t, f, "POST", "/v1/projects/"+p.ID+"/start", tok, nil), 202)
+	r = call(t, f, "POST", "/v1/projects", tok, map[string]any{"name": "fleet-2", "class": "small", "placement": "hosted"})
+	wantErr(t, r, 402, "payment_required")
+	if detailOf(t, r)["reason"] != "plan_limit" {
+		t.Fatalf("detail %v, want plan_limit", detailOf(t, r))
 	}
 }

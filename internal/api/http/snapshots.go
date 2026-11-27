@@ -163,8 +163,14 @@ func (s *Server) restoreSnapshot(w http.ResponseWriter, r *http.Request) error {
 		req.Class = src.Class
 	}
 	if body.AsNewProject != nil {
+		// A snapshot kept on a host the account owns is copied there, and
+		// the copy counts nothing against the plan (I-1704).
+		own, err := s.hostOwnedBy(r.Context(), snap.HostID, u.ID)
+		if err != nil {
+			return err
+		}
 		req.Disk, req.AddHeldBytes, req.VolumeBytes = true, src.HeldBytes(), src.VolumeBytes
-		req.Project = uuid.Nil
+		req.Project, req.OwnHost = uuid.Nil, own
 	}
 	if err := s.gate(r, u, req); err != nil {
 		return err

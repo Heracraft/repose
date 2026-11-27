@@ -1,11 +1,11 @@
 ---
 title: Your own hardware
-description: Run your projects on a Mac mini or an x86 box you own, on the Own hardware plan.
+description: Run your projects on a Mac mini or an x86 box you own, on the Own hardware plan or any hosted plan.
 section: Account
 order: 29
 ---
 
-Repose normally runs your machines on its own servers. On the [Own hardware plan](/docs/billing#own-hardware) ($10 a month) it runs them on hardware you own instead: a Mac mini on your desk, or an x86 box in a cupboard. Everything else is unchanged. You still `repose run`, still reach your machines over SSH through repose's gateway, still get the notifications and the [triggers](/docs/triggers). The difference is whose hardware your agents burn.
+Repose normally runs your machines on its own servers. On the [Own hardware plan](/docs/billing#own-hardware) ($10 a month), or on any hosted plan at no extra price, it runs them on hardware you own instead: a Mac mini on your desk, or an x86 box in a cupboard. Everything else is unchanged. You still `repose run`, still reach your machines over SSH through repose's gateway, still get the notifications and the [triggers](/docs/triggers). The difference is whose hardware your agents burn.
 
 Your hardware takes only your projects. Nobody else's machine is ever placed on it, and once you have added one, your new projects go there rather than on repose's servers. `repose run --host repose` makes one on repose's servers instead, `repose run --host mac-mini` names your hardware, and a project made through the [API](/docs/api#where-a-project-runs) says the same with `placement` and `host`. With more than one host, a new machine goes to the one with the most room, and `--host box-b` puts it on box-b or refuses with box-b's state and exit 8; it never puts it on another host. The create line names the host a machine went to: `✓ Created todo-app on box-a`. Repose's servers need a plan that buys memory there. A machine stays on its host for life. It does not move to repose's servers or to another host, and a machine on repose's servers does not move to your hardware: a snapshot is only readable where it was taken.
 
@@ -180,3 +180,5 @@ Once a host is off, your new projects go to repose's servers again if your plan 
 ## What it costs
 
 The [Own hardware plan](/docs/billing#own-hardware) is **$10 a month** for any number of hosts, with seven days free first (prices exclude tax). It buys no memory, disk or egress on repose's servers, so you cannot place machines there on this plan: your hardware's memory is the only cap on what runs at once, your disk the only cap on what you keep, and egress is not counted. Repose runs the gateway your SSH goes through, the control plane, the dashboard, notifications and triggers, which is what the plan pays for. There is no seat to wait for while repose is full.
+
+Solo, Plus and Pro include hosts of your own too, at no extra price. A machine on your host counts nothing against the plan's memory, disk or egress, which stay for the machines on repose's servers ([Pricing](/docs/billing#hosts-of-your-own-on-a-hosted-plan)).

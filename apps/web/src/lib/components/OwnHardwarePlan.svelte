@@ -45,7 +45,7 @@
 	</p>
 	<p class="o-what">
 		Mac minis or x86 boxes you own, in your account. {hostsPhrase(plan.hosts ?? 0)}; their memory
-		and disk are the limits.
+		and disk are the limits. Solo, Plus and Pro include them.
 	</p>
 	{#if action && variant === 'app'}
 		<div class="o-act">{@render action(plan)}</div>

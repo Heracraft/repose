@@ -129,7 +129,7 @@ For more detail on any command, add `-v`; its request IDs are what support looks
 
 **`10 hosts have not joined yet`**. Ten hosts at a time can be waiting to join, and nothing was added. A host stops waiting when its install finishes, when you remove it, or when its token runs out 24 hours after `repose host add`. `repose host ls` lists them as `waiting`.
 
-**`Hardware of your own needs the Own hardware plan`**. Your plan sells no host. The [Own hardware plan](/docs/billing#own-hardware) is $10 a month for any number of hosts.
+**`Hardware of your own needs a plan`**. Your account has no plan. Every plan includes hosts of your own: [Own hardware](/docs/billing#own-hardware) is $10 a month for any number of them, and Solo, Plus and Pro include them at no extra price.
 
 ## Sync
 

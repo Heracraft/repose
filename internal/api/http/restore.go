@@ -144,7 +144,13 @@ func (s *Server) restoreByName(w http.ResponseWriter, r *http.Request) error {
 	if start {
 		class = src.Class
 	}
-	if err := s.gate(r, u, billing.Request{Class: class, Disk: true, AddHeldBytes: src.HeldBytes(), VolumeBytes: src.VolumeBytes}); err != nil {
+	// A copy of a machine whose snapshot is kept on a host the account
+	// owns goes to that host and counts nothing against the plan (I-1704).
+	own, err := s.hostOwnedBy(ctx, snap.HostID, u.ID)
+	if err != nil {
+		return err
+	}
+	if err := s.gate(r, u, billing.Request{Class: class, Disk: true, AddHeldBytes: src.HeldBytes(), VolumeBytes: src.VolumeBytes, OwnHost: own}); err != nil {
 		return err
 	}
 	// A copy of a held project is refused whether or not it starts: it

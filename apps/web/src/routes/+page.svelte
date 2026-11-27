@@ -230,6 +230,7 @@
 			</p>
 			<p class="hw-what">
 				Any number of hosts you own. Each runs as many sandboxes as its memory and disk hold.
+				Every cloud plan includes them.
 			</p>
 		</div>
 	</section>

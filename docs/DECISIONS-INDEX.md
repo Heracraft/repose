@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1169 entries.
+1170 entries.
 
 ## Scope
 
@@ -1056,10 +1056,10 @@ pointer, not a summary.
 - **I-1360** One door, two receivers: the Triggers tab lists every way the outside reaches a machine with what answers it, and Config's Webhooks section is gone (doors, 2026-11-19) — L36272
 - **I-1370** `repose host` is the noun for hardware you own: `host add` prints the install step, `host ls` is the one table, `host rm` takes it off; an owned host that has stopped answering is named wherever it shows (mac-mini 19c, 2026-11-19) — partly amended by I-1614; L36326
 - **I-1372** Snapshots of an owned host's machines stay on that host's own disk, and the docs say a dead disk loses them (mac-mini 19c, 2026-11-19) — amended by I-1636; L36390
-- **I-1364** The Own hardware plan: $10 a month for one host the user owns, and it sells none of repose's compute (19d, 2026-11-19) — partly amended by I-1582; partly amended by I-1594; L36426
+- **I-1364** The Own hardware plan: $10 a month for one host the user owns, and it sells none of repose's compute (19d, 2026-11-19) — partly amended by I-1582; partly amended by I-1594; amended by I-1704; L36426
 - **I-1368** The hub, the gateway and the api treat a host as hostile: a host reaches no other host, from a host only the api's gRPC, Loki's push and the hub's own echo and hook ingest, the gateway routes a project on an owned host to its owner alone, and every host report is bound to the host whose stream carried it (mac-mini 19b, 2026-11-19) — L36531
 - **I-1382** The one path a host is forwarded through the hub: the api's gRPC at the control plane's WireGuard address, 10.255.255.1:8443, from the host range alone (mac-mini 19b, 2026-11-19) — L36650
-- **I-1366** A host has an owning account: placement puts only that account's projects on it, and the seat count, the waitlist and the host gauges leave it out (19a mac-mini-ownership, 2026-11-19) — partly amended by I-1390; partly amended by I-1586; L36691
+- **I-1366** A host has an owning account: placement puts only that account's projects on it, and the seat count, the waitlist and the host gauges leave it out (19a mac-mini-ownership, 2026-11-19) — partly amended by I-1390; partly amended by I-1586; amended by I-1704; L36691
 - **I-1374** The flake has `aarch64-linux` outputs: the guest base, the runner, the host system and the installer, with the kernel pin and the console per architecture and the closure limit on both (mac-mini-aarch64, 2026-11-19) — partly amended by I-1470; L36800
 - **I-1376** The Mac mini appliance: one raw EFI image of the aarch64 host with provider `mac`, one disk whose third partition is `vg-guests`, the fleet's host reserve inside a VM given three quarters of the Mac, the join and the hub material from a file the launcher shares in, and a kernel that is a product constraint (mac-mini 19f, 2026-11-19) — amended by I-1564; amended by I-1626; amended by I-1684; L36912
 - **I-1380** The Mac launcher is a plist over vfkit, and the install step carries the host's place on the hub, minted at `host add` and rotated at Register (mac-mini 19f, 2026-11-19) — amended by I-1422; amended by I-1424; amended by I-1432; amended by I-1564; partly amended by I-1614; amended by I-1684; L37069
@@ -1201,3 +1201,4 @@ pointer, not a summary.
 - **I-1688** hostd's darwin paths are tested against vzfake, a stand-in for the Mac's launcher that answers Cloud Hypervisor's API with repose-vm's bodies and refuses what Virtualization.framework refuses, through hostd's real client; a restore VZ refuses because the session cannot restore at that moment holds the machine for the unlock instead of throwing its image away; and a macOS CI job runs the darwin Go tests and builds the launcher (d2-int, design 2 build, 2026-11-27) — L39796
 - **I-1692** The api reads a Mac without the appliance as what it is, not as D1's nested Mac: no `running_limit` for it, so the dashboard's New project form never holds Create at D1's count (d2-surface, design 2 build, 2026-11-27) — L39806
 - **I-1694** Design 2 is built for customers and replaces design 1 on the Mac, with no migration; idle machines on a Mac give their memory back by rest by save (conductor, design 2 build, 2026-11-27) — L39815
+- **I-1704** The hosted plans (Solo, Plus, Pro) include any number of hosts of the user's own at no extra price, and a machine on such a host counts nothing against the plan (sweep-dash, 2026-11-27) — L39823
