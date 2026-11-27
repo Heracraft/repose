@@ -348,3 +348,46 @@ func TestSizedDownStartIsSaid(t *testing.T) {
 		t.Fatalf("repose ls at the full size:\n%s", got)
 	}
 }
+
+// DECISIONS I-1682: a machine on a Mac whose memory is in a save file the
+// locked Mac cannot read says what it waits for: resting, it wakes once
+// the Mac is unlocked; parked, it waits for the unlock, not a login, when
+// the user is logged in with the screen locked.
+func TestLockedMacSaysWhatTheMachineWaitsFor(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	e, p := newRoundtripEnv(t, fake)
+	ctx := context.Background()
+	out := &discardWriter{}
+	e.Out, e.ErrOut = out, &discardWriter{}
+	fake.SetState(p.ID, "running")
+	fake.SetProjectHost(p.ID, fake.AddOwnedHost("mac-mini"))
+	since := time.Now().Add(-20 * time.Minute)
+	if err := fake.SetResting(p.ID, &since); err != nil {
+		t.Fatal(err)
+	}
+	fake.SetWaitsFor(p.ID, "unlock")
+	if err := ProjectsCmd(ctx, e); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.buf.String(); !strings.Contains(got, "todo-app: resting; it wakes once you unlock mac-mini, and its memory is kept.\n") {
+		t.Fatalf("repose ls:\n%s", got)
+	}
+	out.buf.Reset()
+	if err := StatusCmd(ctx, e, ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.buf.String(); !strings.Contains(got, "  resting; it wakes once you unlock mac-mini") {
+		t.Fatalf("repose status:\n%s", got)
+	}
+	_ = fake.SetResting(p.ID, nil)
+	fake.SetParked(p.ID, &since)
+	fake.SetWaitsFor(p.ID, "unlock")
+	out.buf.Reset()
+	if err := ProjectsCmd(ctx, e); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.buf.String(); !strings.Contains(got, "todo-app: parked; it waits for you to unlock mac-mini, and its memory is kept.\n") || strings.Contains(got, "log in") {
+		t.Fatalf("repose ls parked:\n%s", got)
+	}
+}

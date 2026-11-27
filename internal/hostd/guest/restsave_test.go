@@ -70,3 +70,72 @@ func TestRestWithoutSaveOnlyPauses(t *testing.T) {
 		t.Fatal("a plain rest saved or stopped the VM")
 	}
 }
+
+// DECISIONS I-1682: at the lock a Mac restores every guest resting as a
+// save, its vCPUs still stopped, so it rests by pause through the lock
+// (VZ cannot read a save once the screen has been locked a few seconds);
+// the first wake after that is a resume, and the login file is bound
+// again then. A minute into the unlock SaveRests gives the memory back
+// again.
+func TestLockRestoresRestSavesAndUnlockSavesThemAgain(t *testing.T) {
+	fh := newParkHarness(t, nil)
+	fh.m.d.CH = saveCH{parkCH{Fake: fh.chc, h: fh.harness}}
+	fh.m.d.RestBySave = func(context.Context, string) bool { return true }
+	fh.create(gid1)
+	fh.pauseOK(gid1)
+	if fh.unitActive(gid1) {
+		t.Fatal("not saved")
+	}
+	if n := fh.m.UnsaveRests(context.Background()); n != 1 {
+		t.Fatalf("UnsaveRests %d, want 1", n)
+	}
+	g := fh.guest(gid1)
+	if !fh.unitActive(gid1) || g.Resting == nil || fh.m.restSaved(g) {
+		t.Fatalf("after the lock: active %v resting %v saved %v", fh.unitActive(gid1), g.Resting, fh.m.restSaved(g))
+	}
+	if strings.Contains(fh.chCalls(), "resume ") {
+		t.Fatal("resumed at the lock; it must stay paused")
+	}
+	if n := fh.m.SaveRests(context.Background()); n != 1 || fh.unitActive(gid1) || !fh.m.restSaved(fh.guest(gid1)) {
+		t.Fatalf("SaveRests %d active %v", n, fh.unitActive(gid1))
+	}
+	fh.m.UnsaveRests(context.Background())
+	res := fh.mustOK(cmd(&hostdv1.WakeGuest{GuestId: gid1, Reason: "ssh"}))
+	if w := res.GetWake(); w == nil || !w.WasResting {
+		t.Fatalf("wake %+v", res)
+	}
+	if _, due := fh.m.rebindDue.Load(gid1); due {
+		t.Fatal("the login file was not bound again at the wake after a restore at the lock")
+	}
+}
+
+// What a guest's memory waits for is said on its sample: "unlock" while
+// it rests as a save and the session is locked, "login" with nobody
+// logged in, nothing while unlocked or on a host without sessions.
+func TestSampleSaysWhatARestSaveWaitsFor(t *testing.T) {
+	fh := newParkHarness(t, nil)
+	fh.m.d.CH = saveCH{parkCH{Fake: fh.chc, h: fh.harness}}
+	fh.m.d.RestBySave = func(context.Context, string) bool { return true }
+	fh.create(gid1)
+	fh.pauseOK(gid1)
+	waits := func() string {
+		for _, gs := range fh.m.CollectSamples(context.Background()).Guests {
+			if gs.GuestId == gid1 {
+				return gs.WaitsFor
+			}
+		}
+		return "?"
+	}
+	if w := waits(); w != "" {
+		t.Fatalf("no session reader: %q", w)
+	}
+	state := SessionLocked
+	fh.m.d.SessionState = func(context.Context) string { return state }
+	fh.m.d.Park.CanRestore = func(context.Context) bool { return state == SessionUnlocked }
+	for st, want := range map[string]string{SessionLocked: WaitsForUnlock, SessionNone: WaitsForLogin, SessionUnlocked: ""} {
+		state = st
+		if w := waits(); w != want {
+			t.Fatalf("session %s: waits_for %q, want %q", st, w, want)
+		}
+	}
+}

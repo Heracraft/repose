@@ -224,9 +224,34 @@ func (f *Fake) SetParked(projectID string, since *time.Time) {
 	p.Signals.GuestdOK = false
 }
 
+// SetWaitsFor says what a resting or parked machine on a Mac waits for,
+// "unlock" or "login", as the api says it from hostd's sample (DECISIONS
+// I-1682); "" clears it on a resting one and is "login" on a parked one,
+// as the api's is.
+func (f *Fake) SetWaitsFor(projectID, waits string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	p := f.projects[projectID]
+	if p == nil {
+		return
+	}
+	if p.Resting != nil {
+		p.Resting.WaitsFor = waits
+	}
+	if p.Parked != nil {
+		if waits != "unlock" {
+			waits = "login"
+		}
+		p.Parked.WaitsFor = waits
+	}
+}
+
 // Resting is Project.resting.
 type Resting struct {
 	Since time.Time `json:"since"`
+	// WaitsFor is what a machine resting as a save on a Mac waits for,
+	// unlock or login (DECISIONS I-1682); SetWaitsFor sets it.
+	WaitsFor string `json:"waits_for,omitempty"`
 }
 
 // DestroyedProject is one row of GET /projects/destroyed (I-167).

@@ -583,6 +583,11 @@ type Deps struct {
 	// (restsave.go, DECISIONS I-1666). Nil only pauses: every host but a
 	// Mac.
 	RestBySave func(ctx context.Context, id string) bool
+	// SessionState is the Mac user's session: SessionUnlocked,
+	// SessionLocked or SessionNone, for what a guest resting as a save or
+	// a held park waits for (waitsFor, DECISIONS I-1682). Nil on every
+	// host but a Mac.
+	SessionState func(ctx context.Context) string
 	// AfterHypervisorExit is called once a guest's hypervisor is gone
 	// (teardown). On the Mac appliance it resets the host's CPUs, which a
 	// powered-off guest leaves busy in macOS (package cpureset, DECISIONS
@@ -690,6 +695,12 @@ type Manager struct {
 	// wake hostd does itself before a session caller, and the armed timer
 	// wake may arrive at once, and only one may drive vm.resume.
 	wakeLocks sync.Map // guest id -> *sync.Mutex
+	// wakeAtUnlock holds the guests whose wake a locked Mac refused, woken
+	// at the unlock (WakeRefusedAtLock); rebindDue the guests restored
+	// from a rest save whose login file is bound again at their next wake
+	// (I-1682).
+	wakeAtUnlock sync.Map // guest id -> true
+	rebindDue    sync.Map // guest id -> true
 
 	// restMu guards the two maps below. It is deliberately not mu: the
 	// monitor goroutine reads the resting mark on every dial retry, and

@@ -207,9 +207,12 @@ type ProjectVM struct {
 	SizedDown    bool   `json:"sized_down"`
 }
 
-// ProjectResting is Project.resting: when the machine was frozen.
+// ProjectResting is Project.resting: when the machine was frozen, and on
+// a Mac what a machine resting as a save waits for, `unlock` or `login`
+// (DECISIONS I-1682); empty everywhere else.
 type ProjectResting struct {
-	Since time.Time `json:"since"`
+	Since    time.Time `json:"since"`
+	WaitsFor string    `json:"waits_for,omitempty"`
 }
 
 type Signals struct {

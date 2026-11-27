@@ -254,6 +254,11 @@ meter_samples (ts timestamptz, project_id, host_id, state text, class text,
                 -- cores its class sells, counted per second by the host's controller. Null
                 -- from a hostd older than I-1126 and from every host without the `burst`
                 -- feature, which billing reads as no burst
+              parked_waiting_since timestamptz,  -- 0054, I-1672: when a machine parked on a Mac
+                -- was parked, while it waits for the Mac's user; null otherwise and from a fleet host
+              waits_for text,  -- 0055, I-1682: what a machine's memory, in a save file on a Mac,
+                -- waits for: 'unlock' (logged in, screen locked) or 'login'; null otherwise,
+                -- and from a fleet host
               primary key (project_id, ts))  -- partitioned by month, 90-day retention
 
 proc_samples (ts, project_id, comm text, cpu_ns bigint, rss bigint,

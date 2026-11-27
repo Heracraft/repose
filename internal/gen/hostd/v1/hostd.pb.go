@@ -5336,7 +5336,14 @@ type GuestSample struct {
 	// What the running guest's VM was booted with, as StartResult.vm
 	// (DECISIONS I-1680); absent from every hostd that does not size its
 	// starts, and while the guest is not running.
-	Vm            *VmSize `protobuf:"bytes,22,opt,name=vm,proto3" json:"vm,omitempty"`
+	Vm *VmSize `protobuf:"bytes,22,opt,name=vm,proto3" json:"vm,omitempty"`
+	// What the guest's memory waits for on a Mac (DECISIONS I-1682):
+	// "unlock" while it is in a save file (a rest by save, or a held park)
+	// and the Mac's user is logged in with the screen locked, "login" while
+	// it is in one and nobody is logged in; VZ reads a save only in the
+	// user's unlocked session (I-1662). Empty otherwise and from every other
+	// hostd.
+	WaitsFor      string `protobuf:"bytes,23,opt,name=waits_for,json=waitsFor,proto3" json:"waits_for,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5523,6 +5530,13 @@ func (x *GuestSample) GetVm() *VmSize {
 		return x.Vm
 	}
 	return nil
+}
+
+func (x *GuestSample) GetWaitsFor() string {
+	if x != nil {
+		return x.WaitsFor
+	}
+	return ""
 }
 
 type HostSample struct {
@@ -7130,7 +7144,7 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"\x06agents\x18\x03 \x03(\v2\x1a.repose.hostd.v1.AgentProcR\x06agents\x12+\n" +
 	"\x11docker_containers\x18\x04 \x01(\rR\x10dockerContainers\x12\x1b\n" +
 	"\tguestd_ok\x18\x05 \x01(\bR\bguestdOk\x12&\n" +
-	"\x0flast_input_unix\x18\x06 \x01(\x04R\rlastInputUnix\"\xdf\a\n" +
+	"\x0flast_input_unix\x18\x06 \x01(\x04R\rlastInputUnix\"\xfc\a\n" +
 	"\vGuestSample\x12\x19\n" +
 	"\bguest_id\x18\x01 \x01(\tR\aguestId\x12\x14\n" +
 	"\x05state\x18\x02 \x01(\tR\x05state\x12\x14\n" +
@@ -7155,7 +7169,8 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"\x12burst_cpu_ns_delta\x18\x13 \x01(\x04H\x01R\x0fburstCpuNsDelta\x88\x01\x01\x120\n" +
 	"\x14burst_cap_millicores\x18\x14 \x01(\rR\x12burstCapMillicores\x120\n" +
 	"\x14parked_waiting_since\x18\x15 \x01(\x03R\x12parkedWaitingSince\x12'\n" +
-	"\x02vm\x18\x16 \x01(\v2\x17.repose.hostd.v1.VmSizeR\x02vmB\x19\n" +
+	"\x02vm\x18\x16 \x01(\v2\x17.repose.hostd.v1.VmSizeR\x02vm\x12\x1b\n" +
+	"\twaits_for\x18\x17 \x01(\tR\bwaitsForB\x19\n" +
 	"\x17_net_egress_bytes_deltaB\x15\n" +
 	"\x13_burst_cpu_ns_delta\"\x81\x01\n" +
 	"\n" +

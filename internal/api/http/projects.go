@@ -218,12 +218,24 @@ func (s *Server) projectJSON(ctx context.Context, p *store.Project, u *store.Use
 		}
 		out["signals"] = map[string]any{"ssh_sessions": x.latest.SSHSessions, "tmux_clients": x.latest.TmuxClients, "agents": agents,
 			"docker_containers": x.latest.DockerContainers, "guestd_ok": guestdOK, "sampled_at": x.latest.TS, "gateway_sessions": s.sessions.Count(ctx, p.ID)}
+		if r, ok := out["resting"].(map[string]any); ok && x.latest.Resting && x.latest.WaitsFor != "" && !sampleBeforeStart(p, x.latest) {
+			// A machine resting as a save on a Mac whose screen is locked
+			// (or with nobody logged in) wakes once the user unlocks it or
+			// logs in (I-1682): its memory is kept.
+			r["waits_for"] = x.latest.WaitsFor
+		}
 		parked := p.State == "running" && x.latest.ParkedWaitingSince != nil && !sampleBeforeStart(p, x.latest)
 		if parked {
 			// Parked on a Mac, waiting for its user to log in (I-1672):
 			// its memory is kept and it runs again at the login. Silent
 			// on purpose, so never not_answering.
-			out["parked"] = map[string]any{"since": x.latest.ParkedWaitingSince.UTC(), "waits_for": "login"}
+			// waits_for is "unlock" when the Mac's user is logged in with
+			// the screen locked (I-1682), else "login" as before.
+			waits := "login"
+			if x.latest.WaitsFor == "unlock" {
+				waits = "unlock"
+			}
+			out["parked"] = map[string]any{"since": x.latest.ParkedWaitingSince.UTC(), "waits_for": waits}
 		}
 		if !parked && !x.latest.GuestdOK && !x.latest.Resting && !sampleBeforeStart(p, x.latest) {
 			// Its guestd has not answered for about three minutes

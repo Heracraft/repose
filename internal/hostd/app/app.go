@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -226,7 +227,9 @@ func EnsureIdentity(ctx context.Context, o Options, log *slog.Logger, r shell.Ru
 			// host-conventions.md, DECISIONS I-18, I-40). When hostd
 			// registers itself instead of repose-register.service, nothing
 			// else would.
-			if r != nil {
+			// A Mac has no renderer: its edge reads host.json itself
+			// (unet, I-1670), and systemctl is not there to warn about.
+			if r != nil && runtime.GOOS == "linux" {
 				if _, rerr := r.Run(ctx, "systemctl", "--no-block", "restart", HostNetUnit); rerr != nil {
 					log.Warn("restart of the host network renderer failed", "event", "register", "unit", HostNetUnit, "err", rerr.Error())
 				}
@@ -576,7 +579,7 @@ func (d *Daemon) rotationLoop(ctx context.Context, roots *x509.CertPool) {
 		// Fluent Bit ships to) only reach /run/repose when the renderer runs
 		// again; a rotate is the one time they change without a boot
 		// (I-95, I-139).
-		if next.Host.HostCAPub != cur.Host.HostCAPub || next.Host.LokiURL != cur.Host.LokiURL {
+		if runtime.GOOS == "linux" && (next.Host.HostCAPub != cur.Host.HostCAPub || next.Host.LokiURL != cur.Host.LokiURL) {
 			if _, rerr := (shell.Exec{}).Run(ctx, "systemctl", "--no-block", "restart", HostNetUnit); rerr != nil {
 				d.log.Warn("restart of the host network renderer failed", "event", "rotate", "unit", HostNetUnit, "err", rerr.Error())
 			}

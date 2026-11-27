@@ -691,6 +691,13 @@ message GuestSample {
   // (DECISIONS I-1680); absent from every hostd that does not size its
   // starts, and while the guest is not running.
   VmSize vm = 22;
+  // What the guest's memory waits for on a Mac (DECISIONS I-1682):
+  // "unlock" while it is in a save file (a rest by save, or a held park)
+  // and the Mac's user is logged in with the screen locked, "login" while
+  // it is in one and nobody is logged in; VZ reads a save only in the
+  // user's unlocked session (I-1662). Empty otherwise and from every other
+  // hostd.
+  string waits_for = 23;
 }
 message HostSample { uint64 mem_free = 1; uint64 pool_free = 2; double load1 = 3; uint32 builds_running = 4; }
 message Samples { int64 ts = 1; repeated GuestSample guests = 2; HostSample host = 3; }

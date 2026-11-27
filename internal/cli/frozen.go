@@ -67,7 +67,33 @@ func parkedLine(p *Project) string {
 	if p.HostName != "" {
 		where = p.HostName
 	}
+	if p.Parked.WaitsFor == "unlock" {
+		// Logged in with the screen locked (I-1682): a login is not what
+		// it waits for.
+		return fmt.Sprintf("parked; it waits for you to unlock %s, and its memory is kept.", where)
+	}
 	return fmt.Sprintf("parked; it waits for you to log in to %s, and its memory is kept.", where)
+}
+
+// restingLockedLine is the line for a machine resting as a save on a Mac
+// that cannot read it now (DECISIONS I-1682): the screen is locked, or
+// nobody is logged in; "" for any other machine. A wake that comes
+// meanwhile is refused, and the machine wakes at the unlock.
+func restingLockedLine(p *Project) string {
+	if !frozen(p) || p.Resting == nil {
+		return ""
+	}
+	where := "its Mac"
+	if p.HostName != "" {
+		where = p.HostName
+	}
+	switch p.Resting.WaitsFor {
+	case "unlock":
+		return fmt.Sprintf("resting; it wakes once you unlock %s, and its memory is kept.", where)
+	case "login":
+		return fmt.Sprintf("resting; it wakes once you log in to %s, and its memory is kept.", where)
+	}
+	return ""
 }
 
 // notAnsweringWord is what a user reads for a running machine whose

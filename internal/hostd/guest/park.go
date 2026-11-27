@@ -18,6 +18,7 @@ import (
 	"github.com/heracraft/repose/internal/hostd/park"
 	"github.com/heracraft/repose/internal/hostd/state"
 	"github.com/heracraft/repose/internal/hostd/virtiofs"
+	"github.com/heracraft/repose/internal/hostd/vsockclient"
 )
 
 // Guest park (DECISIONS I-652, I-653). When the host is about to restart,
@@ -196,6 +197,14 @@ type ParkDeps struct {
 	// configured size (three 12 GiB machines were refused a park on 47 GB
 	// free, d2-lab 2026-11-26). ok false falls back to the class.
 	ImageEstimate func(ctx context.Context, id string) (bytes uint64, ok bool)
+	// GuestTouched says a park image is the guest's touched memory, so
+	// the park asks each answering guest for MemTotal less MemFree and
+	// counts that before ImageEstimate: VZ saves every page the guest has
+	// written, and after a restore the VM's footprint is its whole
+	// configured memory while its next save is the size of the last (lab
+	// Mac, 2026-11-27: footprint 9414 MB for an 8 GiB machine, images
+	// 1248, 1250 and 1252 MB; ENG-263, DECISIONS I-1680). False on Linux.
+	GuestTouched bool
 }
 
 // ParkResult is one guest's outcome, for the operator and the log.
@@ -325,11 +334,14 @@ func (m *Manager) ParkAll(ctx context.Context, reason string) []ParkResult {
 	room := m.parkRoom(ctx)
 	results := make([]ParkResult, len(run))
 	take := make([]bool, len(run))
+	touched := m.touchedBytes(ctx, run)
 	for i, g := range run {
 		need := m.classOf(g.Class).MemMiB << 20
-		if est := m.d.Park.ImageEstimate; est != nil {
+		if b := touched[i]; b > 0 {
+			need = b + b/8 // an eighth over: the guest runs until it pauses
+		} else if est := m.d.Park.ImageEstimate; est != nil {
 			if b, ok := est(ctx, g.GuestID); ok {
-				need = b + b/8 // an eighth over: the guest runs until it pauses
+				need = b + b/8
 			}
 		}
 		if room >= 0 && need > uint64(room) {
@@ -446,6 +458,12 @@ func (m *Manager) ParkAll(ctx context.Context, reason string) []ParkResult {
 					return
 				}
 				mem := m.memoryBytes(ctx, g)
+				if b := touched[i]; b > 0 {
+					// What the image will hold, the guest's own figure
+					// (GuestTouched): on a Mac the hypervisor unit's
+					// memory is repose-vm's, not the VM's.
+					mem = b
+				}
 				if dl, ok := ctx.Deadline(); ok {
 					if est, ok := rate.admit(mem, time.Until(dl)); !ok {
 						m.log(g).Error("guest not parked: its snapshot would outlast the deadline", "event", "guest_park",
@@ -494,6 +512,68 @@ func (m *Manager) ParkAll(ctx context.Context, reason string) []ParkResult {
 	m.d.Log.Info("guests parked", "event", "guest_park", "reason", reason, "parked", n, "guests", len(run),
 		"skipped", left, "duration_ms", m.d.Now().Sub(start).Milliseconds())
 	return results
+}
+
+// touchedBytes is, for each guest of run on a host whose park image is
+// the guest's touched memory (ParkDeps.GuestTouched), MemTotal less
+// MemFree as the guest reads it; 0 where it is not known (another host, a
+// resting guest, one that does not answer within a few seconds), which
+// the room then counts as before. The guests are asked at once.
+func (m *Manager) touchedBytes(ctx context.Context, run []*state.Guest) []uint64 {
+	out := make([]uint64, len(run))
+	if !m.d.Park.GuestTouched {
+		return out
+	}
+	var wg sync.WaitGroup
+	for i, g := range run {
+		if m.restingMark(g.GuestID) != nil {
+			continue
+		}
+		sess, err := m.session(g.GuestID)
+		if err != nil {
+			continue
+		}
+		wg.Add(1)
+		go func(i int, sess vsockclient.Session) {
+			defer wg.Done()
+			ectx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			defer cancel()
+			r, err := sess.Exec(ectx, []string{"/bin/sh", "-c", "grep -E '^(MemTotal|MemFree):' /proc/meminfo"}, 5, "")
+			if err != nil || r.ExitCode != 0 {
+				return
+			}
+			out[i] = touchedFromMeminfo(r.Stdout)
+		}(i, sess)
+	}
+	wg.Wait()
+	return out
+}
+
+// touchedFromMeminfo is MemTotal less MemFree, in bytes, from those two
+// /proc/meminfo lines; 0 when either is missing.
+func touchedFromMeminfo(b []byte) uint64 {
+	var total, free uint64
+	var haveFree bool
+	for _, line := range strings.Split(string(b), "\n") {
+		f := strings.Fields(line)
+		if len(f) < 2 {
+			continue
+		}
+		n, err := strconv.ParseUint(f[1], 10, 64)
+		if err != nil {
+			continue
+		}
+		switch f[0] {
+		case "MemTotal:":
+			total = n << 10
+		case "MemFree:":
+			free, haveFree = n<<10, true
+		}
+	}
+	if total == 0 || !haveFree || free > total {
+		return 0
+	}
+	return total - free
 }
 
 // A park that leaves a running guest skipped costs that guest

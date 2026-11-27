@@ -89,3 +89,45 @@ func TestStartDoesNotRestartAParkedMachine(t *testing.T) {
 		t.Fatalf("start of a parked machine: %d %s", s.status, s.raw)
 	}
 }
+
+// DECISIONS I-1682: on a Mac logged in with its screen locked, a parked
+// machine waits for the unlock, and one resting as a save says it wakes
+// at the unlock: both from hostd's waits_for.
+func TestLockedMacMachinesWaitForTheUnlock(t *testing.T) {
+	e := newEnv(t)
+	ctx := e.h.Ctx
+	tok := e.signIn(t, "sub-locked", "locked")
+	me := e.do(t, tok, "GET", "/me", nil)
+	u, err := store.GetUser(ctx, e.h.Pool, uuid.MustParse(me.body["id"].(string)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	parked := e.h.NewProject(u, "macbox", "large")
+	resting := e.h.NewProject(u, "macrest", "large")
+	for _, p := range []*store.Project{parked, resting} {
+		if _, err := e.h.Pool.Exec(ctx, "update projects set state = 'running', started_at = $2 where id = $1", p.ID, now.Add(-time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := e.h.Pool.Exec(ctx, "update projects set resting_since = $2 where id = $1", resting.ID, now.Add(-30*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.EnsurePartitions(ctx, e.h.Pool, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.h.Pool.Exec(ctx, `insert into meter_samples (ts, project_id, state, class, guestd_ok, parked_waiting_since, waits_for) values ($1, $2, 'running', 'large', false, $3, 'unlock')`, now, parked.ID, now.Add(-10*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.h.Pool.Exec(ctx, `insert into meter_samples (ts, project_id, state, class, guestd_ok, resting, waits_for) values ($1, $2, 'running', 'large', true, true, 'unlock')`, now, resting.ID); err != nil {
+		t.Fatal(err)
+	}
+	r := e.do(t, tok, "GET", "/projects/"+parked.ID.String(), nil)
+	if pk, ok := r.body["parked"].(map[string]any); !ok || pk["waits_for"] != "unlock" {
+		t.Fatalf("parked %v in %s", r.body["parked"], r.raw)
+	}
+	r = e.do(t, tok, "GET", "/projects/"+resting.ID.String(), nil)
+	if rs, ok := r.body["resting"].(map[string]any); !ok || rs["waits_for"] != "unlock" {
+		t.Fatalf("resting %v in %s", r.body["resting"], r.raw)
+	}
+}

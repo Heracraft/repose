@@ -498,7 +498,8 @@ func (m *Manager) wakeByID(ctx context.Context, id, reason string) (*hostdv1.Wak
 		m.log(g).Error("wake failed", "event", "guest_resting", "phase", "guestd", "err", perr.Error())
 		return nil, errf(CodeGuestUnresponsive, "guestd did not answer after the resume: %v", perr)
 	}
-	if fromSave {
+	if _, due := m.rebindDue.LoadAndDelete(id); fromSave || due {
+		// Restored from a save, here or at a lock (UnsaveRests).
 		if cur, err := m.session(id); err == nil {
 			m.rebindAuthShare(ctx, g, cur)
 		}

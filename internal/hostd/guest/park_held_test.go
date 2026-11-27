@@ -3,8 +3,11 @@ package guest
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
+
+	guestdv1 "github.com/heracraft/repose/internal/gen/guestd/v1"
 )
 
 // A Mac holds a parked guest while its save file cannot be restored (the
@@ -149,7 +152,8 @@ func TestParkRoomUsesTheImageEstimate(t *testing.T) {
 // the machine. A park that never finished is not held: it is settled as
 // anywhere, its image discarded.
 func TestUnfinishedParkIsNotHeld(t *testing.T) {
-	fh := newParkHarness(t, nil)
+	// A short wall: the failed resume is retried until it.
+	fh := newParkHarness(t, func(c *ParkConfig) { c.Deadline, c.StopGrace, c.WriteRate = 2*time.Second, time.Second, 1<<40 })
 	fh.create(gid1)
 	fh.chc.Fail = map[string]error{
 		"snapshot": errors.New("save: Internal Virtualization error. The virtual machine stopped unexpectedly."),
@@ -174,5 +178,62 @@ func TestUnfinishedParkIsNotHeld(t *testing.T) {
 	}
 	if g := fh.guest(gid1); g.Reason == ReasonHeldTooLong {
 		t.Fatalf("stopped as %q", g.Reason)
+	}
+}
+
+// ENG-263: after a restore a Mac VM's footprint is its whole configured
+// memory (9414 MB for an 8 GiB machine on the lab Mac, 2026-11-27) while
+// its next save is the size of the last (1248, 1250, 1252 MB), so a park
+// room counted from footprints refused `repose host restart` 2 of 3 times
+// right after a restore. With GuestTouched the park counts what each guest
+// says it has touched (MemTotal less MemFree), and the footprint only for
+// a guest that does not answer.
+func TestParkRoomCountsWhatTheGuestTouched(t *testing.T) {
+	meminfo := func(argv []string) *guestdv1.ExecResult {
+		if len(argv) == 3 && strings.Contains(argv[2], "/proc/meminfo") {
+			// 8 GiB guest, 1.25 GiB touched.
+			return &guestdv1.ExecResult{Stdout: []byte("MemTotal:        8388608 kB\nMemFree:         7077888 kB\n")}
+		}
+		return nil
+	}
+	run := func(touched bool) (parked int) {
+		fh := newParkHarness(t, nil)
+		fh.gopts.OnExec = meminfo
+		fh.create(gid1)
+		fh.create(gid2)
+		fh.create(gidC3)
+		// Room under the threshold for three 1.4 GiB images, not for three
+		// whole 8 GiB footprints.
+		fh.lvm.PoolSize, fh.lvm.PoolFree = 100<<30, 100<<30-(85<<30)+(5<<30)
+		fh.m.d.Park.GuestTouched = touched
+		fh.m.d.Park.ImageEstimate = func(context.Context, string) (uint64, bool) { return 9414 << 20, true }
+		for _, r := range fh.m.ParkAll(context.Background(), ParkOperator) {
+			if r.Outcome == "parked" {
+				parked++
+			} else {
+				t.Logf("touched %v: %s %s %q", touched, r.GuestID, r.Outcome, r.Reason)
+			}
+		}
+		return parked
+	}
+	if n := run(false); n != 0 {
+		t.Fatalf("counted from footprints %d parked; this test no longer shows the refusal", n)
+	}
+	if n := run(true); n != 3 {
+		t.Fatalf("counted from what the guests touched %d of 3 parked", n)
+	}
+}
+
+func TestTouchedFromMeminfo(t *testing.T) {
+	for in, want := range map[string]uint64{
+		"MemTotal:        8388608 kB\nMemFree:         7077888 kB\n": (8388608 - 7077888) << 10,
+		"MemTotal:        8388608 kB\n":                              0,
+		"MemFree:         7077888 kB\n":                              0,
+		"MemTotal: 1 kB\nMemFree: 2 kB\n":                            0,
+		"":                                                           0,
+	} {
+		if got := touchedFromMeminfo([]byte(in)); got != want {
+			t.Errorf("%q: %d, want %d", in, got, want)
+		}
 	}
 }
