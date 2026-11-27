@@ -161,8 +161,13 @@ from the wave cycle, it wins.
 ## The release queue (since 2026-10-03)
 
 Every session, worker or not, now builds in its own worktree by default
-and hands its branch over by queueing it (`ops/dev/release-queue add`);
-the conductor merges only what is queued, as a release cut from the queue
+and hands its branch over by opening its pull request against
+`integrated` with the label `queued` (`gh pr create --base integrated
+--label queued --title ... --body-file ...`, `docs/PR.md`; since
+2026-11-27, DECISIONS I-1714, the agent opens it and writes its title;
+`release-queue add --title` still works for one release). `release-queue`
+is the conductor's half: `ls`, `cut`, `resume`, `done`, `abandon`, `drop`,
+`id`, `live`, `record`. The conductor merges only what is queued, as a release cut from the queue
 onto a `release/<id>` worktree, and ships it. Decision ids come from
 `ops/dev/release-queue id` instead of a range in the launch prompt.
 `docs/ops/RELEASE.md` is the procedure; where it differs from "Merging"

@@ -139,7 +139,7 @@ written so none of them goes unnoticed again.
       helpful line passes review alone, and together they make every
       page longer for the reader who came for one answer. Evidence:
       `pnpm --filter web exec vitest run src/lib/docs.test.ts
-      src/lib/copy.test.ts` passes (`release-queue add` runs it too), and each new or changed paragraph was read against the user on
+      src/lib/copy.test.ts` passes (`just done-check` runs it too), and each new or changed paragraph was read against the user on
       their fiftieth visit, with what was cut named in the commit.
 - [ ] Output from a command that worked, and every listing, says what
       happened or what is, and stops: no `repose ...` command to run next.
@@ -151,7 +151,7 @@ written so none of them goes unnoticed again.
       one of them under the table they asked for. State that belongs to a
       row is a column, not a line under the table. Evidence: `go test
       ./internal/cli -run 'TestDocs|TestEvery|TestSuccessOutputNamesNoCommand|TestCLIReassures|AgentGuide'`
-      passes (`just fast-check` and `release-queue add` run it too, DECISIONS I-1456), any new
+      passes (`just fast-check` runs it too, DECISIONS I-1456), any new
       `quietAllowed` entry carries a reason a reviewer agrees with, and
       the new success lines are pasted in the commit message (the test
       cannot see a command built at run time).
@@ -471,8 +471,8 @@ entry and this list with it. Counts as of 2026-10-21.
       `ops/dev/release-assets` prints `200` for every asset and exits 0,
       run after an appliance publish, before a CLI tag, and after the
       sign job; shown red first (`--appliance <unpublished>` or `--cli
-      <wrong tag>` exits 1 naming the asset). `release-queue add` runs
-      it for a `cli` branch, `release.yml` refuses to publish without it,
+      <wrong tag>` exits 1 naming the asset). The agent runs it before
+      opening a PR that ships `cli` (`docs/ops/RELEASE.md`), `release.yml` refuses to publish without it,
       and `release-assets.yml` runs it every six hours against `main`
       and against the released tag.
 

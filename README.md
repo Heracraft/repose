@@ -6,8 +6,8 @@ closes. Multi-tenant, billed by the hour with a monthly cap, hosted at
 `repose.run`.
 
 Everything about what this is and how it is built lives in [`docs/`](docs/README.md).
-Start there. Contributors and agents also read [`CLAUDE.md`](CLAUDE.md)
-(`AGENTS.md` is the same file).
+Start there. Contributors and agents also read [`AGENTS.md`](AGENTS.md)
+(`CLAUDE.md` is the same file).
 
 ## Layout
 

@@ -286,9 +286,10 @@ works:
    I-1398: v0.1.51 shipped pinning a version this step would have
    refused).
 4. Bump `applianceVersion` in `internal/cli/appliance.go` to that
-   version; it ships with the next CLI release. `release-queue add`
-   runs the same check on the branch and refuses one whose version is
-   not published.
+   version; it ships with the next CLI release. Run the same check on
+   the branch before opening its PR (`ops/dev/release-assets --cli none
+   --install none --guest none --hostd none`); `release.yml` refuses a
+   version that is not published.
 5. Record the line once, if it is not recorded:
    `repose-admin hosts install-command 'repose host add --join %s'`.
    The hub settings `repose-admin edge init` recorded are what let

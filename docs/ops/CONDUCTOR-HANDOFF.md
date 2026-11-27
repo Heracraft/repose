@@ -402,7 +402,7 @@ dated log.
   exit, so `EXIT 0` printed under a `--- FAIL` line is the pipe
   succeeding. Read the `ok` and `FAIL` lines whenever either is piped.
 - **A stacked pull request cannot be merged by GitHub, only closed.**
-  `release-queue add --on BRANCH` bases a PR on another queued branch.
+  `gh pr create --base BRANCH` bases a PR on another queued branch.
   When the batch lands, `done` pushes `integrated` and GitHub marks the
   PR whose base *was* `integrated` as merged, while the stacked ones stay
   open: their base branch still exists, and `gh pr edit --base integrated`

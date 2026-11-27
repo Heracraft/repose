@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1174 entries.
+1175 entries.
 
 ## Scope
 
@@ -1049,7 +1049,7 @@ pointer, not a summary.
 - **I-1344** `repose github status` is the one place that answers "what do my machines use for GitHub" (github-first-run, 2026-11-18) — L35968
 - **I-1346** A temporary or tiny machine gets the carry's state and none of its builds: no laptop tools, no runtime pins, no Claude plugins (carry-lite, 2026-11-18). Amends I-221, I-222 and I-196's plugins — L36002
 - **I-1348** The tools carry's unit is capped at 40 percent of the machine's memory (carry-lite, 2026-11-18) — L36043
-- **I-1352** The queue is the pull requests: each branch is a PR against `integrated` in a fixed shape, stacked on the last, labelled with what it ships, carrying its decisions in a record a tool reads; the conductor merges them (the owner, 2026-11-18). Amends I-411, I-416 and I-763 — L36053
+- **I-1352** The queue is the pull requests: each branch is a PR against `integrated` in a fixed shape, stacked on the last, labelled with what it ships, carrying its decisions in a record a tool reads; the conductor merges them (the owner, 2026-11-18). Amends I-411, I-416 and I-763 — amended by I-1714; L36053
 - **I-1350** Connect is `repose attach PROJECT` for every machine; `run` is for making one (connect-attach, 2026-11-18) — L36101
 - **I-1356** `repose say` with no `--agent` picks out of the agents the machine lists, and a trigger's run is told from a window the user named by the run registry, not by the window's name (say-agent-pick, 2026-11-18) — L36121
 - **I-1354** A project made on the dashboard is an empty machine, and its repository is what the laptop's `repose run` looks it up by, not a clone (dash-create, 2026-11-19) — partly amended by I-1602; L36195
@@ -1206,3 +1206,4 @@ pointer, not a summary.
 - **I-1702** The dashboard starts agents: a machine made there starts its agent, the form asks which when the account has none to go by, and a running machine's page has Start agent with Claude Code's Remote Control as an option (sweep-dash, 2026-11-27) — L39839
 - **I-1710** A stop or destroy cut off by a plain hostd restart is neither stored nor sent, as one cut off by a host shutdown is: the api's resend after Hello runs it again on the next hostd, which finishes it; a boot cut off that way is still answered (d2-install, 2026-11-27) — L39848
 - **I-1712** On a Mac a machine resting as a save holds no memory in the commit, the screen lock reads back only the saved machines that fit with room for one more machine, a wake of one the locked Mac cannot read answers at once with what it waits for, MEMORY is what macOS gives up for a machine, and a destroyed machine keeps no clone of its disk (d2-core, review-mac's findings on the shipped build, 2026-11-27) — L39854
+- **I-1714** Agents open their own pull requests with `gh pr create --base integrated --label queued --title ... --body-file ...` and write the title; a `pr-record` check on the PR refuses a body or a title that breaks docs/PR.md; `release-queue` keeps the conductor's half, and `add` stays one release with a required `--title` (queue-prs, 2026-11-27) — L39862

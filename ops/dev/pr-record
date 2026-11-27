@@ -4,7 +4,10 @@
     pr-record parse PR|FILE|-          the record as key=value lines (lists comma-joined)
     pr-record decisions [--all]        every decision id in every open PR, one a line
                                        (--all: closed ones of the last 90 days too)
-    pr-record check PR|FILE|-          exit 1 with what is missing from the body
+    pr-record check [--title TEXT] PR|FILE|-
+                                       exit 1 with what is missing from the body
+                                       (and what is wrong with the title, given one)
+    pr-record title TEXT               exit 1 when the title breaks docs/PR.md's rule
     pr-record render [--branch B] [--commit SHA] [--stack S] [--decisions a,b]
                      [--migrations a,b] [--ships a,b] [--live TEXT] < body.md
                                        the body with its record filled in; a body with
@@ -25,6 +28,11 @@ LISTS = {"decisions", "migrations", "ships"}
 FENCE = re.compile(r"^```record[ \t]*\n(.*?)^```[ \t]*$", re.S | re.M)
 PARTS = ["In depth", "For agents", "Record"]
 ID = re.compile(r"\b(?:I|R)-[0-9]+(?:\.\.(?:I|R)-[0-9]+)?\b")
+# docs/PR.md, "The title", holds this sentence word for word; the queue's
+# test fails when the two differ, so the rule a refusal quotes is the rule.
+TITLE_RULE = ("The title is one line that says what the change does for its user. "
+              "It never starts with STATUS, Merge or WIP.")
+TITLE_BANNED = re.compile(r"^\s*(status|merge|wip)\b", re.I)
 
 
 def die(msg):
@@ -129,6 +137,32 @@ def check(text):
     return faults, rec
 
 
+def title_faults(title):
+    if not title.strip():
+        return ["the title is empty"]
+    if "\n" in title.strip():
+        return ["the title is more than one line"]
+    m = TITLE_BANNED.match(title)
+    if m:
+        return [f"the title starts with {m.group(1)!r}"]
+    return []
+
+
+def report(faults, title_given):
+    for f in faults:
+        print(f"pr-record: {f}", file=sys.stderr)
+    if title_given and any(f.startswith("the title") for f in faults):
+        print(f"pr-record: docs/PR.md: {TITLE_RULE}", file=sys.stderr)
+
+
+def cmd_title(args):
+    if len(args) != 1:
+        die("title: TEXT")
+    faults = title_faults(args[0])
+    report(faults, True)
+    sys.exit(1 if faults else 0)
+
+
 def cmd_parse(args):
     if not args:
         die("parse: PR number, file or -")
@@ -163,11 +197,17 @@ def cmd_decisions(args):
 
 
 def cmd_check(args):
+    title = None
+    if args[:1] == ["--title"]:
+        if len(args) < 2:
+            die("check: --title needs a value")
+        title, args = args[1], args[2:]
     if not args:
         die("check: PR number, file or -")
     faults, _ = check(body_of(args[0]))
-    for f in faults:
-        print(f"pr-record: {f}", file=sys.stderr)
+    if title is not None:
+        faults += title_faults(title)
+    report(faults, title is not None)
     sys.exit(1 if faults else 0)
 
 
@@ -229,7 +269,7 @@ def main():
         print(__doc__)
         sys.exit(2)
     cmd, args = sys.argv[1], sys.argv[2:]
-    {"parse": cmd_parse, "decisions": cmd_decisions, "check": cmd_check, "render": cmd_render}.get(
+    {"parse": cmd_parse, "decisions": cmd_decisions, "check": cmd_check, "title": cmd_title, "render": cmd_render}.get(
         cmd, lambda a: die(f"unknown command {cmd}"))(args)
 
 

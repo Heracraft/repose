@@ -1,0 +1,45 @@
+# Tier-1 pull-request check (DECISIONS I-1714): the body has the shape
+# docs/PR.md gives and the title keeps its rule. Agents open their own
+# pull requests with `gh pr create`, so this is where a malformed one is
+# refused. A few seconds: one sparse checkout and a Python script, no
+# secrets, read-only token.
+#
+# `pull_request`, not `pull_request_target`: a branch in this repository
+# triggers it, and the PR's own code runs with a read-only token. No
+# `branches:` filter, because a stacked PR's base is another PR's branch
+# rather than `integrated`; PRs against main (bump-agents) are skipped.
+# `edited` reruns it when the body or the title changes.
+
+name: pr-record
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  record:
+    name: pull request title and record (docs/PR.md)
+    if: github.base_ref != 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            ops/dev/pr-record
+            docs/PR.md
+          sparse-checkout-cone-mode: false
+      - name: the title and the body keep docs/PR.md's rules
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          printf '%s\n' "$BODY" > "$RUNNER_TEMP/body.md"
+          if ! python3 ops/dev/pr-record check --title "$TITLE" "$RUNNER_TEMP/body.md"; then
+            echo "::error title=docs/PR.md::this pull request breaks docs/PR.md (above); fix it with gh pr edit --title or --body-file"
+            exit 1
+          fi
