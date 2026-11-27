@@ -148,7 +148,7 @@ export const SNAPSHOT: Chart = {
 
 /** 3.3 Memory: what a stopped sandbox, and an idle one, do with the Mac's memory. */
 export const REST = {
-	// An idle sandbox rests by pause on design2 66ee08f2 (d2-runtime-5, I-1666):
+	// An idle sandbox rests by pause on design2 66ee08f2 (d2-runtime-5; decision on branch design2):
 	// its VM process and memory stay, and it is saved to disk (memory back to
 	// macOS) only when macOS is under 25 percent free, which did not happen in
 	// the measured runs (75 percent free), so no save time is on the page.
