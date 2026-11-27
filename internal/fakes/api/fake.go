@@ -194,7 +194,9 @@ type Fake struct {
 	// wakeFails makes POST /internal/wake answer an error, so a gateway
 	// test can see what a failed wake does to a dial (DECISIONS I-818).
 	wakeFails bool
-	// wakes counts POST /internal/wake, for the gateway's dedupe tests.
+	// wakes counts POST /internal/wake, for the gateway's dedupe tests;
+	// userWakes counts POST /projects/:id/wake (I-1682).
+	userWakes int
 	wakes     int
 	sessions  []SessionReport
 	questions []*Question // newest last (DECISIONS I-245)
@@ -767,6 +769,7 @@ func (f *Fake) register() {
 	f.handle("PATCH /v1/projects/{id}", f.patchProject)
 	f.handle("DELETE /v1/projects/{id}", f.destroyProject)
 	f.handle("POST /v1/projects/{id}/start", f.startProject)
+	f.handle("POST /v1/projects/{id}/wake", f.wakeProject)
 	f.handle("POST /v1/projects/{id}/stop", f.stopProject)
 	f.handle(opPattern, f.getOp)
 	f.handle(logPattern, f.opLog)

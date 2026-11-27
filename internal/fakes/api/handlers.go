@@ -2333,6 +2333,31 @@ func (f *Fake) internalWake(w http.ResponseWriter, r *http.Request) *apiError {
 	return nil
 }
 
+// wakeProject is POST /projects/:id/wake (DECISIONS I-1682), the CLI's
+// early wake of a resting machine: as the api's, a machine that is not
+// resting answers was_resting false, and another user's is not found.
+func (f *Fake) wakeProject(w http.ResponseWriter, r *http.Request) *apiError {
+	p, e := f.project(userFrom(r), r.PathValue("id"))
+	if e != nil {
+		return e
+	}
+	f.userWakes++
+	was := p.State == "running" && p.Resting != nil
+	if was && f.wakeFails {
+		return errf("unavailable", "%s did not wake", p.Slug)
+	}
+	p.Resting = nil
+	writeJSON(w, http.StatusOK, map[string]any{"was_resting": was, "wake_ms": 40})
+	return nil
+}
+
+// UserWakes is how many POST /projects/:id/wake the fake has answered.
+func (f *Fake) UserWakes() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.userWakes
+}
+
 func (f *Fake) internalRevoked(w http.ResponseWriter, r *http.Request) *apiError {
 	var since time.Time
 	if s := r.URL.Query().Get("since"); s != "" {
