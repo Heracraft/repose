@@ -2,6 +2,7 @@ package cli
 
 import (
 	"errors"
+	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -25,17 +26,13 @@ func newHostCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	}
 
 	var join, joinFile string
-	// Strings, not ints: an int flag's zero value is also "not given",
-	// and pflag's parse error is Go's sentence (ENG-38, I-1432).
-	var diskArg, memoryArg, cpusArg string
 	add := &cobra.Command{
 		Use:   "add [NAME]",
 		Short: "Add a machine of your own",
-		Long: "Add a machine of yours. On a Mac with Apple silicon this installs repose's\n" +
-			"virtual machine here and starts it: vfkit and the appliance image are\n" +
-			"fetched, the disk file is made, and a launchd job runs `repose host run`\n" +
-			"whenever the Mac boots, before anyone logs in; sudo asks for your password\n" +
-			"once to install it, and without sudo the job runs at your login instead.\n" +
+		Long: "Add a machine of yours. On a Mac with Apple silicon this installs repose\n" +
+			"here and waits for the Mac to join your account: hostd, which starts when\n" +
+			"the Mac boots, before anyone logs in, and runs each machine as a virtual\n" +
+			"machine of its own; sudo asks for your password once to install it.\n" +
 			"Anywhere else it prints, on stdout alone so it pipes, the\n" +
 			"one step to run on the machine being added, which carries a token that\n" +
 			"works once. Without NAME, repose names it.\n\n" +
@@ -46,10 +43,6 @@ func newHostCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			"  pbpaste | repose host add --join -       # the same, from the clipboard",
 		Args: argsN(0, 1, "at most one NAME"),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ao, err := applianceOptionsFrom(diskArg, memoryArg, cpusArg)
-			if err != nil {
-				return err
-			}
 			e, err := env()
 			if err != nil {
 				return err
@@ -66,52 +59,28 @@ func newHostCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 				if err != nil {
 					return err
 				}
-				return applianceInstall(cmd.Context(), e, argument, "", ao)
+				return macHostInstall(cmd.Context(), e, argument, "", joinFile)
 			}
-			return HostAddCmd(cmd.Context(), e, name, ao)
+			return HostAddCmd(cmd.Context(), e, name)
 		},
 	}
 	add.Flags().BoolVar(&g.json, "json", false, "print the host as JSON; the join argument goes to a file, never to the output")
 	add.Flags().StringVar(&join, "join", "", "install on this Mac with the `argument` that repose host add printed elsewhere; `-` reads it from standard input")
 	add.Flags().StringVar(&joinFile, "join-file", "", "install on this Mac with the argument in `PATH`, which keeps it off the command line")
-	add.Flags().StringVar(&diskArg, "disk", "", "the appliance's disk in `GB` (default 100, at least 40, bounded by the volume's free space less 20)")
-	add.Flags().StringVar(&memoryArg, "memory", "", "how much memory the appliance gets, in `MIB` (default three quarters of the Mac's, at least 8192)")
-	add.Flags().StringVar(&cpusArg, "cpus", "", "how many `CORES` the appliance gets (default all but two, at least 4)")
 
+	// `host run` was what design 1's launchd job ran (I-1376). A Mac that
+	// still has that job runs this binary at every boot; it says what to
+	// do once, in the job's log, and waits, rather than fail and be
+	// started again every ten seconds (I-1684).
 	run := &cobra.Command{
-		Use:   "run",
-		Short: "Hold the appliance on this Mac (what launchd runs)",
-		Long: "Run repose's virtual machine on this Mac in the foreground, until it is\n" +
-			"stopped. The launchd job `repose host add` installs runs this when the Mac\n" +
-			"boots, or at your login without sudo. A stop asks the appliance to keep\n" +
-			"every running machine's memory in an encrypted image on its disk and power\n" +
-			"off, and the next run brings\n" +
-			"the machines back where they were; the key for those images is one item\n" +
-			"in your keychain, made the first time it is needed.",
-		Args: noArgs,
+		Use:    "run",
+		Short:  "What design 1's appliance job ran; it no longer runs anything",
+		Hidden: true,
+		Args:   cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			e, err := env()
-			if err != nil {
-				return err
-			}
-			return applianceRun(cmd.Context(), e)
-		},
-	}
-
-	boot := &cobra.Command{
-		Use:   "boot",
-		Short: "Start the appliance on this Mac when it boots, before anyone logs in",
-		Long: "Move the appliance on this Mac from a launchd agent, which starts it at\n" +
-			"your login, to a launchd daemon, which starts it when the Mac boots with\n" +
-			"nobody logged in. It runs as you. sudo asks for your password once. The\n" +
-			"appliance restarts, and the machines on it start fresh.",
-		Args: noArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			e, err := env()
-			if err != nil {
-				return err
-			}
-			return ApplianceBootCmd(e)
+			_, _ = fmt.Fprintln(cmd.ErrOrStderr(), d1LeftLine)
+			<-cmd.Context().Done()
+			return nil
 		},
 	}
 
@@ -145,10 +114,10 @@ func newHostCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		SuggestFor: []string{"delete", "retire"},
 		Short:      "Take your hardware off your account",
 		Long: "Take NAME off your account, after one question. The machines on it stop and\n" +
-			"their snapshots stay on its disk. On the Mac that runs NAME as its appliance,\n" +
-			"the appliance is removed too, disk included; elsewhere the machine itself is\n" +
-			"untouched. --local removes the appliance on this Mac and nothing on your\n" +
-			"account.",
+			"their snapshots stay on its disk. On the Mac that is NAME, repose is removed\n" +
+			"from it too, every machine's disk and snapshot included, and its memory and\n" +
+			"disk are the Mac's again; elsewhere the machine itself is untouched. --local\n" +
+			"removes repose from this Mac and nothing on your account.",
 		Args: argsN(0, 1, "one NAME, or --local"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			e, err := env()
@@ -172,7 +141,7 @@ func newHostCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 					// Refused before the connect, as `repose rm` does.
 					what := name
 					if what == "" {
-						what = "the appliance on this Mac"
+						what = "repose on this Mac"
 					}
 					return exitf(ExitUsage, "Removing %s needs a confirmation; pass --yes to skip it.", what)
 				}
@@ -185,7 +154,7 @@ func newHostCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		},
 	}
 	rm.Flags().BoolVarP(&yes, "yes", "y", false, "skip the confirmation")
-	rm.Flags().BoolVar(&local, "local", false, "remove the appliance on this Mac, disk included, and nothing on your account; on a Linux host, print the installer's uninstall line")
+	rm.Flags().BoolVar(&local, "local", false, "remove repose from this Mac, every machine's disk included, and nothing on your account; on a Linux host, print the installer's uninstall line")
 
 	var restartYes, restartForce bool
 	restart := &cobra.Command{
@@ -193,7 +162,7 @@ func newHostCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		Short: "Restart this Mac, keeping every machine's memory",
 		Long: "Park every machine on this Mac, each one's memory saved to a file, then\n" +
 			"restart the Mac; when you log in again the machines come back where they\n" +
-			"were. For a Mac whose machines run without the appliance. A machine that\n" +
+			"were. A machine that\n" +
 			"cannot be parked stops the restart, and the parked ones run again;\n" +
 			"--force restarts anyway, and those machines start fresh.",
 		Args: noArgs,
@@ -220,7 +189,7 @@ func newHostCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	restart.Flags().BoolVarP(&restartYes, "yes", "y", false, "skip the confirmation")
 	restart.Flags().BoolVar(&restartForce, "force", false, "restart even if a machine could not be parked; it starts fresh")
 
-	root.AddCommand(add, run, boot, list, rm, restart)
+	root.AddCommand(add, run, list, rm, restart)
 	bareRuns(root, list)
 	return root
 }

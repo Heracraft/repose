@@ -64,7 +64,7 @@ func TestJoinArgumentOffTheCommandLine(t *testing.T) {
 // not put the key in argv either: it is the sentence most likely to be
 // copied, and it was `repose host add --join <the key>`.
 func TestFetchFailureTellsThemTheSafeForm(t *testing.T) {
-	msg := applianceFetchFailed("The appliance image", errTestFetch{}, encodeTokenBundle("rjt_a_live_key"), "mac-mini")
+	msg := macInstallFailed("repose for this Mac", errTestFetch{}, "/Users/dev/.config/repose/join-mac-mini", "mac-mini")
 	if strings.Contains(msg, "--join ey") || strings.Contains(msg, "--join rjt_") {
 		t.Fatalf("the failure line puts the argument in argv:\n%s", msg)
 	}
