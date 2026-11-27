@@ -1325,7 +1325,7 @@ const attachTTYGuard = `[ -t 0 ] || { echo 'Attaching needs a terminal, and this
 const (
 	gatewayResting  = " is resting and wakes once you "
 	gatewayOffline  = " is on a host the control plane cannot reach right now"
-	gatewayNotReady = "environment is not accepting connections yet"
+	gatewayNotReady = " is not accepting connections yet"
 )
 
 // errHostOffline is an ssh the gateway refused because the machine's host
