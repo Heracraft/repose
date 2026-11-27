@@ -47,8 +47,35 @@ func (m *Manager) restPause(ctx context.Context, g *state.Guest, sock string) er
 	if m.d.RestBySave == nil || !m.d.RestBySave(ctx, g.GuestID) {
 		return nil
 	}
+	if m.d.RestSaveAfter > 0 && (m.d.MemoryTight == nil || !m.d.MemoryTight()) {
+		// The first step of the rest: a pause. SaveRests saves it once
+		// it has rested RestSaveAfter, or at once when macOS is short.
+		return nil
+	}
+	m.dropCleanCache(ctx, g, sock)
 	m.saveRest(ctx, g, sock)
 	return nil
+}
+
+// dropCleanCache asks a paused guest's kernel to drop its clean page
+// cache before a save, so the save holds what the guest uses and not the
+// files a build read (images of 1.1-2.2 GB and restores of 9-31 s after
+// builds, d2-lab 2026-11-27): the VM is resumed for the call and paused
+// again. Best effort; a guest that does not answer is saved as it is.
+func (m *Manager) dropCleanCache(ctx context.Context, g *state.Guest, sock string) {
+	if err := m.d.CH.Resume(ctx, sock); err != nil {
+		return
+	}
+	if sess, err := m.session(g.GuestID); err == nil {
+		dctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		if r, err := sess.Exec(dctx, []string{"/bin/sh", "-c", "sync; echo 1 > /proc/sys/vm/drop_caches"}, 10, ""); err != nil || r.ExitCode != 0 {
+			m.log(g).Warn("page cache not dropped before the rest save", "event", "guest_resting")
+		}
+		cancel()
+	}
+	if err := m.d.CH.Pause(ctx, sock); err != nil {
+		m.log(g).Warn("guest not paused again after dropping its page cache", "event", "guest_resting", "err", err.Error())
+	}
 }
 
 // saveRest saves a paused guest to restDir and ends its hypervisor,
@@ -214,9 +241,13 @@ func (m *Manager) SaveRests(ctx context.Context) int {
 	if err != nil {
 		return 0
 	}
+	tight := m.d.MemoryTight != nil && m.d.MemoryTight()
 	n := 0
 	for _, g := range gs {
 		if g.Resting == nil || g.State != StateRunning || m.restSaved(g) || !m.d.RestBySave(ctx, g.GuestID) {
+			continue
+		}
+		if !tight && m.d.RestSaveAfter > 0 && m.d.Now().Sub(g.Resting.Since) < m.d.RestSaveAfter {
 			continue
 		}
 		id := g.GuestID
@@ -224,7 +255,9 @@ func (m *Manager) SaveRests(ctx context.Context) int {
 		l.Lock()
 		cur, err := m.getGuest(id)
 		if err == nil && cur.Resting != nil && cur.State == StateRunning && !m.restSaved(cur) && m.unitRunning(ctx, cur) {
-			if m.saveRest(ctx, cur, ch.APISocket(m.guestDir(id))) {
+			sock := ch.APISocket(m.guestDir(id))
+			m.dropCleanCache(ctx, cur, sock)
+			if m.saveRest(ctx, cur, sock) {
 				n++
 			}
 		}
