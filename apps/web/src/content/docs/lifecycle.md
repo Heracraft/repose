@@ -123,7 +123,7 @@ A running machine nobody is using has its cores paused after about 15 minutes of
 
 Its state is still `running`, and nothing is ended: every process, open file and socket stays as it was, and its memory is untouched, so [what it holds against your plan](#unused-machines) doesn't change. On [your own Mac](/docs/own-hardware#what-fits-on-a-mac) a frozen machine's memory is saved to an encrypted file instead, so the Mac gets that memory back, and the wake reads it back.
 
-Anything that reaches the machine wakes it first, and that first connection takes a second or two: `attach`, `run`, `ssh`, `code`, your editor, a forwarded port, the dashboard's **Browser** tab, a [secret](/docs/secrets) you set, a configuration change, a [webhook delivery](/docs/webhooks), a [scheduled job](/docs/machine#scheduled-jobs) on the machine coming due.
+Anything that reaches the machine wakes it first, and that first connection takes a second or two (on [your own Mac](/docs/own-hardware#what-fits-on-a-mac), under a second for the first half hour of rest, then longer, because the machine's memory is read back from disk): `attach`, `run`, `ssh`, `code`, your editor, a forwarded port, the dashboard's **Browser** tab, a [secret](/docs/secrets) you set, a configuration change, a [webhook delivery](/docs/webhooks), a [scheduled job](/docs/machine#scheduled-jobs) on the machine coming due.
 
 The machine's clock keeps time while it's frozen, so nothing of yours sees it jump. What a program does see is that time passed with none of its own code running: anything whose deadline fell inside the frozen stretch runs at the wake instead, late by the time the machine was away. A [scheduled job](/docs/machine#scheduled-jobs) is the exception, because a job coming due wakes the machine for it.
 
@@ -177,7 +177,7 @@ Destroying todo-app.
 
 `repose rm` deletes the machine and its disk. The command returns once the destroy is under way; the project reads `destroying` until it's gone.
 
-A machine whose host is gone (your own host removed, or a server repose has marked lost) is destroyed at once, without the host, and a `repose rm` that failed while the host was not answering finishes on its own once the host is marked gone. No final snapshot is taken. A snapshot your own host kept goes with that host, and `repose ls --destroyed` shows it as `gone with host NAME`. A snapshot repose stored is kept, as for any destroy.
+A machine whose host is gone (your own host removed, or a server repose has marked lost) is destroyed at once, without the host, and a `repose rm` that failed while the host was not answering finishes on its own once the host is marked gone. No final snapshot is taken. A snapshot your own host kept goes with that host, and `repose ls --destroyed` shows it as `gone with removed host NAME`. A snapshot repose stored is kept, as for any destroy.
 
 Within 30 days, bring it back, running, with its size, its configuration and its git remote, so your checkout finds it again:
 

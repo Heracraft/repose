@@ -672,7 +672,10 @@ keeps it only from a host an account owns.
 Resting (DECISIONS I-818). A resting guest's sample keeps `guestd_ok`
 **true** and repeats the last guest-written figures (`signals`,
 `guest_mem_used_bytes`, `root_used_bytes`, `root_size_bytes`), with
-`resting` set and `state` still `running`. hostd asks a paused guest for
+`resting` set and `state` still `running`. A guest resting as a save on a
+Mac (its VM ended) sends `guest_mem_used_bytes` 0 instead: it holds none of
+the Mac's memory, and the api then sends no `mem_used_bytes` (I-1690
+amendment). hostd asks a paused guest for
 nothing: a `Sample` into it would wait out its own 10 s, in series,
 against a 60 s tick. This one rule is what keeps four other things
 honest: the api's unused notice (which reads `not guestd_ok` as use),

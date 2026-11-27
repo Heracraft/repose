@@ -113,11 +113,13 @@ func newHostCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		Aliases:    []string{"remove"},
 		SuggestFor: []string{"delete", "retire"},
 		Short:      "Take your hardware off your account",
-		Long: "Take NAME off your account, after one question. The machines on it stop and\n" +
-			"their snapshots stay on its disk. On the Mac that is NAME, repose is removed\n" +
-			"from it too, every machine's disk and snapshot included, and its memory and\n" +
-			"disk are the Mac's again; elsewhere the machine itself is untouched. --local\n" +
-			"removes repose from this Mac and nothing on your account.",
+		Long: "Take NAME off your account, after one question, which names how many\n" +
+			"snapshots it keeps: removing it deletes them, and repose has no copy. A host\n" +
+			"that is answering and still holds machines is refused, with their names. On\n" +
+			"the Mac that is NAME, repose is removed from it too, every machine's disk\n" +
+			"included, and its memory and disk are the Mac's again; elsewhere the machine\n" +
+			"itself is untouched. --local removes repose from this Mac and nothing on your\n" +
+			"account.",
 		Args: argsN(0, 1, "one NAME, or --local"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			e, err := env()
@@ -175,7 +177,7 @@ func newHostCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 				if !canPrompt(os.Stdin) {
 					return exitf(ExitUsage, "Restarting this Mac needs a confirmation; pass --yes to skip it.")
 				}
-				ok, err := askYesNo(cmd.Context(), "Restart this Mac? Its machines keep their memory.", false, "restarting")
+				ok, err := askYesNo(cmd.Context(), "Restart this Mac? Its machines keep their memory; save your work in its own apps first, since it may restart without waiting for them.", false, "restarting")
 				if err != nil {
 					return err
 				}

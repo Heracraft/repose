@@ -263,3 +263,48 @@ test('a machine a Mac started smaller says so on its page', async ({ page }) => 
 		await removeOwnedHosts(api).catch(() => {});
 	}
 });
+
+// review-dash P3 #8 and P2 #4: a sized-down start shows in the header and
+// the list row too, and a Mac machine resting as a save says its memory
+// is given back rather than repeating its last figure.
+test('a Mac machine shows its smaller start in the header and row, and memory given back at rest', async ({
+	page
+}) => {
+	const api = apiURLFromEnv();
+	await removeOwnedHosts(api);
+	const hostID = await ownedHost({ name: 'mac-mini' });
+	const p = await createProject(api, {
+		name: 'rest-app',
+		remote_url: 'github.com/heracraft/rest-app'
+	});
+	try {
+		await ownedHost({ project_id: p.id, host_id: hostID });
+		const G = 1024 * 1024 * 1024;
+		await fakeAdmin('/vm', {
+			project_id: p.id,
+			vcpus: 2,
+			mem_bytes: 4 * G,
+			full_vcpus: 5,
+			full_mem_bytes: 8 * G
+		});
+		await page.goto(`/projects/${p.id}`);
+		await expect(page.getByTestId('project-sized-down')).toHaveText(
+			'started at 2 of 5 vCPUs · 4 GB of 8 GB'
+		);
+		await shots(page, 'sized-down-header');
+		await page.goto('/projects');
+		const row = page
+			.locator('table.ptable tbody tr')
+			.filter({ has: page.getByRole('link', { name: p.name, exact: true }) });
+		await expect(row.getByTestId('row-sized-down')).toHaveText(
+			'started at 2 of 5 vCPUs · 4 GB of 8 GB'
+		);
+		await fakeAdmin('/resting', { project_id: p.id, minutes: 40, saved: true });
+		await page.goto(`/projects/${p.id}`);
+		await expect(page.getByTestId('memory-given-back')).toContainText('given back while it rests');
+		await shots(page, 'rest-given-back');
+	} finally {
+		await destroyProject(api, p.id).catch(() => {});
+		await removeOwnedHosts(api).catch(() => {});
+	}
+});

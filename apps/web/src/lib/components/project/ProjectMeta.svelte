@@ -6,7 +6,7 @@
 	import type { Project } from '$lib/api/types';
 	import StateDot from '$lib/components/StateDot.svelte';
 	import { frozenSince } from '$lib/frozen';
-	import { notAnsweringSince, parkedText, restingWaitText } from '$lib/answering';
+	import { notAnsweringSince, parkedText, restingWaitText, sizedDownShort } from '$lib/answering';
 	import { onMount } from 'svelte';
 	import { clock } from '$lib/clock.svelte';
 	import {
@@ -76,6 +76,13 @@
 				{#if sizeText(project)}
 					<span aria-hidden="true">·</span>
 					<span data-testid="project-used">{sizeText(project)}</span>
+				{/if}
+				{#if sizedDownShort(project)}
+					<!-- Started smaller than its size on a Mac (I-1680), in the
+					     header too, so it is seen above the fold at 390
+					     (review-dash P3 #8). -->
+					<span aria-hidden="true">·</span>
+					<span data-testid="project-sized-down">started at {sizedDownShort(project)}</span>
 				{/if}
 			{:else}
 				<span aria-hidden="true">·</span>

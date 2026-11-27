@@ -78,7 +78,7 @@
 	}
 
 	function expiry(s: Snapshot): string {
-		if (s.gone_with_host) return `gone with host ${s.gone_with_host}`;
+		if (s.gone_with_host) return `gone with removed host ${s.gone_with_host}`;
 		if (!s.expires_at) return 'kept';
 		const left = timeUntil(s.expires_at);
 		return left ? `in ${left}` : 'expired';

@@ -390,4 +390,13 @@ func TestLockedMacSaysWhatTheMachineWaitsFor(t *testing.T) {
 	if got := out.buf.String(); !strings.Contains(got, "todo-app: parked; it waits for you to unlock mac-mini, and its memory is kept.\n") || strings.Contains(got, "log in") {
 		t.Fatalf("repose ls parked:\n%s", got)
 	}
+	// Parked by a restart through repose while the Mac reboots.
+	fake.SetWaitsFor(p.ID, "restart")
+	out.buf.Reset()
+	if err := ProjectsCmd(ctx, e); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.buf.String(); !strings.Contains(got, "todo-app: parked; mac-mini is restarting, and its memory is kept.\n") {
+		t.Fatalf("repose ls parked, restarting:\n%s", got)
+	}
 }

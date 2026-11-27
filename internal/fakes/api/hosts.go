@@ -111,7 +111,10 @@ type OwnedHost struct {
 	Snapshots int `json:"snapshots"`
 	// CanRestart is a host that parks its machines before a restart, so
 	// the dashboard offers Restart (I-1690).
-	CanRestart      bool       `json:"can_restart,omitempty"`
+	CanRestart bool `json:"can_restart,omitempty"`
+	// RestartingSince is set while the host restarts through repose
+	// (I-1690 amendment).
+	RestartingSince *time.Time `json:"restarting_since,omitempty"`
 	LastHeartbeatAt *time.Time `json:"last_heartbeat_at,omitempty"`
 	RegisteredAt    *time.Time `json:"registered_at,omitempty"`
 	CreatedAt       time.Time  `json:"created_at"`

@@ -4,6 +4,7 @@ import {
 	notAnsweringText,
 	parkedText,
 	restingWaitText,
+	sizedDownShort,
 	sizedDownText
 } from './answering';
 import { bytes } from './format';
@@ -124,5 +125,26 @@ describe('waits for the unlock (I-1682)', () => {
 		expect(restingWaitText({ state: 'running', resting: { since: '2026-11-27T03:00:00Z' } })).toBe(
 			''
 		);
+	});
+});
+
+describe('review-dash fixes (I-1690 amendment)', () => {
+	const G = 1024 * 1024 * 1024;
+	it('a machine parked by a restart through repose says its host is restarting', () => {
+		expect(
+			parkedText({
+				state: 'running',
+				host_name: 'mac-mini',
+				parked: { since: '2026-11-27T10:15:30Z', waits_for: 'restart' }
+			})
+		).toBe('Parked: mac-mini is restarting; its memory is kept');
+	});
+	it('a sized-down start has a short form for the header and the row', () => {
+		expect(
+			sizedDownShort({
+				state: 'running',
+				vm: { vcpus: 2, mem_bytes: 4 * G, full_vcpus: 5, full_mem_bytes: 8 * G, sized_down: true }
+			})
+		).toBe('2 of 5 vCPUs · 4 GB of 8 GB');
 	});
 });

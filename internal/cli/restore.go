@@ -428,7 +428,7 @@ func destroyedCells(d DestroyedProject) (until, destroyed, snap, size string) {
 		until = d.RestorableUntil.Local().Format("2006-01-02")
 	}
 	if d.GoneWithHost != nil {
-		until = "gone with host " + *d.GoneWithHost
+		until = "gone with removed host " + *d.GoneWithHost
 	}
 	return until, d.DestroyedAt.Local().Format("2006-01-02 15:04"), d.Snapshot.CreatedAt.Local().Format("2006-01-02 15:04"), humanBytes(d.Snapshot.Bytes)
 }

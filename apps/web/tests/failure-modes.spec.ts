@@ -229,9 +229,9 @@ test('a 5xx from the api shows the persistent bar, which clears once the api rec
 		// The strip sits in the page's column: the short page still ends at
 		// the window's foot, footer included (review r4).
 		expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBe(900);
-		await expect(
-			page.getByText('Could not load projects. The API failed; try again.')
-		).toHaveCount(1);
+		await expect(page.getByText('Could not load projects. The API failed; try again.')).toHaveCount(
+			1
+		);
 	} finally {
 		await unfail('GET', '/projects');
 	}

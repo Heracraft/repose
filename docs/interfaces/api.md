@@ -92,6 +92,7 @@ Host { id, name, state, provider?, arch?, mem_bytes, vcpus, cores,
        projects, running_projects, snapshots?, last_heartbeat_at?, registered_at?,
        free_mem_bytes?, running_limit?,          -- GET, a ready host that shares (I-1654)
        can_restart?,                             -- GET, true on a host whose hostd parks before a restart (I-1690)
+       restarting_since?,                        -- GET, while a restart through repose is under way (I-1690 amendment)
        created_at,
        join_token?, join_token_expires_at?,     -- the POST answer only
        install?: {command, argument, url} }     -- the POST answer only
@@ -117,7 +118,13 @@ memory, which is what the dashboard's list shows.
 
 `can_restart` (I-1690, GET only) is `true` on a host whose hostd names
 `restart` in its features (a Mac without the appliance) and absent
-otherwise: `POST /hosts/{id}/restart` takes it.
+otherwise: `POST /hosts/{id}/restart` takes it. `restarting_since`
+(I-1690 amendment, GET only) is when a `host_restart` op of that host
+ended `done` with `restarting` true, within the last 15 minutes, while
+none of the host's machines has sent a sample since (10 s after it); on
+each running machine there whose newest sample is older, `Project.parked`
+is `{since, waits_for: "restart"}` meanwhile. A client that does not
+know `"restart"` reads it as `"login"`, the older words.
 
 `free_mem_bytes` and `running_limit` (I-1654, GET only) are present on a
 `ready` host whose hostd shares it (I-1630): `free_mem_bytes` is the
@@ -313,7 +320,8 @@ Mac's user to log in (hostd's `parked_waiting_since`, sent only by hostd
 on a Mac without the appliance, where Virtualization.framework restores a
 save file only in the user's unlocked session, I-1662): `since` is when it
 was parked, `waits_for` is `login`, or `unlock` when the Mac's user is
-logged in with the screen locked (I-1682). Its memory is kept and it runs again
+logged in with the screen locked (I-1682), or `restart` while a restart
+through repose is under way (I-1690 amendment, see `restarting_since`). Its memory is kept and it runs again
 at the login, so it is never `not_answering` though its guestd is silent,
 the `not_answering` event is not raised, and `POST /projects/:id/start`
 answers `409 conflict` as for any running machine, never the restart a

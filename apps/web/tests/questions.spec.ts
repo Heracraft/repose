@@ -590,7 +590,9 @@ test('long questions on /questions wrap and expand on mobile and desktop without
 	await page.route(/\/questions\?state=pending$/, (route) =>
 		route.fulfill({ json: { questions: pending } })
 	);
-	await page.route(/\/questions\?state=all$/, (route) => route.fulfill({ json: { questions: all } }));
+	await page.route(/\/questions\?state=all$/, (route) =>
+		route.fulfill({ json: { questions: all } })
+	);
 
 	const shotsDir = process.env.REPOSE_SHOTS_DIR;
 
@@ -613,7 +615,9 @@ test('long questions on /questions wrap and expand on mobile and desktop without
 		expect(waitingExpanded).toBeGreaterThan(waitingClip.h);
 
 		// Answered: no hover-only title, no horizontal clipping, expands via Show all.
-		const ansRow = page.getByTestId('answered').locator('[data-qid="00000000-0000-4000-8000-000000000202"]');
+		const ansRow = page
+			.getByTestId('answered')
+			.locator('[data-qid="00000000-0000-4000-8000-000000000202"]');
 		const ansText = ansRow.getByTestId('answered-text');
 		await expect(ansText).toBeVisible();
 		await expect(ansText).not.toHaveAttribute('title', /.*/);
