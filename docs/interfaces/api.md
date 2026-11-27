@@ -76,7 +76,7 @@ unique; it is the second half of the SSH login name.
 A host the user owns is a machine of their own that joined their account:
 their projects run on it and nobody else's ever does, and it is outside
 the seat count, the waitlist and the host gauges, because repose did not
-buy it. These three routes are the whole of it; the hosts repose runs are
+buy it. These routes are the whole of it; the hosts repose runs are
 the operator's (`repose-admin hosts`) and appear on none of them.
 
 | Method | Path | Body / result |
@@ -84,11 +84,14 @@ the operator's (`repose-admin hosts`) and appear on none of them.
 | GET | `/hosts` | `[Host]`, oldest first: the hosts this account owns. A host repose runs is never listed, and neither is another account's, so an empty list is the answer for almost every account |
 | POST | `/hosts` | `{name?}`, or no body at all, which is the same as no name → `201`, the `Host` plus `join_token`, `join_token_expires_at` and `install`: the one answer that carries the token, as a minted API token is. `name` matches `[a-z0-9][a-z0-9-]{0,31}` and is free among this account's hosts; without it the api names the host `host-1`, `host-2`, … in the account, and the caller never invents a name. The token is single-use and valid 24 hours, the same token `repose-admin hosts add` mints, and the host trades it for its identity with `Register` (`grpc-hostd.md`) |
 | DELETE | `/hosts/{id}` | `204`: the host is drained and retired, its certificate serials and its unused join token cleared so it cannot come back on them, and a machine that is still dialling is refused. A host that still holds live machines is `409 conflict` `host_has_projects` with their slugs, **unless its state is `unreachable` or `lost`**, where it is retired with them still on it (I-1420): a destroy's phases are skipped only for `lost` and `retired` (I-924), so refusing left an account unable to remove the host, unable to destroy the machines and unable to add a replacement against the plan's one slot. The machines are not destroyed, and every `repose rm` on them then drains to no phases; what is lost is said at the client's confirmation, not here. Already retired answers `204` too, so a repeated remove is not an error. The row stays, so `GET /hosts` still lists it as `retired`; `repose host ls` and the dashboard leave a removed host out, because it is not hardware the user has. It also clears `last_error` on the account's machines that are in `error`, hold no host and failed on `capacity`: a placement that found no host of the account's own frees the machine and leaves its sentence on the row, so without this "your host mac-mini has not registered yet" outlives the host and the dashboard names hardware the user no longer has. The ops keep the history, and the next start says what is true then |
+| POST | `/hosts/{id}/restart` | `{force?}`, or no body → `202 {op_id}` (added with I-1690): a `host_restart` op whose one phase is hostd's `RestartHost` (`grpc-hostd.md`): every machine on the host is parked with its memory, then the host restarts, and the machines run again at its user's next login. Only for a host whose `can_restart` is true. A `host_restart` op already pending or running for the host is answered with its `op_id`, so a second press is the same restart. Refusals: `404 not_found` for a host that is not the account's; `409 conflict` `detail.reason = "host_not_ready"` (with `detail.state`) for a host that is not `ready` or is being removed; `409 conflict` `detail.reason = "restart_unsupported"` for a host whose hostd does not name `restart`. The op ends `done` with `result {parked, not_parked: [slug], restarting: true, park_ms}` when the host restarts (with `force`, `not_parked` names the machines that start fresh), and `error` with `code` `not_parked` when a machine could not be parked and `force` was false: its `message` names them by slug, its `result` has them in `not_parked`, nothing restarted and the parked machines run again |
+| GET | `/hosts/{id}/ops/{op_id}` | an op of one of the account's hosts, in the shape of `GET /projects/:id/ops/:op_id` without the long-poll fields (`{op_id, kind, state, created_at, finished_at, error?: {code, message, detail?}, result?}`); `404 not_found` for a host or op that is not the account's (added with I-1690) |
 
 ```
 Host { id, name, state, provider?, arch?, mem_bytes, vcpus, cores,
        projects, running_projects, snapshots?, last_heartbeat_at?, registered_at?,
        free_mem_bytes?, running_limit?,          -- GET, a ready host that shares (I-1654)
+       can_restart?,                             -- GET, true on a host whose hostd parks before a restart (I-1690)
        created_at,
        join_token?, join_token_expires_at?,     -- the POST answer only
        install?: {command, argument, url} }     -- the POST answer only
@@ -111,6 +114,10 @@ registers; `arch` is the CPU architecture it reported (`x86_64`,
 `/nix/store/...` closure path. `projects` counts the account's live projects
 placed on it and `running_projects` those of them in a state that holds
 memory, which is what the dashboard's list shows.
+
+`can_restart` (I-1690, GET only) is `true` on a host whose hostd names
+`restart` in its features (a Mac without the appliance) and absent
+otherwise: `POST /hosts/{id}/restart` takes it.
 
 `free_mem_bytes` and `running_limit` (I-1654, GET only) are present on a
 `ready` host whose hostd shares it (I-1630): `free_mem_bytes` is the

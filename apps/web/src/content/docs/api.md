@@ -37,7 +37,7 @@ A token has a name, one or more scopes, a project or all of them, and an end: 30
 
 A token bound to one project sees that project alone: `GET /projects` lists only it, and a call on another project, or on an account route other than `GET /me`, `GET /catalog` and `GET /projects`, is refused.
 
-No token reaches your account, billing, SSH, the browser view, other tokens, or adding and removing a host of your own. Those take a login.
+No token reaches your account, billing, SSH, the browser view, other tokens, or adding, removing and restarting a host of your own. Those take a login.
 
 ## Call the API
 
@@ -88,6 +88,7 @@ The scope each route needs. `:id` is a project's id, which `GET /projects` lists
 | `GET /projects/:id/route`                        | `read`                                                                        |
 | `GET /catalog`                                   | `read`                                                                        |
 | `GET /hosts`                                     | `read` (the hosts you own)                                                    |
+| `GET /hosts/:id/ops/:op_id`                      | `read` (a restart of a host you own)                                          |
 | `POST /projects`                                 | `projects`                                                                    |
 | `PATCH /projects/:id`                            | `projects`                                                                    |
 | `DELETE /projects/:id`                           | `projects`                                                                    |

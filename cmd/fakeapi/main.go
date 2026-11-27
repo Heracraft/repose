@@ -222,6 +222,11 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 			// MemUsedBytes, with project_id, is what that running
 			// machine reports in use (I-1632).
 			MemUsedBytes int64 `json:"mem_used_bytes"`
+			// Restart, with state_host, makes that host one that parks
+			// its machines and restarts (I-1690); NotParked are the
+			// slugs its next restart cannot park.
+			Restart   *bool    `json:"restart"`
+			NotParked []string `json:"not_parked"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -244,6 +249,9 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 		}
 		if body.StateHost != "" && body.OldHostd != nil {
 			f.SetOwnedHostOldHostd(body.StateHost, *body.OldHostd)
+		}
+		if body.StateHost != "" && body.Restart != nil {
+			f.SetOwnedHostRestart(body.StateHost, *body.Restart, body.NotParked)
 		}
 		if body.StateHost != "" && body.FreeBytes != nil {
 			f.SetOwnedHostFree(body.StateHost, *body.FreeBytes)

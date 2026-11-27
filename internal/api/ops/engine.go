@@ -724,6 +724,14 @@ func (e *Engine) advance(ctx context.Context, op *store.Op) {
 		}
 		ph := currentPhase(op)
 		if err := e.onResult(ctx, op, ph, res); err != nil {
+			// A result hostd answered ok that still ends the op with
+			// the user's reason (a host restart refused because a
+			// machine could not be parked, I-1690).
+			var re *resultRefusal
+			if errors.As(err, &re) {
+				e.fail(ctx, op, re.code, re.msg)
+				return
+			}
 			log.Error("result handling failed", "event", "op_fail", "phase", ph, "err", err.Error())
 			e.fail(ctx, op, "internal", "result handling failed: "+err.Error())
 			return
