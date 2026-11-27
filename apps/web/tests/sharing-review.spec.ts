@@ -245,6 +245,9 @@ test('a machine a Mac started smaller says so on its page', async ({ page }) => 
 		await expect(page.getByTestId('sized-down')).toHaveText(
 			'Runs with 2 vCPUs and 3.9 GB of its 5 and 8 GB: the machines running beside it held the rest when it started. A start after one of them stops gives it all.'
 		);
+		// Its memory is drawn against what the VM got, not the Mac's.
+		await expect(page.getByTestId('machine-card')).toContainText('of 3.9 GB');
+		await expect(page.getByTestId('machine-card')).not.toContainText("mac-mini's");
 		await shots(page, 'sized-down-page');
 		await fakeAdmin('/vm', {
 			project_id: p.id,
