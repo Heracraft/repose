@@ -34,5 +34,19 @@ export function sizedDownText(p: Pick<Project, 'state' | 'vm'>): string {
  * log in (I-1672): its memory is kept, so nothing here offers a restart. */
 export function parkedText(p: Pick<Project, 'state' | 'parked' | 'host_name'>): string {
 	if (p.state !== 'running' || !p.parked) return '';
-	return `Parked: waits for you to log in to ${p.host_name || 'its Mac'}; its memory is kept`;
+	const mac = p.host_name || 'its Mac';
+	// A Mac that is logged in but locked waits for the unlock (I-1682).
+	if (p.parked.waits_for === 'unlock')
+		return `Parked: waits for you to unlock ${mac}; its memory is kept`;
+	return `Parked: waits for you to log in to ${mac}; its memory is kept`;
+}
+
+/** The words for a machine resting as a save that its locked Mac cannot
+ * read (I-1682): it wakes at the unlock, not at a connection. */
+export function restingWaitText(p: Pick<Project, 'state' | 'resting' | 'host_name'>): string {
+	if (p.state !== 'running' || !p.resting?.waits_for) return '';
+	const mac = p.host_name || 'its Mac';
+	if (p.resting.waits_for === 'login')
+		return `Resting: wakes once you log in to ${mac}; its memory is kept`;
+	return `Resting: wakes once you unlock ${mac}; its memory is kept`;
 }

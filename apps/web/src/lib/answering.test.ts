@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { notAnsweringSince, notAnsweringText, parkedText, sizedDownText } from './answering';
+import {
+	notAnsweringSince,
+	notAnsweringText,
+	parkedText,
+	restingWaitText,
+	sizedDownText
+} from './answering';
 import { bytes } from './format';
 
 describe('notAnswering (I-1652)', () => {
@@ -94,5 +100,29 @@ describe('sizedDownText (I-1680)', () => {
 		expect(sizedDownText({ state: 'running', vm })).toBe('');
 		expect(sizedDownText({ state: 'stopped', vm: { ...vm, sized_down: true } })).toBe('');
 		expect(sizedDownText({ state: 'running' })).toBe('');
+	});
+});
+
+describe('waits for the unlock (I-1682)', () => {
+	it('a parked machine on a locked Mac waits for the unlock', () => {
+		expect(
+			parkedText({
+				state: 'running',
+				host_name: 'mac-mini',
+				parked: { since: '2026-11-27T03:00:00Z', waits_for: 'unlock' }
+			})
+		).toBe('Parked: waits for you to unlock mac-mini; its memory is kept');
+	});
+	it('a machine resting as a save says what wakes it, and nothing otherwise', () => {
+		expect(
+			restingWaitText({
+				state: 'running',
+				host_name: 'mac-mini',
+				resting: { since: '2026-11-27T03:00:00Z', waits_for: 'unlock' }
+			})
+		).toBe('Resting: wakes once you unlock mac-mini; its memory is kept');
+		expect(restingWaitText({ state: 'running', resting: { since: '2026-11-27T03:00:00Z' } })).toBe(
+			''
+		);
 	});
 });

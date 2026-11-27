@@ -120,10 +120,12 @@
 		const state = frozenSince(p)
 			? 'frozen'
 			: parkedText(p)
-				? 'parked, waiting for your login'
+				? p.parked?.waits_for === 'unlock'
+					? 'parked, waiting for you to unlock'
+					: 'parked, waiting for your login'
 				: notAnsweringSince(p)
-				? 'running, not answering'
-				: p.state;
+					? 'running, not answering'
+					: p.state;
 		return `${p.name}, ${state}${asks ? ', waiting on you' : ''}`;
 	}
 

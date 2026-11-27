@@ -301,7 +301,12 @@ export interface Project {
 	 * are stopped and every process is held (I-818). A marker on
 	 * `running`, never a state of its own; the word a reader sees is
 	 * "frozen" (I-683). */
-	resting?: { since: string } | null;
+	resting?: {
+		since: string;
+		/** On a Mac, a machine resting as a save that the locked Mac cannot
+		 * read: it wakes once its user unlocks it (I-1682). */
+		waits_for?: 'unlock' | 'login';
+	} | null;
 	/** Set while a running machine's guestd has not answered for about
 	 * three minutes (I-1652): hung, its memory full or its kernel stuck.
 	 * A Start restarts it, which loses what is in its memory. */

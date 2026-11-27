@@ -6,7 +6,7 @@
 	import type { Project } from '$lib/api/types';
 	import StateDot from '$lib/components/StateDot.svelte';
 	import { frozenSince } from '$lib/frozen';
-	import { notAnsweringSince, parkedText } from '$lib/answering';
+	import { notAnsweringSince, parkedText, restingWaitText } from '$lib/answering';
 	import { onMount } from 'svelte';
 	import { clock } from '$lib/clock.svelte';
 	import {
@@ -60,6 +60,10 @@
 	     I-485). -->
 		{#if frozen}
 			<span class="status-frozen" data-testid="frozen">{sinceLabel(frozen, 'for', clock.now)}</span>
+		{/if}
+		{#if restingWaitText(project)}
+			<!-- Resting as a save a locked Mac cannot read (I-1682). -->
+			<span data-testid="resting-waits">{restingWaitText(project)}</span>
 		{/if}
 		{#if parkedText(project)}
 			<!-- Parked on a Mac, waiting for its user to log in (I-1672). -->
