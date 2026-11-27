@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1168 entries.
+1169 entries.
 
 ## Scope
 
@@ -1184,7 +1184,7 @@ pointer, not a summary.
 - **I-1654** The customer review's other fixes on the api, CLI, dashboard and docs side of sharing on owned hosts (review-fixes, sharing program, 2026-11-26) — amended by I-1658; partly amended by I-1692; L39619
 - **I-1658** The dashboard's second customer pass on sharing: Create waits while the form says the host is full, a machine on a host the account owns counts no plan memory under Running, the memory stop reads as the CLI says it, and a machine that is not answering says so in the header, the sidebar and Hosts, from when it last answered (review-fixes-2, sharing program, 2026-11-26) — L39631
 - **I-1660** After every boot of a guest reaches running, hostd asks guestd to grow the root filesystem to its volume, so a disk grown while the machine was stopped is filled out at the next start; every host, the fleet's too (host, sharing program, 2026-11-26) — L39641
-- **I-1662** Virtualization.framework saves and restores a running repose guest with every device repose uses; the spike's "save kills the guest" was the missing login session, because VZ encrypts each save file with a Secure Enclave key of the logged-in user; a restore needs that user's session unlocked, and neither works as root (d2-arch, design 2 program, 2026-11-26) — L39647
+- **I-1662** Virtualization.framework saves and restores a running repose guest with every device repose uses; the spike's "save kills the guest" was the missing login session, because VZ encrypts each save file with a Secure Enclave key of the logged-in user; a restore needs that user's session unlocked, and neither works as root (d2-arch, design 2 program, 2026-11-26) — partly amended by I-1694; L39647
 - **I-1664** On a Mac, hostd keeps its Linux code and gets a second substrate behind the same interfaces: repose-vm runs each VM from the Cloud Hypervisor argv hostd already renders and answers Cloud Hypervisor's API and hybrid vsock, each VM is a launchd job of its own in the user's GUI session, and each volume is an APFS file with clones for snapshots (d2-runtime, design 2 program, 2026-11-26) — L39655
 - **I-1666** On a Mac the guest park is VZ's save file: hostd's existing park code drives it through repose-vm's `vm.snapshot` and `--restore`, the image is a plain directory, the key the park records protects nothing, and hostd waits for the user's unlocked session before it restores a parked machine (d2-runtime, design 2 program, 2026-11-26) — partly amended by I-1680; partly amended by I-1682; partly amended by I-1690; partly amended by I-1688; L39665
 - **I-1668** On macOS hostd's guest network is a gVisor netstack in hostd's own process, one NIC per guest fed by the VM's file-handle attachment, with today's egress rules as checks on every frame a guest sends, its policer and shaper as token buckets and its counters under today's names; it implements `hnet.Net`, so the guest manager is unchanged (d2-net, design 2 program, 2026-11-26) — L39702
@@ -1200,3 +1200,4 @@ pointer, not a summary.
 - **I-1690** A Mac without the appliance restarts from the dashboard as `repose host restart` restarts it on the Mac: a host op through the api, hostd's `RestartHost`, every machine parked before the Mac goes down (d2-surface, design 2 build, 2026-11-27) — L39788
 - **I-1688** hostd's darwin paths are tested against vzfake, a stand-in for the Mac's launcher that answers Cloud Hypervisor's API with repose-vm's bodies and refuses what Virtualization.framework refuses, through hostd's real client; a restore VZ refuses because the session cannot restore at that moment holds the machine for the unlock instead of throwing its image away; and a macOS CI job runs the darwin Go tests and builds the launcher (d2-int, design 2 build, 2026-11-27) — L39796
 - **I-1692** The api reads a Mac without the appliance as what it is, not as D1's nested Mac: no `running_limit` for it, so the dashboard's New project form never holds Create at D1's count (d2-surface, design 2 build, 2026-11-27) — L39806
+- **I-1694** Design 2 is built for customers and replaces design 1 on the Mac, with no migration; idle machines on a Mac give their memory back by rest by save (conductor, design 2 build, 2026-11-27) — L39815
