@@ -601,7 +601,7 @@ type Deps struct {
 	// hypervisor unit's own memory is not it (a Mac: the VZ process's
 	// footprint, DECISIONS I-1712); samples report it as mem_rss_bytes,
 	// 0 for a guest resting as a save. Nil keeps the unit's memory.
-	HeldBytes func(ctx context.Context, id string) (uint64, bool)
+	HeldBytes   func(ctx context.Context, id string) (uint64, bool)
 	MemoryTight func() bool
 	// SessionState is the Mac user's session: SessionUnlocked,
 	// SessionLocked or SessionNone, for what a guest resting as a save or
