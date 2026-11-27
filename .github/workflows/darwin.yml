@@ -44,8 +44,19 @@ jobs:
           codesign -d --entitlements - "$RUNNER_TEMP/repose-vm" 2>&1 | grep -q com.apple.security.virtualization
       - run: go build ./cmd/hostd ./cmd/repose
       - run: go vet ./internal/hostd/... ./cmd/hostd ./internal/parkkey/...
-      - run: go test -race -p 2 -timeout 30m ./internal/hostd/... ./cmd/hostd ./internal/parkkey/...
+      - name: go test -race, every darwin hostd package but the network
         if: ${{ !cancelled() }}
+        run: |
+          go list ./internal/hostd/... | grep -v '/unet$' > "$RUNNER_TEMP/pkgs"
+          xargs go test -race -p 2 -timeout 30m ./cmd/hostd ./internal/parkkey/... < "$RUNNER_TEMP/pkgs"
+      # The userspace network without -race: on this 3-core runner the race
+      # detector under gVisor and wireguard-go missed four different timing
+      # bounds across five runs (UDP reply, flow rate, SMTP counter, edge
+      # wake), each green without it. Its race coverage is ci.yml's Linux
+      # run, where the same package passes under -race.
+      - name: go test internal/hostd/unet
+        if: ${{ !cancelled() }}
+        run: go test -count=1 -timeout 15m ./internal/hostd/unet
       # The CLI as a Mac user runs it: its laptop side (host add, rm and
       # restart on a Mac, the installer and updater, login and the Keychain,
       # config, ssh certificates, versions, the docs guard). The rest of
