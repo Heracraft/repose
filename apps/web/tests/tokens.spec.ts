@@ -3,7 +3,9 @@
 // two-step the Secrets tab uses. The token reaches the DOM once, in the
 // dialog, and never in the list.
 import { test, expect, type Page } from '@playwright/test';
-import { signIn, createProject, apiURLFromEnv, failNext } from './helpers';
+import { signIn, createProject, apiURLFromEnv, failNext, cleanSlate } from './helpers';
+
+cleanSlate();
 
 async function shots(page: Page, name: string): Promise<void> {
 	const dir = process.env.REPOSE_SHOTS_DIR;

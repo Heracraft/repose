@@ -350,9 +350,9 @@ one section per batch and release from 2026-11-11 to 2026-11-18.
   api work. Logto's token endpoint answers 403 to Python's default
   User-Agent; the tool sends its own.
 - **The queue is the pull requests since I-1352** (`docs/PR.md`): agents
-  queue with `release-queue add --body pr.md`, which pushes the branch and
-  opens a PR against `integrated`; `RQ_PR_OFF=1` keeps the old local
-  entry. A batch cut by the old script does not unlabel its PR when
+  push the branch and open the PR themselves, `gh pr create --base
+  integrated --label queued --title ... --body-file pr.md` (I-1714);
+  `RQ_PR_OFF=1` keeps the conductor's tool on the local entries. A batch cut by the old script does not unlabel its PR when
   `done` pushes `integrated`; take `queued` off by hand.
 - **Never record a check's exit through a pipe.** `cmd | tail -1; echo
   $?` records tail's exit; a red eslint and a failed build hid behind it

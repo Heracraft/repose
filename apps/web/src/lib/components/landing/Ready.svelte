@@ -57,8 +57,8 @@
 		<div class="extras">
 			<p class="copy">
 				Every machine runs Ubuntu 24.04. <code>repose run</code> installs your laptop's global npm,
-				Go, Cargo and uv tools in the background when a machine boots. Add a database from the menu,
-				or any apt package, with <code>repose config add</code>.
+				Go, Cargo and uv tools in the background when a machine boots. Anything else is an
+				<code>apt-get install</code> away, for you or the agent.
 			</p>
 		</div>
 	</div>

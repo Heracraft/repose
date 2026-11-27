@@ -2,6 +2,9 @@
 // The owner cut the Ubuntu spec from the page (direction.md A4), so the hero
 // no longer names it.
 import { test, expect } from '@playwright/test';
+import { cleanSlate } from './helpers';
+
+cleanSlate();
 
 test('the landing page makes no Nix claim and shows no spec label in the hero', async ({
 	page

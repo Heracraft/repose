@@ -4,7 +4,9 @@
 // I-1110 put these under Webhooks on Config; I-1360 moved them here,
 // because a route and a webhook trigger are one door with two receivers.
 import { test, expect, type Page } from '@playwright/test';
-import { signIn, createProject, apiURLFromEnv } from './helpers';
+import { signIn, createProject, apiURLFromEnv, cleanSlate } from './helpers';
+
+cleanSlate();
 
 /** The viewport at 1440 and 390 in both schemes, as triggers.spec.ts shoots. */
 async function shots(page: Page, name: string): Promise<void> {
@@ -161,4 +163,40 @@ test('a trigger and a forwarding route share the list and the count', async ({ p
 	await expect(section.getByRole('cell', { name: /^an agent/ })).toHaveCount(1);
 	await expect(section.getByRole('cell', { name: /^your app/ })).toHaveCount(1);
 	await shots(page, 'triggers-mixed');
+});
+
+// ENG-56: a route's row opens on its last 20 deliveries, as `repose
+// webhooks url --json` lists them, not the one the row shows.
+test('a forwarding route opens on its last deliveries', async ({ page }) => {
+	const api = apiURLFromEnv();
+	const p = await createProject(api, {
+		name: 'hooks-deliveries',
+		remote_url: 'github.com/heracraft/hooks-deliveries'
+	});
+	await fetch(`${api}/projects/${p.id}/webhooks`, {
+		method: 'POST',
+		headers: { Authorization: 'Bearer playwright', 'Content-Type': 'application/json' },
+		body: JSON.stringify({ name: 'stripe', target: '4242', allow_start: false })
+	});
+	const admin = process.env.FAKEAPI_ADMIN_URL!;
+	await fetch(`${admin}/webhook-deliveries`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({
+			project_id: p.id,
+			name: 'stripe',
+			deliveries: Array.from({ length: 22 }, (_, i) => ({
+				status: i === 21 ? 502 : 200,
+				outcome: i === 21 ? 'upstream_error' : 'delivered',
+				minutes_ago: 60 - i
+			}))
+		})
+	});
+	await page.goto(`/projects/${p.id}/triggers`);
+	const section = page.locator('#triggers');
+	await section.getByRole('button', { name: 'stripe', exact: true }).click();
+	const list = section.getByTestId('deliveries');
+	await expect(list.locator('li')).toHaveCount(20);
+	await expect(list.locator('li').first()).toContainText('502');
+	await expect(list.locator('li').first()).toContainText('upstream_error');
 });

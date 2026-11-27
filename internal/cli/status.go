@@ -384,6 +384,9 @@ func writeProjectsTableHere(w io.Writer, projects []Project, here string, own ma
 		if l := parkedLine(p); l != "" {
 			_, _ = fmt.Fprintf(w, "%s: %s\n", p.Slug, l)
 		}
+		if l := waitingStateLine(p); l != "" {
+			_, _ = fmt.Fprintf(w, "%s: %s\n", p.Slug, l)
+		}
 		if l := sizedDownLine(p); l != "" {
 			_, _ = fmt.Fprintf(w, "%s: %s\n", p.Slug, l)
 		}
@@ -564,6 +567,9 @@ func writeStatus(w io.Writer, v statusView) {
 		_, _ = fmt.Fprintf(w, "  %s\n", withNext(r, ""))
 	}
 	running := p.State == "running"
+	if l := waitingStateLine(p); l != "" {
+		_, _ = fmt.Fprintf(w, "  %s\n", l)
+	}
 	if l := sizedDownLine(p); l != "" {
 		_, _ = fmt.Fprintf(w, "  %s\n", l)
 	}

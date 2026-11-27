@@ -5,6 +5,9 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/heracraft/repose/internal/api/hostmgr"
 	httpapi "github.com/heracraft/repose/internal/api/http"
@@ -207,13 +210,18 @@ func TestCreateWithSeveralOwnHosts(t *testing.T) {
 	if _, err := e.h.Pool.Exec(ctx, "update hosts set state = 'unreachable', last_heartbeat_at = now() - interval '14 minutes' where owner_account_id = $1 and name = 'e2e-x86-2'", uid); err != nil {
 		t.Fatal(err)
 	}
+	// A host that can still join is waited for (I-1700); one whose token
+	// expired cannot, so the create is refused and names both.
+	if _, err := e.h.Pool.Exec(ctx, "update hosts set join_token_expires_at = now() - interval '1 minute' where owner_account_id = $1 and name = 'e2e-x86-1'", uid); err != nil {
+		t.Fatal(err)
+	}
 	r := e.do(t, tok, "POST", "/projects", map[string]any{"name": "todo-app", "class": "small"})
 	d := detailOf(t, r)
 	if r.status != 503 || d["reason"] != "no_own_host" || d["host"] != "e2e-x86-1" || d["host_state"] != "registering" {
 		t.Fatalf("both hosts down: %d %s, want 503 no_own_host naming e2e-x86-1 first", r.status, r.raw)
 	}
 	msg, _ := r.body["error"].(map[string]any)["message"].(string)
-	if want := "none of your hosts can take a small machine (4 GB): e2e-x86-1 has not registered yet; e2e-x86-2 has not answered for 14m"; msg != want {
+	if want := "none of your hosts can take a small machine (4 GB): e2e-x86-1 never finished installing; e2e-x86-2 has not answered for 14m"; msg != want {
 		t.Fatalf("message %q, want %q", msg, want)
 	}
 
@@ -617,6 +625,10 @@ func TestHostAddPeersTheHubBeforeRegistration(t *testing.T) {
 // yet stranded one project in `error` per attempt. The way out the
 // refusal names, `placement: "hosted"`, then makes the project on
 // repose's own host.
+//
+// Since I-1700 a host that can still join is waited for instead
+// (TestCreateWaitsForAnInstallingHost); the refusal stands for one that
+// cannot, a host whose join token expired before it joined.
 func TestCreateRefusedBeforeTheRowIsWritten(t *testing.T) {
 	e := newEnv(t)
 	ctx := e.h.Ctx
@@ -624,6 +636,9 @@ func TestCreateRefusedBeforeTheRowIsWritten(t *testing.T) {
 	uid := e.exempt(t, "sub-mac")
 	if r := e.do(t, tok, "POST", "/hosts", map[string]any{"name": "mac-mini"}); r.status != 201 {
 		t.Fatalf("add: %d %s", r.status, r.raw)
+	}
+	if _, err := e.h.Pool.Exec(ctx, "update hosts set join_token_expires_at = now() - interval '1 minute' where owner_account_id = $1", uid); err != nil {
+		t.Fatal(err)
 	}
 	rows := func() int {
 		var n int
@@ -638,7 +653,7 @@ func TestCreateRefusedBeforeTheRowIsWritten(t *testing.T) {
 		if r.status != 503 || d["reason"] != "no_own_host" || d["host"] != "mac-mini" || d["host_state"] != "registering" || d["hosted_allowed"] != true {
 			t.Fatalf("attempt %d while the host waits: %d %s, want 503 capacity no_own_host for mac-mini", attempt, r.status, r.raw)
 		}
-		if msg, _ := r.body["error"].(map[string]any)["message"].(string); !strings.Contains(msg, "your host mac-mini has not registered yet") {
+		if msg, _ := r.body["error"].(map[string]any)["message"].(string); msg != "your host mac-mini never finished installing, and its join token has expired; `repose host rm mac-mini` and `repose host add` start over" {
 			t.Fatalf("attempt %d: message %q does not name the host and its state", attempt, msg)
 		}
 		if n := rows(); n != 0 {
@@ -987,5 +1002,115 @@ func TestStartRefusedOnAFullOwnHostNamesTheFigure(t *testing.T) {
 	if op.State != "error" || !strings.HasPrefix(msg, "your host "+name+" has ") ||
 		!strings.Contains(msg, " GB of memory free for machines, and a small machine needs 4.5 GB there. A machine holds its memory while it runs") {
 		t.Fatalf("start op %s %v, want the host's name and figures", op.State, op.Error)
+	}
+}
+
+// TestCreateWaitsForAnInstallingHost is ENG-131 (DECISIONS I-1700): a
+// create whose only destination is a host of the account's own that is
+// still installing is written with no host and waits for it, with
+// `waiting_for_host` naming the host and what the caller said it is; the
+// machine is made there once it registers. Removing the host, or its
+// join token expiring, ends the wait: the create fails, the project goes
+// (I-1648), and a read says why it was not created. A destroy while it
+// waits ends the create and goes ahead.
+func TestCreateWaitsForAnInstallingHost(t *testing.T) {
+	e := newEnv(t)
+	ctx := e.h.Ctx
+	tok := e.signIn(t, "sub-mac", "mac")
+	uid := e.exempt(t, "sub-mac")
+
+	// The harness's host stands in for the Mac: the account's own, and
+	// not registered yet, with a token still good.
+	var registeredAt *time.Time
+	if err := e.h.Pool.QueryRow(ctx, "select registered_at from hosts where id = $1", e.h.HostID).Scan(&registeredAt); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.h.Pool.Exec(ctx, `update hosts set owner_account_id = $1, name = 'mac-mini', provider = 'mac', state = 'registering',
+		registered_at = null, join_token_hash = 'pending', join_token_expires_at = now() + interval '1 hour' where id = $2`, uid, e.h.HostID); err != nil {
+		t.Fatal(err)
+	}
+	r := e.do(t, tok, "POST", "/projects", map[string]any{"name": "todo-app", "class": "small"})
+	if r.status != 201 || r.body["state"] != "creating" || r.body["host_id"] != nil {
+		t.Fatalf("create while mac-mini installs: %d %s, want 201 creating with no host", r.status, r.raw)
+	}
+	if w, _ := r.body["waiting_for_host"].(map[string]any); w["name"] != "mac-mini" || w["provider"] != "mac" {
+		t.Fatalf("waiting_for_host %v, want mac-mini, mac", r.body["waiting_for_host"])
+	}
+	pid := r.body["id"].(string)
+	opID := uuid.MustParse(r.body["op_id"].(string))
+	time.Sleep(1500 * time.Millisecond) // several engine ticks
+	if op, err := store.GetOp(ctx, e.h.Pool, opID); err != nil || (op.State != "pending" && op.State != "running") {
+		t.Fatalf("the waiting create: %+v %v, want it open", op, err)
+	}
+	if g := e.do(t, tok, "GET", "/projects/"+pid, nil); g.body["state"] != "creating" || g.body["waiting_for_host"] == nil {
+		t.Fatalf("read while it waits: %s", g.raw)
+	}
+	// The Mac registers: the machine is made there.
+	if _, err := e.h.Pool.Exec(ctx, "update hosts set state = 'ready', registered_at = $2, join_token_hash = null where id = $1", e.h.HostID, registeredAt); err != nil {
+		t.Fatal(err)
+	}
+	e.h.Engine.Kick()
+	if op := e.h.WaitOp(opID); op.State != "done" {
+		t.Fatalf("create after the host registered: %s %+v", op.State, op.Error)
+	}
+	if g := e.do(t, tok, "GET", "/projects/"+pid, nil); g.body["state"] != "running" || g.body["host_id"] != e.h.HostID.String() || g.body["waiting_for_host"] != nil {
+		t.Fatalf("after: %s, want running on %s", g.raw, e.h.HostID)
+	}
+
+	// A second Mac that never makes it: removed, or its token runs out.
+	for _, c := range []struct {
+		name, why string
+		end       func(hostID string)
+	}{
+		{"studio", "your host studio was removed before it finished installing", func(hostID string) {
+			if d := e.do(t, tok, "DELETE", "/hosts/"+hostID, nil); d.status != 204 {
+				t.Fatalf("remove: %d %s", d.status, d.raw)
+			}
+		}},
+		{"air", "your host air did not finish installing within 24 hours of `repose host add`", func(hostID string) {
+			if _, err := e.h.Pool.Exec(ctx, "update hosts set join_token_expires_at = now() - interval '1 second' where id = $1", hostID); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	} {
+		h := e.do(t, tok, "POST", "/hosts", map[string]any{"name": c.name})
+		if h.status != 201 {
+			t.Fatalf("add %s: %d %s", c.name, h.status, h.raw)
+		}
+		hostID := h.body["id"].(string)
+		r := e.do(t, tok, "POST", "/projects", map[string]any{"name": "on-" + c.name, "class": "small", "host": c.name})
+		if r.status != 201 || r.body["waiting_for_host"] == nil {
+			t.Fatalf("create on %s: %d %s, want it to wait", c.name, r.status, r.raw)
+		}
+		c.end(hostID)
+		e.h.Engine.Kick()
+		op := e.waitOp(t, r)
+		if op.State != "error" || op.Error["code"] != "capacity" || op.Error["message"] != c.why {
+			t.Fatalf("%s: op %s %+v, want capacity %q", c.name, op.State, op.Error, c.why)
+		}
+		g := e.do(t, tok, "GET", "/projects/"+r.body["id"].(string), nil)
+		if msg, _ := g.body["error"].(map[string]any)["message"].(string); g.status != 404 || !strings.Contains(msg, "was not created: "+c.why) {
+			t.Fatalf("%s: read after: %d %s", c.name, g.status, g.raw)
+		}
+	}
+
+	// A destroy while it waits is not refused behind the create.
+	if h := e.do(t, tok, "POST", "/hosts", map[string]any{"name": "mini-2"}); h.status != 201 {
+		t.Fatalf("add mini-2: %d %s", h.status, h.raw)
+	}
+	r = e.do(t, tok, "POST", "/projects", map[string]any{"name": "notes", "class": "small", "host": "mini-2"})
+	if r.status != 201 || r.body["waiting_for_host"] == nil {
+		t.Fatalf("create on mini-2: %d %s", r.status, r.raw)
+	}
+	waiting := uuid.MustParse(r.body["op_id"].(string))
+	d := e.do(t, tok, "DELETE", "/projects/"+r.body["id"].(string), nil)
+	if d.status != 202 {
+		t.Fatalf("destroy while it waits: %d %s, want 202", d.status, d.raw)
+	}
+	if op := e.waitOp(t, d); op.State != "done" {
+		t.Fatalf("destroy: %s %+v", op.State, op.Error)
+	}
+	if op, err := store.GetOp(ctx, e.h.Pool, waiting); err != nil || op.State != "error" || op.Error["code"] != "cancelled" {
+		t.Fatalf("the waiting create after the destroy: %+v %v", op, err)
 	}
 }

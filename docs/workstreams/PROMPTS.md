@@ -181,8 +181,7 @@ Rules:
   variables, secret values, tokens, certificate bodies, or email.
 - Trust the reader (CLAUDE.md, DECISIONS I-484, I-485): CLI output that
   worked says what happened and stops; docs, copy and emails give only
-  help the reader asked for. `just done-check` and `release-queue add`
-  run the guards.
+  help the reader asked for. `just done-check` runs the guards.
 - Run `just done-check` and `just lint` before reporting. Finish with a
   report listing every checklist item and its evidence, then what is not
   done and why.
@@ -438,7 +437,8 @@ lab and destroys it when you say the day is done). Run phase 3 with
 19f's builder. Then launch the council (`/ws 19-council`), fix P0 and
 P1 by relaunching builders with the findings, run the council again,
 and when its P0 list is empty write the PR body per docs/PR.md and
-`release-queue add` the mac-mini branch. Never push main, never merge
+open its PR with `gh pr create --base integrated --label queued --title
+"<what it does for its user>" --body-file <file>`. Never push main, never merge
 a PR, never allocate a Mac yourself. Keep STATUS.md current for the
 program as a whole; each builder keeps its own line.
 ```

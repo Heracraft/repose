@@ -31,32 +31,34 @@ the part between "a branch is done" and "it is live".
    dense numbering (DECISIONS I-760).
 4. Finish the change with the evidence its checklist names. Write the
    pull request body in the shape `docs/PR.md` gives (five sentences on
-   what changes, three lines of why, the two folded parts; the record is
-   filled by the tool) into a file. Then commit, `git merge main`, rerun
-   the checks the merge touches, and queue:
+   what changes, three lines of why, the two folded parts, the record)
+   into a file. Then commit, `git merge main`, rerun the checks the merge
+   touches (`just done-check` runs the trust-the-reader and
+   docs/agent-guide guards, DECISIONS I-242, I-243, I-484, I-485, I-1456;
+   a branch that changes the CLI also runs `ops/dev/release-assets --cli
+   none --install none --guest none --hostd none`, I-1398), push the
+   branch and open its pull request yourself:
 
    ```
-   ops/dev/release-queue add --body pr.md --live "repose start of a stopped e2e project: under 12 s"
+   git push -u origin HEAD
+   gh pr create --base integrated --label queued \
+     --title "repose start of a stopped project takes under 12 s" --body-file pr.md
    ```
 
-   `add` pushes the branch and opens its pull request against
-   `integrated`, labelled `queued` and `ships:<target>` for each target,
-   with the record filled in; a later `add` updates the same PR and its
-   body (`--body` again, or the body it has). A branch that builds on a
-   queued branch not yet merged stacks on it: `add --on <that branch>`
-   makes that PR the base, and GitHub moves the base to `integrated`
-   when it merges. From a box with no `gh` the entry is local to that
-   machine and the conductor fetches the branch by hand (DECISIONS
-   I-1352).
+   The title is one line that says what the change does for its user; it
+   never starts with STATUS, Merge or WIP (`docs/PR.md`, "The title"). The
+   `pr-record` check on the PR refuses a body or a title that breaks
+   `docs/PR.md`, and names the rule. A later push updates the same PR;
+   `gh pr edit --body-file` changes its body. A branch that builds on a
+   queued branch not yet merged stacks on it: `--base <that branch>`, and
+   GitHub moves the base to `integrated` when it merges. The conductor
+   reads what the branch ships as from its diff (below); an agent sets no
+   `ships:` label. From a box with no `gh` the conductor fetches the
+   branch by hand (DECISIONS I-1352, I-1714).
 
-   `add` refuses a body that fails `ops/dev/pr-record check`, a dirty tree, a branch whose CLI output or web text
-   fails the trust-the-reader and docs/agent-guide guards (DECISIONS I-242, I-243, I-484, I-485, I-1456; it runs
-   them for a branch that ships as `cli` or `web`), a branch with nothing
-   the integration tip lacks, and a branch that conflicts with the tip
-   anywhere but `docs/DECISIONS-INDEX.md`. It records the commit, so later
-   commits need another `add`; that works while the branch is in a cut too,
-   and the conductor takes the new commits with `resume` or in the next
-   cut. It prints what the branch ships as (below).
+   `ops/dev/release-queue add` still works for one release, with a
+   required `--title`, for sessions that were told to use it; it prints
+   the `gh pr create` line and goes in the next release.
 
    The **integration tip** is the newest integrated commit the branch was
    cut from, not `refs/heads/main`: the merge-base of `HEAD` with each of
@@ -76,8 +78,8 @@ the part between "a branch is done" and "it is live".
    publish a base or switch a host. The conductor merges; nobody asks the
    owner to merge a pull request unless the owner says so for that one.
    If the conductor sends the branch back, the PR loses `queued` and the
-   reason is a comment on it: make the change on the same branch and
-   `add` again. `ops/dev/release-queue inbox` is where a message about
+   reason is a comment on it: make the change on the same branch, push,
+   and put the label back (`gh pr edit <n> --add-label queued`). `ops/dev/release-queue inbox` is where a message about
    this branch arrives on this machine; `ls` marks an entry that has one
    unread.
 
@@ -90,8 +92,7 @@ whether its commit is in this clone.
 DECISIONS I-1352), so a branch queued on any machine with `gh` is in the
 one queue; `ls` and `cut` read the PRs first and keep this clone's
 entries as the record under them. The entries are one machine's: with
-no `gh` (a repose guest) `add` writes an entry here and nowhere else, and
-the conductor takes that branch by fetching it. The cross-machine
+no `gh` (a repose guest) the conductor takes a branch by fetching it. The cross-machine
 question is `ops/dev/release-queue where <branch>`, which answers from
 refs and the PR:
 the local entry, else the merge commit `cut` wrote, else the branch's own
@@ -104,8 +105,9 @@ reads like unfinished work (DECISIONS I-760).
 
 ## What a branch ships as
 
-`add` reads the branch's diff against main and names the deploy targets it
-reaches. Go packages count through `go list -deps`: a change to
+`ls` and `cut` read a queued PR's diff against `integrated` and name the
+deploy targets it reaches, once per commit (a PR that carries `ships:`
+labels, which the compatibility `add` sets, keeps them). Go packages count through `go list -deps`: a change to
 `internal/obs` reaches every server binary but not the CLI. A non-Go
 file under `cmd/` or `internal/` (an embedded email template, a
 migration) counts as a change to the nearest package above it, so an
@@ -132,10 +134,12 @@ could not reach (DECISIONS I-759):
   now the only thing keeping those gates honest, so it is a row in the
   verification below;
 - a package whose changed Go files are all `_test.go` reaches no binary;
-- `base`, `host` and `edge` are confirmed against the built systems.
-  `add` runs `ops/dev/closure-equiv.py` for each and drops the ones whose
-  system does not change, which takes about three seconds each.
-  `REPOSE_QUEUE_FAST=1` skips it and the entry records `exact=no`; a box
+- `base`, `host` and `edge` are confirmed against the built systems by
+  the compatibility `add`, which runs `ops/dev/closure-equiv.py` for each
+  and drops the ones whose system does not change, about three seconds
+  each. A PR read from its diff is not compared: its entry records
+  `exact=no`, and the comparison below is run by hand before a switch or
+  a base publish. `REPOSE_QUEUE_FAST=1` skips it and the entry records `exact=no`; a box
   with no nix, which is every repose guest, does the same. A comparison
   that fails keeps the target. A comparison that answers `none` for a
   branch that touches `nix/` is the one answer nothing else catches: it
@@ -222,7 +226,7 @@ nothing is lost by waiting. This was written after the release of
      `TestEveryDocsPageNamesRealCommands`, `TestEveryYesHasY` and the agent-guide parity tests, which is
      how a page shipped a flag the CLI does not have past two sessions'
      checks on 2026-11-20; `-run 'TestDocs'` does not match a name that
-     merely contains `Docs`; `just fast-check` and `release-queue add` run this same selector, DECISIONS I-1456); the
+     merely contains `Docs`; `just fast-check` and the compatibility `release-queue add` run this same selector, DECISIONS I-1456); the
      `docs/CHECKLIST.md` greps; `ops/dev/release-assets`, which prints
      `200` for every URL the CLI fetches on a customer's machine (the
      Mac bundle the batch pins with its signed manifest (I-1686), the latest
@@ -304,11 +308,11 @@ nothing is lost by waiting. This was written after the release of
    `0036_*.sql`. Before a cut with several branches: `for b in <queued>; do git
    ls-tree -r --name-only $b | grep migrations/; done` and renumber in the
    branch (with every reference: the down file's comment, `db-schema.md`,
-   the decision entry), then `add` again.
+   the decision entry), then push it again.
 
    **A branch finished on kanali** (its queue is frozen, I-763): `git fetch
    kanali.repose:kanali '+refs/heads/<b>:refs/remotes/kanali/<b>'`, `git branch
-   <b> kanali/<b>`, a worktree, then `ops/dev/release-queue add` from it.
+   <b> kanali/<b>`, a worktree, then push it and `gh pr create` from it.
 
 5. **Move main, locally.** Read every result first. Never chain the
    fast-forward onto a check (`grep ... && git merge --ff-only ...`): a grep
@@ -322,7 +326,7 @@ nothing is lost by waiting. This was written after the release of
    `queued` off it and leaves the batch name as a comment. Do not push
    `main`. `ls` now lists those branches as `on-main` and ends with what
    the next release ships as. Tell each agent its branch is on main, so
-   it merges main before its next `add`.
+   it merges main before its next push.
 
 ## For the conductor: releasing
 

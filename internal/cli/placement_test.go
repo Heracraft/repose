@@ -58,13 +58,74 @@ func TestRunHostChoosesWhereTheMachineIsMade(t *testing.T) {
 	}
 }
 
-// TestCreateRefusedWhileOwnHostWaitsNamesTheWayOut is the P0 of
-// 2026-11-19 (ENG-28, ENG-67): a customer whose Mac has not finished
-// installing could create a project nowhere. The create is refused with
-// the api's sentence about their host, nothing is stranded, the refusal
-// names `--host repose`, and that flag makes the machine on repose's
-// servers.
-func TestCreateRefusedWhileOwnHostWaitsNamesTheWayOut(t *testing.T) {
+// TestCreateWaitsWhileOwnHostInstalls is ENG-131 (DECISIONS I-1700): a
+// customer whose Mac has not finished installing gets a project that
+// waits for it, not a refusal. `repose run` says so once, in the owner's
+// words, `repose ls` says it under the table, and the machine starts on
+// the Mac once it registers.
+func TestCreateWaitsWhileOwnHostInstalls(t *testing.T) {
+	ctx := context.Background()
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	f := newRunFixture(t, fake)
+	e, _, errOut := freshEnv(f.env, f.local)
+	mac := fake.AddOwnedHost("mac-mini")
+	fake.SetOwnedHostState("mac-mini", "registering")
+
+	done := make(chan error, 1)
+	go func() { done <- runRun(ctx, e, RunOptions{Name: "todo-app", NoSync: true, NoAttach: true}, false) }()
+	const want = "Waiting for your Mac (mac-mini) to finish installing. This project starts there when it's ready.\n"
+	stderr := func() string {
+		errOut.mu.Lock()
+		defer errOut.mu.Unlock()
+		return errOut.buf.String()
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for !strings.Contains(stderr(), want) {
+		select {
+		case err := <-done:
+			t.Fatalf("run ended while the Mac installs: %v (stderr %q)", err, stderr())
+		default:
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no wait line; stderr %q", stderr())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if n := strings.Count(stderr(), "Waiting for"); n != 1 {
+		t.Fatalf("the wait line %d times: %q", n, stderr())
+	}
+	p := bySlug(listed(t, e), "todo-app")
+	if p == nil || p.State != "creating" || p.HostID != "" {
+		t.Fatalf("while it waits: %+v", p)
+	}
+	var b strings.Builder
+	writeProjectsTableHere(&b, []Project{*p}, "", nil)
+	if !strings.Contains(b.String(), "todo-app: waiting for your Mac (mac-mini) to finish installing; it starts there when it's ready.\n") {
+		t.Fatalf("repose ls while it waits:\n%s", b.String())
+	}
+
+	fake.SetOwnedHostState("mac-mini", "ready")
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("run after the Mac registered: %v (stderr %q)", err, stderr())
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("run still waits after the Mac registered")
+	}
+	if p := bySlug(listed(t, e), "todo-app"); p == nil || p.State != "running" || p.HostID != mac {
+		t.Fatalf("after the Mac registered: %+v", p)
+	}
+}
+
+// TestCreateRefusedWhileOwnHostCannotJoinNamesTheWayOut is the P0 of
+// 2026-11-19 (ENG-28, ENG-67) where it still holds after I-1700: a host
+// that has not registered and can no longer join (its token expired)
+// is no place to wait, so the create is refused with the api's sentence
+// about the host, nothing is stranded, the refusal names `--host
+// repose`, and that flag makes the machine on repose's servers.
+func TestCreateRefusedWhileOwnHostCannotJoinNamesTheWayOut(t *testing.T) {
 	ctx := context.Background()
 	fake := fakeapi.New(fakeapi.Options{})
 	defer fake.Close()
@@ -72,10 +133,11 @@ func TestCreateRefusedWhileOwnHostWaitsNamesTheWayOut(t *testing.T) {
 	e, _, _ := freshEnv(f.env, f.local)
 	fake.AddOwnedHost("mac-mini")
 	fake.SetOwnedHostState("mac-mini", "registering")
+	fake.ExpireJoinToken("mac-mini")
 
 	for attempt := 1; attempt <= 2; attempt++ {
 		err := runRun(ctx, e, RunOptions{Name: "todo-app", NoSync: true, NoAttach: true}, false)
-		want := "your host mac-mini has not registered yet. `repose run --host repose` makes it on repose's servers instead."
+		want := "your host mac-mini never finished installing, and its join token has expired; `repose host rm mac-mini` and `repose host add` start over."
 		if exitCodeOf(err) != ExitCapacity || err.Error() != want {
 			t.Fatalf("attempt %d: %v, want exit 8 with %q", attempt, err, want)
 		}
@@ -87,15 +149,37 @@ func TestCreateRefusedWhileOwnHostWaitsNamesTheWayOut(t *testing.T) {
 		t.Fatal(err)
 	}
 	if p := bySlug(listed(t, e), "todo-app"); p == nil || p.State != "running" || p.Placement != "hosted" {
-		t.Fatalf("--host repose while the Mac waits: %+v", p)
+		t.Fatalf("--host repose while the Mac cannot join: %+v", p)
 	}
 
 	// A plan that sells no memory on repose's servers has no way out to
 	// name: the sentence stands alone.
 	fake.SetHostLimit(1)
 	err := runRun(ctx, e, RunOptions{Name: "api", NoSync: true, NoAttach: true}, false)
-	if exitCodeOf(err) != ExitCapacity || err.Error() != "your host mac-mini has not registered yet." {
+	if exitCodeOf(err) != ExitCapacity || err.Error() != "your host mac-mini never finished installing, and its join token has expired; `repose host rm mac-mini` and `repose host add` start over." {
 		t.Fatalf("own hardware plan: %v", err)
+	}
+}
+
+// TestWaitingLineNamesTheKindOfHost: the api keeps the provider a host was
+// added with (`mac` from `repose host add` on a Mac, I-1700), and the wait
+// line says "your Mac" for one and "your host" for any other.
+func TestWaitingLineNamesTheKindOfHost(t *testing.T) {
+	ctx := context.Background()
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	f := newRunFixture(t, fake)
+	e, _, _ := freshEnv(f.env, f.local)
+	h, err := e.Client.CreateHost(ctx, CreateHostRequest{Name: "studio", Provider: "mac"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h.Provider != "mac" {
+		t.Fatalf("provider %q, want mac", h.Provider)
+	}
+	p := &Project{State: "creating", WaitingForHost: &ProjectWaitingForHost{Name: "box-1", Provider: "metal"}}
+	if got := waitingLine(p); got != "Waiting for your host box-1 to finish installing. This project starts there when it's ready." {
+		t.Fatalf("an x86 host: %q", got)
 	}
 }
 
@@ -248,5 +332,75 @@ func TestRunHostPicksOneOfSeveral(t *testing.T) {
 	}
 	if bySlug(listed(t, e), "api") != nil {
 		t.Fatal("a refused --host made a project on the other host")
+	}
+}
+
+// TestCreateWaitEndsWhenTheHostIsRemoved: the host a create waits for is
+// removed while `repose run` waits (I-1700): the run fails with the
+// api's reason, and nothing is left behind.
+func TestCreateWaitEndsWhenTheHostIsRemoved(t *testing.T) {
+	ctx := context.Background()
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	f := newRunFixture(t, fake)
+	e, out, errOut := freshEnv(f.env, f.local)
+	h, err := e.Client.CreateHost(ctx, CreateHostRequest{Name: "mac-mini", Provider: "mac"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- runRun(ctx, e, RunOptions{Name: "todo-app", NoSync: true, NoAttach: true}, false) }()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if p := bySlug(listed(t, e), "todo-app"); p != nil && p.WaitingForHost != nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the create never waited")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if err := e.Client.DeleteHost(ctx, h.ID); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err = <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("run still waits after the host was removed")
+	}
+	errOut.mu.Lock()
+	stderr := errOut.buf.String()
+	errOut.mu.Unlock()
+	if want := "todo-app was not created: your host mac-mini was removed before it finished installing."; exitCodeOf(err) != ExitCapacity || err == nil || err.Error() != want {
+		t.Fatalf("run after the host was removed: %v (exit %d, stderr %q), want exit 8 with %q", err, exitCodeOf(err), stderr, want)
+	}
+	if p := bySlug(listed(t, e), "todo-app"); p != nil {
+		t.Fatalf("left behind: %+v", p)
+	}
+	_ = out
+}
+
+// TestRmTakesBackAWaitingProject: `repose rm` on a project whose create
+// waits for its host is not refused behind the create (I-1700): the
+// project goes, and the host's registration later makes nothing.
+func TestRmTakesBackAWaitingProject(t *testing.T) {
+	ctx := context.Background()
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	f := newRunFixture(t, fake)
+	e, _, _ := freshEnv(f.env, f.local)
+	if _, err := e.Client.CreateHost(ctx, CreateHostRequest{Name: "mac-mini", Provider: "mac"}); err != nil {
+		t.Fatal(err)
+	}
+	p, err := e.Client.CreateProject(ctx, CreateProjectRequest{Name: "todo-app", Class: "small"})
+	if err != nil || p.WaitingForHost == nil {
+		t.Fatalf("create: %+v %v, want it to wait", p, err)
+	}
+	if err := DestroyCmd(ctx, e, "todo-app", true, true, nil); err != nil {
+		t.Fatalf("rm while it waits: %v", err)
+	}
+	fake.SetOwnedHostState("mac-mini", "ready")
+	if got := bySlug(listed(t, e), "todo-app"); got != nil {
+		t.Fatalf("after rm and the host registering: %+v", got)
 	}
 }

@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1174 entries.
+1181 entries.
 
 ## Scope
 
@@ -377,7 +377,7 @@ pointer, not a summary.
 - **I-296** `repose browser bridge` lends the guest's browser tools the laptop's own Chrome, through Chrome's DevTools switch, a front that answers `/json/version`, and a reverse tunnel whose remote command holds the guest's endpoint switched — 2026-09-27; L8016
 - **I-297** The user docs have a Tutorials section: one job per page, in the order a new user meets them — 2026-09-27; partly amended by I-316; L8075
 - **I-298** The Vercel CLI's login stays on the laptop — 2026-09-27; L8095
-- **I-330** A signed-in visitor can read the landing page — 2026-09-28; L8135
+- **I-330** A signed-in visitor can read the landing page — 2026-09-28; amended by I-1716; L8135
 - **I-331** Sign-out leaves the page alone until the browser goes, and no page paints before its stylesheet — 2026-09-28; partly amended by I-370; amended by I-837; L8149
 - **I-332** Settings save as they change; the ntfy URL keeps a Save — 2026-09-28; L8169
 - **I-333** "Recently destroyed" shows ten rows, then more on request — 2026-09-28; L8188
@@ -423,7 +423,7 @@ pointer, not a summary.
 - **I-355** Tests and evidence for temporary machines — 2026-09-29; L9090
 - **I-356** `run` reports a create that failed at once, instead of starting the project it left behind — 2026-09-29; amended by I-728; L9105
 - **I-357** The waitlist's minute tick runs under its own lock, `LockWaitlistTick` (1012), not `LockWaitlist` — 2026-09-29; L9121
-- **I-358** A plain `repose run` in a directory with no git remote creates a project named after the directory; outside a repository it skips the sync — 2026-09-29; amended by I-575; amended by I-601; L9140
+- **I-358** A plain `repose run` in a directory with no git remote creates a project named after the directory; outside a repository it skips the sync — 2026-09-29; amended by I-575; amended by I-601; amended by I-1720; L9140
 - **I-359** kanali, the owner's coordinator guest, is WireGuard peer 10.255.254.1 on the edge hub, with no forward rule — 2026-09-29; amended by I-360; amended by I-782; L9163
 - **I-360** kanali's tunnel carries only packets from 10.255.254.1 — 2026-09-29; L9190
 - **I-361** kanali runs tofu as its own service principal; the Key Vault operator policy is pinned to the owner — 2026-09-29; L9211
@@ -672,7 +672,7 @@ pointer, not a summary.
 - **I-624** `-v` logs every api request and every ssh — 2026-10-09; L17407
 - **I-625** ssh failures of the laptop's own end the 60 s wait at once — 2026-10-09; amended by I-634; L17419
 - **I-626** The api names the newest CLI release; an older CLI says so once per release — 2026-10-09; amended by I-631; amended by I-633; L17434
-- **I-627** `repose login` opens its link, `login --status` names the account, `logout` says what it revoked, and a first `run` logs in — 2026-10-09; amended by I-632; amended by I-634; L17459
+- **I-627** `repose login` opens its link, `login --status` names the account, `logout` says what it revoked, and a first `run` logs in — 2026-10-09; amended by I-632; amended by I-634; amended by I-1722; L17459
 - **I-628** Usage errors name what the command takes and the line that works — 2026-10-09; amended by I-632; amended by I-635; L17495
 - **I-619** One spelling per idea across the CLI: an undo is a verb, a group alone runs its listing, each rm also answers to remove, `--as` on both restores, `open LOCAL:PORT`, and `--project` only where a project is meant — 2026-10-09; amended by I-631; amended by I-633; L17514
 - **I-620** `repose secrets set` reads a piped value, refuses NAME=VALUE before asking, and every secrets line names the project — 2026-10-09; L17571
@@ -1001,7 +1001,7 @@ pointer, not a summary.
 - **I-1212** The landing's hero is the Orbit, with its copy centred over it (hero-loop, 2026-11-15) — amended by I-1452; L34001
 - **I-1214** Google Tag Manager on repose.run, gated on the hostname, and the privacy policy says so (analytics, 2026-11-15) — L34038
 - **I-1220** Two acts the dashboard was missing, and three the page already answered (dash-acts, 2026-11-16) — amended by I-1604; L34089
-- **I-1216** The dashboard watches the machine's browser: a relay on the edge, VncAuth at the relay, a 15-minute cookie ticket per connect, and the page draws noVNC itself (browser-view, 2026-11-16) — partly amended by I-1258; partly amended by I-1642; L34133
+- **I-1216** The dashboard watches the machine's browser: a relay on the edge, VncAuth at the relay, a 15-minute cookie ticket per connect, and the page draws noVNC itself (browser-view, 2026-11-16) — partly amended by I-1258; partly amended by I-1642; amended by I-1718; L34133
 - **I-1218** `:6081` at the edge stops being a port every guest can reach, and the view's bytes are an operator metric, not the tenant's egress (browser-view, 2026-11-16) — L34314
 - **I-1228** hostd does not dial a resting guest, and a wake whose session ends under it tries the next one (wake-backlog, 2026-11-16) — L34350
 - **I-1230** The rest rule's CPU line is 15 s a minute, a quarter of a core — 2026-11-16; L34414
@@ -1049,7 +1049,7 @@ pointer, not a summary.
 - **I-1344** `repose github status` is the one place that answers "what do my machines use for GitHub" (github-first-run, 2026-11-18) — L35968
 - **I-1346** A temporary or tiny machine gets the carry's state and none of its builds: no laptop tools, no runtime pins, no Claude plugins (carry-lite, 2026-11-18). Amends I-221, I-222 and I-196's plugins — L36002
 - **I-1348** The tools carry's unit is capped at 40 percent of the machine's memory (carry-lite, 2026-11-18) — L36043
-- **I-1352** The queue is the pull requests: each branch is a PR against `integrated` in a fixed shape, stacked on the last, labelled with what it ships, carrying its decisions in a record a tool reads; the conductor merges them (the owner, 2026-11-18). Amends I-411, I-416 and I-763 — L36053
+- **I-1352** The queue is the pull requests: each branch is a PR against `integrated` in a fixed shape, stacked on the last, labelled with what it ships, carrying its decisions in a record a tool reads; the conductor merges them (the owner, 2026-11-18). Amends I-411, I-416 and I-763 — amended by I-1714; L36053
 - **I-1350** Connect is `repose attach PROJECT` for every machine; `run` is for making one (connect-attach, 2026-11-18) — L36101
 - **I-1356** `repose say` with no `--agent` picks out of the agents the machine lists, and a trigger's run is told from a window the user named by the run registry, not by the window's name (say-agent-pick, 2026-11-18) — L36121
 - **I-1354** A project made on the dashboard is an empty machine, and its repository is what the laptop's `repose run` looks it up by, not a clone (dash-create, 2026-11-19) — partly amended by I-1602; L36195
@@ -1065,7 +1065,7 @@ pointer, not a summary.
 - **I-1380** The Mac launcher is a plist over vfkit, and the install step carries the host's place on the hub, minted at `host add` and rotated at Register (mac-mini 19f, 2026-11-19) — amended by I-1422; amended by I-1424; amended by I-1432; amended by I-1564; partly amended by I-1614; amended by I-1684; L37069
 - **I-1386** On a host the customer owns, the parked image's wrapping key is held by the macOS Keychain, so a Mac restart keeps a customer's work (owner, 2026-11-19) — partly amended by I-1394; L37234
 - **I-1396** An account with no subscription is measured against no plan: `GET /billing`'s usage carries 0 for memory, disk and egress, the dashboard lists what a billing-exempt account holds with no limit beside it, and `repose login --status` says `billing-exempt` (fix-billing, 2026-11-19) — L37297
-- **I-1390** Where a project runs is chosen per command with `repose run --host NAME|repose`, placement is answered before the project row is written, and the api reference documents the field (fix-placement, 2026-11-19) — amended by I-1584; partly amended by I-1648; L37348
+- **I-1390** Where a project runs is chosen per command with `repose run --host NAME|repose`, placement is answered before the project row is written, and the api reference documents the field (fix-placement, 2026-11-19) — amended by I-1584; partly amended by I-1648; amended by I-1700; L37348
 - **I-1392** A host the account owns is named where the account looks: `host_name` beside `host_id` in the project JSON, a HOST column in `repose ls` and a `host` row in `repose status` for a machine on one of them, not only when the host has stopped answering (fix-placement, 2026-11-19) — L37418
 - **I-1404** `repose-ask --timeout` is the only deadline that ends an ask, and opening a question is idempotent (fix-ask ENG-105, 2026-11-20) — L37476
 - **I-1406** `repose-ask` exit 7: the question is open and nothing is waiting for it (fix-ask ENG-105, 2026-11-20) — L37547
@@ -1113,7 +1113,7 @@ pointer, not a summary.
 - **I-1476** `ApplyMenu` installs from `internal/guestd/config/recipes.yaml`, one recipe per catalog id; services are `repose-svc-<id>.service` on 127.0.0.1 with data under `/var/lib/repose/services/<id>`; `apt-manual.list` lives at `/run/repose/rw/apt-manual.list` and belongs to the base's dpkg hook (nonix-guestd, 2026-11-22) — amended by I-1536; L39086
 - **I-1500** The Nix-only alerts skip a host whose `repose_host_info` says `nix_mode="off"`; two base image alerts, a Base images row and `release-assets` checking `guest-<version>` and `hostd-stable` cover the erofs side (nonix-obs-cleanup, 2026-11-22) — amended by I-1494; L39095
 - **I-1486** Each menu catalog entry names its erofs recipe (`recipe:`, the same string as the id), and a menu's `package` items follow the project's runtime: apt names on erofs (`menu.ValidAptPackage`, `Catalog.ValidateFor`), nixpkgs attribute paths on nix (nonix-config-cli-web, 2026-11-22) — L39104
-- **I-1488** `repose config` on an erofs project: `add`, `remove`, `show` and `revisions` work with the same success lines, minus "Building revision"; the steps are guestd's ApplyMenu lines as written; every Nix file (`config apply FILE`, `config edit`, `config on|off`) is refused with the api's `nix_config_retired` sentence and exit 1 (nonix-config-cli-web, 2026-11-22) — partly amended by I-1514; L39111
+- **I-1488** `repose config` on an erofs project: `add`, `remove`, `show` and `revisions` work with the same success lines, minus "Building revision"; the steps are guestd's ApplyMenu lines as written; every Nix file (`config apply FILE`, `config edit`, `config on|off`) is refused with the api's `nix_config_retired` sentence and exit 1 (nonix-config-cli-web, 2026-11-22) — partly amended by I-1514; amended by I-1698; L39111
 - **I-1490** Dashboard for an erofs project: the Config page shows the menu and the base, a one-line banner with Restart only while `pending_base_version` is set, and no Nix editor or machine.nix switch; Settings lists machine.nix only for an account with a Nix project; Add a host shows the x86 installer beside the Mac step, with the Mac image's download size and free disk (nonix-config-cli-web, 2026-11-22) — L39121
 - **I-1492** The public docs describe the Ubuntu base: Nix appears in one paragraph (machine.md "Older machines"), in the one sentence an erofs machine answers a Nix file with, and in a laptop CLI message; the agent guide test reads `images/guest/agent-guide.md` (nonix-config-cli-web, 2026-11-22) — L39128
 - **I-1506** `images/guest/build.sh` writes a bundle file over 1900 MiB also as `<name>.part0..N`, and `guest-image.yml` publishes the parts in its place, as I-1504 says (nonix-guest-image, 2026-11-22) — L39134
@@ -1201,8 +1201,15 @@ pointer, not a summary.
 - **I-1688** hostd's darwin paths are tested against vzfake, a stand-in for the Mac's launcher that answers Cloud Hypervisor's API with repose-vm's bodies and refuses what Virtualization.framework refuses, through hostd's real client; a restore VZ refuses because the session cannot restore at that moment holds the machine for the unlock instead of throwing its image away; and a macOS CI job runs the darwin Go tests and builds the launcher (d2-int, design 2 build, 2026-11-27) — L39796
 - **I-1692** The api reads a Mac without the appliance as what it is, not as D1's nested Mac: no `running_limit` for it, so the dashboard's New project form never holds Create at D1's count (d2-surface, design 2 build, 2026-11-27) — L39807
 - **I-1694** Design 2 is built for customers and replaces design 1 on the Mac, with no migration; idle machines on a Mac give their memory back by rest by save (conductor, design 2 build, 2026-11-27) — L39816
-- **I-1696** A wake waits as long as the machine takes to come back, up to two minutes, through the gateway, the api and the ops engine, so the first ssh to a machine resting as a save succeeds however long its restore takes; and a restore into a project with no host goes where the snapshot is kept (d2-core, after the design 2 release, 2026-11-27) — L39824
-- **I-1704** The hosted plans (Solo, Plus, Pro) include any number of hosts of the user's own at no extra price, and a machine on such a host counts nothing against the plan (sweep-dash, 2026-11-27) — L39830
-- **I-1702** The dashboard starts agents: a machine made there starts its agent, the form asks which when the account has none to go by, and a running machine's page has Start agent with Claude Code's Remote Control as an option (sweep-dash, 2026-11-27) — L39839
-- **I-1710** A stop or destroy cut off by a plain hostd restart is neither stored nor sent, as one cut off by a host shutdown is: the api's resend after Hello runs it again on the next hostd, which finishes it; a boot cut off that way is still answered (d2-install, 2026-11-27) — L39848
-- **I-1712** On a Mac a machine resting as a save holds no memory in the commit, the screen lock reads back only the saved machines that fit with room for one more machine, a wake of one the locked Mac cannot read answers at once with what it waits for, MEMORY is what macOS gives up for a machine, and a destroyed machine keeps no clone of its disk (d2-core, review-mac's findings on the shipped build, 2026-11-27) — L39854
+- **I-1700** A create whose only destination is a host of the account's own that is still installing waits for it instead of being refused: the project is written `creating` with no host and `waiting_for_host`, the create op is placed on that host alone once it registers, and the wait ends, with the project not created, when the host is removed or its join token expires; `repose rm` takes a waiting project back (sweep-cli, board sweep, 2026-11-27) — L39824
+- **I-1698** `repose config add` and the dashboard's menu are removed: on an Ubuntu machine an agent's apt-get does what the menu did, and what apt-get installs comes back after every base update (sweep-cli, 2026-11-27) — L39835
+- **I-1696** A wake waits as long as the machine takes to come back, up to two minutes, through the gateway, the api and the ops engine, so the first ssh to a machine resting as a save succeeds however long its restore takes; and a restore into a project with no host goes where the snapshot is kept (d2-core, after the design 2 release, 2026-11-27) — L39842
+- **I-1704** The hosted plans (Solo, Plus, Pro) include any number of hosts of the user's own at no extra price, and a machine on such a host counts nothing against the plan (sweep-dash, 2026-11-27) — L39848
+- **I-1702** The dashboard starts agents: a machine made there starts its agent, the form asks which when the account has none to go by, and a running machine's page has Start agent with Claude Code's Remote Control as an option (sweep-dash, 2026-11-27) — L39857
+- **I-1710** A stop or destroy cut off by a plain hostd restart is neither stored nor sent, as one cut off by a host shutdown is: the api's resend after Hello runs it again on the next hostd, which finishes it; a boot cut off that way is still answered (d2-install, 2026-11-27) — L39866
+- **I-1712** On a Mac a machine resting as a save holds no memory in the commit, the screen lock reads back only the saved machines that fit with room for one more machine, a wake of one the locked Mac cannot read answers at once with what it waits for, MEMORY is what macOS gives up for a machine, and a destroyed machine keeps no clone of its disk (d2-core, review-mac's findings on the shipped build, 2026-11-27) — L39872
+- **I-1714** Agents open their own pull requests with `gh pr create --base integrated --label queued --title ... --body-file ...` and write the title; a `pr-record` check on the PR refuses a body or a title that breaks docs/PR.md; `release-queue` keeps the conductor's half, and `add` stays one release with a required `--title` (queue-prs, 2026-11-27) — L39880
+- **I-1716** A signed-in visitor to repose.run goes to the dashboard before the landing paints; the logo shows the landing on purpose (sweep-dash, 2026-11-27) — L39889
+- **I-1718** Dashboard sweep, batch 2: temporary machines' snapshots, Messages to the latest 3, a webhook route's deliveries, the browser view's paste and full screen, and the suite's per-file host reset (sweep-dash, 2026-11-27) — L39895
+- **I-1720** A `repose run` with no terminal, from a folder that is not a git repository, that would make a new machine and names none, is refused with exit 2 before anything is made; named, or with `--temp`, it makes the empty machine as before (sweep-cli, board sweep 2, 2026-11-27) — L39903
+- **I-1722** What the CLI tells a customer about money and about a host that cannot join: `repose login --status` names the next charge or the trial's end beside the plan, and an own host that never registered and whose join token has expired is "never finished installing", not "has not registered yet" (sweep-cli, board sweep 2, 2026-11-27) — L39909

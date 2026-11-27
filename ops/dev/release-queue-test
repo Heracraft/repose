@@ -959,6 +959,7 @@ if args[:2] == ["pr", "list"]:
 if args[:2] == ["pr", "create"]:
     d = load()
     base = head = title = body = ""
+    labels = []
     i = 2
     while i < len(args):
         if args[i] == "--base":
@@ -967,6 +968,8 @@ if args[:2] == ["pr", "create"]:
             head = args[i + 1]; i += 2
         elif args[i] == "--title":
             title = args[i + 1]; i += 2
+        elif args[i] == "--label":
+            labels.append({"name": args[i + 1]}); i += 2
         elif args[i] == "--body-file":
             with open(args[i + 1], encoding="utf-8") as bf:
                 body = bf.read()
@@ -982,7 +985,7 @@ if args[:2] == ["pr", "create"]:
         "baseRefName": base,
         "title": title,
         "body": body,
-        "labels": [],
+        "labels": labels,
         "state": "OPEN",
         "createdAt": "2026-11-20T00:00:00Z",
     })
@@ -1108,12 +1111,12 @@ t_done_retargets_stacked_pr_before_push_integrated() {
   base_wt=$(branch woker base-pr)
   echo 'const Base = 1' >> "$base_wt/internal/shared/shared.go"
   commit "$base_wt" "base change"
-  qpr "$base_wt" add --body "$body" >/dev/null || { note "base add failed"; return 1; }
+  qpr "$base_wt" add --title "the base change" --body "$body" >/dev/null || { note "base add failed"; return 1; }
 
   stack_wt=$(branch woker stacked-pr base-pr)
   echo 'const Stacked = 2' >> "$stack_wt/internal/clipkg/clipkg.go"
   commit "$stack_wt" "stacked change"
-  qpr "$stack_wt" add --on base-pr --body "$body" >/dev/null || { note "stacked add failed"; return 1; }
+  qpr "$stack_wt" add --title "the stacked change" --on base-pr --body "$body" >/dev/null || { note "stacked add failed"; return 1; }
 
   qpr "$root/woker" cut >/dev/null || { note "cut failed"; return 1; }
   local rel; rel=$(cut_release woker)
@@ -1152,12 +1155,12 @@ t_done_survives_retarget_failure() {
   base_wt=$(branch woker base-pr)
   echo 'const Base = 1' >> "$base_wt/internal/shared/shared.go"
   commit "$base_wt" "base change"
-  qpr "$base_wt" add --body "$body" >/dev/null || { note "base add failed"; return 1; }
+  qpr "$base_wt" add --title "the base change" --body "$body" >/dev/null || { note "base add failed"; return 1; }
 
   stack_wt=$(branch woker stacked-pr base-pr)
   echo 'const Stacked = 2' >> "$stack_wt/internal/clipkg/clipkg.go"
   commit "$stack_wt" "stacked change"
-  qpr "$stack_wt" add --on base-pr --body "$body" >/dev/null || { note "stacked add failed"; return 1; }
+  qpr "$stack_wt" add --title "the stacked change" --on base-pr --body "$body" >/dev/null || { note "stacked add failed"; return 1; }
 
   qpr "$root/woker" cut >/dev/null || { note "cut failed"; return 1; }
   local rel; rel=$(cut_release woker)
@@ -1171,6 +1174,102 @@ t_done_survives_retarget_failure() {
   local events; events=$(cat "$log")
   assert_has "integrated is still pushed" "$events" "git push refs/heads/integrated" || { note "$events"; return 1; }
   assert_has "stacked PR is still unqueued" "$events" "gh pr edit 2 --remove-label queued" || { note "$events"; return 1; }
+}
+
+
+# ------------------------------------------- agents open their own PRs (I-1714)
+
+# An agent opens its PR with `gh pr create`; `add` stays one release, with
+# a title the agent wrote, and says the command that replaces it.
+t_add_refuses_without_a_title() {
+  local log=$root/pr-events.log db=$root/pr-db.json body=$root/pr-body.md
+  : > "$log"; install_pr_gh_stub "$log" "$db"; write_pr_body "$body"
+  local wt o rc=0; wt=$(branch woker no-title)
+  echo 'const T = 1' >> "$wt/internal/clipkg/clipkg.go"
+  commit "$wt" "STATUS: no-title queued"
+  o=$(qpr "$wt" add --body "$body") || rc=$?
+  assert_eq "add exits 1" "$rc" "1" || return 1
+  assert_has "names the flag" "$o" "--title is required" || return 1
+  assert_has "quotes the rule" "$o" "It never starts with STATUS, Merge or WIP." || return 1
+  assert_not "opens no PR" "$(cat "$log")" "gh pr create" || return 1
+}
+
+t_add_refuses_a_status_title() {
+  local log=$root/pr-events.log db=$root/pr-db.json body=$root/pr-body.md
+  : > "$log"; install_pr_gh_stub "$log" "$db"; write_pr_body "$body"
+  local wt o rc=0; wt=$(branch woker status-title)
+  echo 'const T = 1' >> "$wt/internal/clipkg/clipkg.go"
+  commit "$wt" "a change"
+  o=$(qpr "$wt" add --title "STATUS: status-title queued" --body "$body") || rc=$?
+  assert_eq "add exits 1" "$rc" "1" || return 1
+  assert_has "says why" "$o" "starts with 'STATUS'" || return 1
+  assert_has "quotes the rule" "$o" "docs/PR.md: The title is one line" || return 1
+}
+
+t_add_says_the_gh_command_and_uses_the_title() {
+  local log=$root/pr-events.log db=$root/pr-db.json body=$root/pr-body.md
+  : > "$log"; install_pr_gh_stub "$log" "$db"; write_pr_body "$body"
+  local wt o rc=0; wt=$(branch woker with-title)
+  echo 'const T = 1' >> "$wt/internal/clipkg/clipkg.go"
+  commit "$wt" "a change"
+  echo x >> "$wt/docs/notes.md"; commit "$wt" "STATUS: with-title queued"
+  o=$(qpr "$wt" add --title "repose ls shows the size" --body "$body") || rc=$?
+  assert_eq "add exits 0" "$rc" "0" || { note "$o"; return 1; }
+  assert_has "says the replacement" "$o" "gh pr create --base integrated --label queued --title" || return 1
+  local title labels
+  title=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["prs"][0]["title"])' "$db")
+  labels=$(python3 -c 'import json,sys; print(",".join(l["name"] for l in json.load(open(sys.argv[1]))["prs"][0]["labels"]))' "$db")
+  assert_eq "the PR has the agent's title" "$title" "repose ls shows the size" || return 1
+  assert_has "the PR is queued" "$labels" "queued" || return 1
+}
+
+# A PR opened by `gh pr create` has no ships: labels; the conductor's ls
+# reads what it deploys from the diff, and records that it did.
+t_ls_reads_ships_of_an_agent_opened_pr_from_its_diff() {
+  local log=$root/pr-events.log db=$root/pr-db.json body=$root/pr-body.md
+  : > "$log"; install_pr_gh_stub "$log" "$db"; write_pr_body "$body"
+  # a live line and no ships: labels; the two used to share one tab-split field
+  sed -i 's/^```record$/```record\nlive: repose ls shows it/' "$body"
+  git -C "$root/woker" push -q origin "main:refs/heads/integrated"
+  git -C "$root/woker" fetch -q origin
+  local wt o; wt=$(branch woker agent-pr)
+  echo 'const T = 1' >> "$wt/internal/clipkg/clipkg.go"
+  commit "$wt" "the CLI change"
+  git -C "$wt" push -q -u origin HEAD
+  ( cd "$wt" && REPOSE_FIXTURE_PR_DB="$db" REPOSE_FIXTURE_PR_LOG="$log" REPOSE_FIXTURE_ORIGIN_GIT="$root/origin.git" \
+      "$root/bin/gh" pr create --base integrated --head agent-pr --label queued --title "the CLI change" --body-file "$body" >/dev/null )
+  o=$(qpr "$root/woker" ls)
+  assert_has "ls lists it" "$o" "agent-pr" || { note "$o"; return 1; }
+  assert_has "ships as cli, read from the diff" "$o" "ships as cli" || { note "$o"; return 1; }
+  local f; f=$(state_of woker)/release-queue/entries/agent-pr
+  assert_eq "the entry says where needs came from" "$(field_of "$f" needs_from)" "diff" || return 1
+  assert_eq "and that it was not compared" "$(field_of "$f" exact)" "no" || return 1
+  assert_eq "the live line is the record's" "$(sed -n 's/^live=//p' "$f" | tail -n1)" "repose ls shows it" || return 1
+}
+
+t_pr_record_title_rule() {
+  local rec=$repo/ops/dev/pr-record t
+  for t in "STATUS: x queued" "Merge main into x" "WIP: size column" "wip size" "" "  "; do
+    "$rec" title "$t" 2>/dev/null && { note "accepted: '$t'"; return 1; }
+  done
+  "$rec" title "$(printf 'two\nlines')" 2>/dev/null && { note "accepted two lines"; return 1; }
+  for t in "repose ls shows each machine's size" "Statusline shows load" "Merges are idempotent"; do
+    "$rec" title "$t" 2>/dev/null || { note "refused: '$t'"; return 1; }
+  done
+  local body=$root/b.md o rc=0; write_pr_body "$body"
+  "$rec" render --branch b --commit abc < "$body" > "$root/b2.md"
+  o=$("$rec" check --title "WIP x" "$root/b2.md" 2>&1) || rc=$?
+  assert_eq "check --title fails a bad title on a good body" "$rc" "1" || { note "$o"; return 1; }
+  assert_has "and quotes the rule" "$o" "docs/PR.md:" || return 1
+  "$rec" check --title "the body is fine" "$root/b2.md" || { note "a good title and body failed"; return 1; }
+}
+
+# The rule a refusal quotes is docs/PR.md's, word for word.
+t_pr_record_title_rule_is_docs_pr_md() {
+  local rule
+  rule=$(python3 -c 'import importlib.machinery,sys; m=importlib.machinery.SourceFileLoader("r",sys.argv[1]).load_module(); print(m.TITLE_RULE)' "$repo/ops/dev/pr-record")
+  assert_has "docs/PR.md holds the rule" "$(cat "$repo/docs/PR.md")" "$rule" || return 1
+  assert_has "AGENTS.md says it too" "$(tr '\n' ' ' < "$repo/AGENTS.md")" "never starts with STATUS, Merge or WIP" || return 1
 }
 
 # ------------------------------------------------------- the script's own age

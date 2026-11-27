@@ -3,7 +3,9 @@
 // Resize, Keep and Destroy on its Overview, Restore on its Snapshots tab
 // (DECISIONS I-841).
 import { test, expect } from '@playwright/test';
-import { signIn, createProject, apiURLFromEnv, setAgents } from './helpers';
+import { signIn, createProject, apiURLFromEnv, setAgents, cleanSlate } from './helpers';
+
+cleanSlate();
 
 test.beforeEach(async ({ page }) => {
 	await signIn(page);
@@ -547,4 +549,43 @@ test('a 409 conflict on Destroy stays inline in the destroy panel until dismisse
 	blockDestroy = false;
 	await card.getByRole('button', { name: 'Destroy', exact: true }).click();
 	await expect(page).toHaveURL('/projects', { timeout: 10_000 });
+});
+
+// ENG-69, ENG-50: a temporary machine's snapshots go with it, so Stop does
+// not take one unless asked, and the Snapshots tab says when they go
+// rather than "kept".
+test('a temporary machine stops without a snapshot by default and its snapshots go with it', async ({
+	page
+}) => {
+	const api = apiURLFromEnv();
+	const auth = { Authorization: 'Bearer playwright', 'Content-Type': 'application/json' };
+	const temp = await fetch(`${api}/projects`, {
+		method: 'POST',
+		headers: auth,
+		body: JSON.stringify({
+			name: `temp-snap-${Math.random().toString(36).slice(2, 8)}`,
+			remote_url: '',
+			class: 'small',
+			expires_in_s: 7200
+		})
+	}).then((r) => r.json());
+	await fetch(`${api}/projects/${temp.id}/snapshots`, {
+		method: 'POST',
+		headers: auth,
+		body: '{}'
+	});
+
+	await page.goto(`/projects/${temp.id}/snapshots`);
+	await expect(page.getByRole('checkbox', { name: 'Snapshot on stop' })).not.toBeChecked();
+	const row = page.getByTestId('snapshot-row').first();
+	await expect(row).toContainText(/with the machine, in \d+ (hour|hours|minutes)/);
+	await expect(row).not.toContainText('kept');
+
+	// An ordinary machine keeps both.
+	const normal = await createProject(api, {
+		name: 'normal-snap',
+		remote_url: 'github.com/h/normal-snap'
+	});
+	await page.goto(`/projects/${normal.id}`);
+	await expect(page.getByRole('checkbox', { name: 'Snapshot on stop' })).toBeChecked();
 });

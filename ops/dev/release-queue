@@ -3,10 +3,18 @@
 # branch and queue it here when it is done; one release session merges the
 # queue onto main and ships it. docs/ops/RELEASE.md is the procedure.
 #
-#   release-queue add [--live TEXT] [--note TEXT] [--body FILE] [--on BRANCH] [--title TEXT]
-#                                                  queue this worktree's branch: push it and open
-#                                                  (or update) its pull request against `integrated`
-#                                                  (docs/PR.md); --on stacks it on another queued branch
+# An agent queues its branch by opening the pull request itself (docs/PR.md):
+#
+#   git push -u origin HEAD
+#   gh pr create --base integrated --label queued --title TITLE --body-file FILE
+#
+# (--base BRANCH stacks it on another queued PR). This tool is the
+# conductor's half: it reads the queued PRs, merges them and records it.
+#
+#   release-queue add --title TEXT [--live TEXT] [--note TEXT] [--body FILE] [--on BRANCH]
+#                                                  compatibility for one release (it goes in the
+#                                                  next): says the gh pr create command, then
+#                                                  pushes and opens or updates the PR as before
 #   release-queue ls [--all]                       the queue (the open PRs labelled `queued`) and what
 #                                                  main holds unreleased
 #   release-queue id [N]                           reserve N decision ids (default 1)
@@ -26,8 +34,8 @@
 #   release-queue abandon RELEASE                  release session: undo a cut, requeue
 #
 # The queue is the set of open pull requests against `integrated` that carry
-# the label `queued` (docs/PR.md, DECISIONS I-1352): `add` pushes the branch
-# and opens or updates the PR, `ls` and `cut` read the PRs, `done` pushes
+# the label `queued` (docs/PR.md, DECISIONS I-1352): the agent opens the PR
+# with `gh pr create`, `ls` and `cut` read the PRs, `done` pushes
 # `integrated`, which closes them as merged. The conductor merges; the owner
 # is never asked to merge a PR. The state below the PRs lives in this
 # repository's common git dir, shared by every worktree of this checkout,
@@ -73,8 +81,8 @@ pr_sync() {
   local json
   json=$(gh pr list --state open --label queued --limit 200 \
     --json number,headRefName,headRefOid,baseRefName,labels,body,createdAt 2>/dev/null) || return 0
-  local line n head sha base ships live order=0
-  while IFS=$'\t' read -r n head sha base ships live; do
+  local n head sha base ships live order=0
+  while IFS=$'\x1f' read -r n head sha base ships live; do
     [ -n "$n" ] || continue
     order=$((order + 1))
     if [ "$base" = skip ]; then
@@ -84,18 +92,32 @@ pr_sync() {
     git fetch -q origin "+refs/heads/$head:refs/remotes/origin/$head" 2>/dev/null || {
       echo "release-queue: PR #$n ($head): its branch could not be fetched" >&2; continue; }
     git cat-file -e "$sha^{commit}" 2>/dev/null || { echo "release-queue: PR #$n ($head): $sha is not on origin/$head" >&2; continue; }
-    local f tmpf prev=""
+    local f tmpf prev="" mbase needs exact=yes
     f=$(entry_file "$head")
     [ -f "$f" ] && prev=$(field "$f" state)
     case $prev in cut:* | merged:*) [ "$(field "$f" sha)" = "$sha" ] && continue ;; esac
+    mbase=$(git merge-base "$sha" "refs/remotes/origin/$integrated_branch" 2>/dev/null || git rev-parse main)
+    # A PR an agent opened with `gh pr create` carries no ships: labels; what
+    # it deploys is read here from its diff, once per commit. The path answer
+    # is the wide one (exact=no): a wrong "nothing to deploy" is worse.
+    needs=$ships exact=yes
+    if [ -z "$needs" ]; then
+      if [ -f "$f" ] && [ "$(field "$f" sha)" = "$sha" ] && [ "$(field "$f" needs_from)" = diff ]; then
+        needs=$(field "$f" needs)
+      else
+        needs=$(needs_of "$mbase...$sha" 2>/dev/null || echo none)
+      fi
+      exact=no
+    fi
     tmpf=$(mktemp "$state/tmp/$(basename "$f").XXXX")
     {
       echo "branch=$head"
       echo "sha=$sha"
       echo "worktree=$( [ -f "$f" ] && field "$f" worktree )"
-      echo "needs=${ships:-none}"
-      echo "base=$(git merge-base "$sha" "refs/remotes/origin/$integrated_branch" 2>/dev/null || git rev-parse main)"
-      echo "exact=yes"
+      echo "needs=${needs:-none}"
+      [ -n "$ships" ] || echo "needs_from=diff"
+      echo "base=$mbase"
+      echo "exact=$exact"
       echo "live=$live"
       echo "note=$( [ -f "$f" ] && field "$f" note )"
       echo "machine=$( [ -f "$f" ] && field "$f" machine || echo github)"
@@ -107,23 +129,27 @@ pr_sync() {
       [ -f "$f" ] && grep -E '^(said|read_through|live_state|live_result|live_at)=' "$f" || true
     } > "$tmpf"
     mv "$tmpf" "$f"
-  done < <(python3 - "$integrated_branch" <<'EOF' <<<"$json"
-import json, sys
-prs = json.load(sys.stdin)
+  # Fields are split on \x1f, not a tab: a tab is whitespace to `read`, so
+  # an empty ships field took the live line's text. The JSON goes in
+  # through the environment: stdin is the program. Until
+  # 2026-11-27 it was `python3 - <<'EOF' <<<"$json"`, two redirections of
+  # the same stdin, so python ran the JSON as its program, printed nothing,
+  # and this loop read no PR at all; the queue was only what `add` wrote on
+  # this machine (DECISIONS I-1714).
+  done < <(RQ_PR_JSON=$json python3 - "$integrated_branch" <<'EOF'
+import json, os, re, sys
+prs = json.loads(os.environ["RQ_PR_JSON"] or "[]")
 integ = sys.argv[1]
-by_head = {p["headRefName"]: p for p in prs}
 done, out = set(), []
 def ships(p): return ",".join(sorted(l["name"][6:] for l in p.get("labels", []) if l["name"].startswith("ships:")))
 def live(p):
-    import re
-    m = re.search(r"^```record[ 	]*
-(.*?)^```", p.get("body") or "", re.S | re.M)
+    m = re.search(r"^```record[ \t]*\n(.*?)^```", p.get("body") or "", re.S | re.M)
     if not m: return ""
     for l in m.group(1).splitlines():
-        if l.startswith("live:"): return l[5:].strip().replace("	", " ")
+        if l.startswith("live:"): return l[5:].strip().replace("\t", " ")
     return ""
 def emit(p):
-    out.append("	".join([str(p["number"]), p["headRefName"], p["headRefOid"], p["baseRefName"], ships(p), live(p)]))
+    out.append("\x1f".join([str(p["number"]), p["headRefName"], p["headRefOid"], p["baseRefName"], ships(p), live(p)]))
 for p in sorted(prs, key=lambda p: p["number"]):
     if p["baseRefName"] == integ: emit(p); done.add(p["headRefName"])
 changed = True
@@ -135,9 +161,8 @@ while changed:
         if p["baseRefName"] in done: emit(p); done.add(h); changed = True
 for p in sorted(prs, key=lambda p: p["number"]):
     if p["headRefName"] not in done:
-        out.append("	".join([str(p["number"]), p["headRefName"], p["headRefOid"], "skip", "", p["baseRefName"]]))
-print("
-".join(out))
+        out.append("\x1f".join([str(p["number"]), p["headRefName"], p["headRefOid"], "skip", "", p["baseRefName"]]))
+print("\n".join(out))
 EOF
 )
 }
@@ -165,12 +190,8 @@ pr_upsert() {
   if [ -n "$n" ]; then
     gh pr edit "$n" --base "$base" --body-file "$tmp" "${labels[@]}" >/dev/null || die "add: gh pr edit $n failed"
   else
-    # The title is the newest commit that is not a STATUS.md line: a builder's
-    # last commit is often "STATUS: <branch> queued", which titled whole
-    # feature PRs as status updates (#207, #213, #217 on 2026-11-25).
-    [ -n "$title" ] || title=$(git log --format=%s "$integrated_branch..HEAD" 2>/dev/null | grep -v -i -E '^(status|merge)\b' | head -1)
-    [ -n "$title" ] || title=$(git log -1 --format=%s)
-    gh pr create --base "$base" --head "$branch" --title "$title" --body-file "$tmp" >/dev/null || die "add: gh pr create failed"
+    # The agent writes the title (docs/PR.md, "The title"); cmd_add checked it.
+    gh pr create --base "$base" --head "$branch" --label queued --title "$title" --body-file "$tmp" >/dev/null || die "add: gh pr create failed"
     n=$(pr_of "$branch")
     [ -n "$n" ] && gh pr edit "$n" "${labels[@]}" >/dev/null
   fi
@@ -549,6 +570,14 @@ cmd_add() {
       *) die "add: unknown argument $1" ;;
     esac
   done
+  # Agents open their own PR now; this path stays for one release, for the
+  # sessions that were told `add` (docs/PR.md, CHANGELOG).
+  echo "release-queue: agents now open their own pull request (add goes in the next release): git push -u origin HEAD && gh pr create --base ${on:-$integrated_branch} --label queued --title \"<what the change does for its user>\" --body-file <file>" >&2
+  if gh_on; then
+    local why
+    [ -n "$title" ] || die "add: --title is required. $("$record_tool" title "" 2>&1 | sed -n 's/^pr-record: docs/docs/p')"
+    why=$("$record_tool" title "$title" 2>&1) || die "add: --title: ${why//pr-record: /}"
+  fi
   [ -z "$bodyfile" ] || [ -f "$bodyfile" ] || die "add: no file $bodyfile"
   [ -z "$on" ] || [ "$on" != "$(git branch --show-current)" ] || die "add: --on names this branch"
   # A --live or --note value with a newline in it used to be written into the

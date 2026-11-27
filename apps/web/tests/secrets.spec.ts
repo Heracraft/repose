@@ -3,8 +3,10 @@
 // of its Config tab, and "Add secret" opens a dialog (DECISIONS I-929;
 // I-841); /projects/<id>/secrets still lands there.
 import { test, expect } from '@playwright/test';
-import { signIn, createProject, apiURLFromEnv, failNext } from './helpers';
+import { signIn, createProject, apiURLFromEnv, failNext, cleanSlate } from './helpers';
 import type { Page } from '@playwright/test';
+
+cleanSlate();
 
 /** Opens a project's secrets on Config, and the add form. */
 async function openAdd(page: Page, id: string) {

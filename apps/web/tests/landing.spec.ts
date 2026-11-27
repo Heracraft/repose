@@ -6,7 +6,7 @@
 // GET /public/seats, strict honesty rules, zero horizontal overflow, and
 // preserved `?hero=orbitv1` gallery contract.
 import { test, expect } from '@playwright/test';
-import { setBilling, resetBilling } from './helpers';
+import { setBilling, resetBilling, cleanSlate } from './helpers';
 import {
 	MAC_DESIGN2_LIVE,
 	MEASURED,
@@ -17,6 +17,8 @@ import {
 	figure,
 	seconds
 } from '../src/lib/data/mac-figures';
+
+cleanSlate();
 
 test.afterAll(async () => {
 	await resetBilling();

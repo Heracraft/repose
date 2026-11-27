@@ -35,7 +35,7 @@ const config = {
 				// and connect-src already allow https.
 				'script-src': [
 					'self',
-					'sha256-UsDo7j5S5AvoyFy9kU7vNq7d7jzVYI7KYhbawKMguC8=',
+					'sha256-olfWszuTXJ1R52JyLxJAYNcwawtaxv+LE7IrzKvvZ50=',
 					'https://www.googletagmanager.com'
 				],
 				'style-src': ['self', 'unsafe-inline'],

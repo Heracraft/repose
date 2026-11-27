@@ -15,8 +15,11 @@ import {
 	setDisk,
 	stopProject,
 	destroyProject,
-	pruneProjects
+	pruneProjects,
+	cleanSlate
 } from './helpers';
+
+cleanSlate();
 
 // The cap test makes 28 projects; start from none so the suite's earlier
 // files cannot push it past the fake's 100.
@@ -308,7 +311,7 @@ test('an agent chip keeps its look after coming from the landing', async ({ page
 	});
 	await setAgents(p.id, [{ agent: 'claude', window: '1', state: 'working' }]);
 	await page.getByRole('link', { name: 'repose, home' }).click();
-	await page.waitForURL(/\/$/);
+	await page.waitForURL(/\/\?home$/);
 	await page.getByRole('link', { name: 'Dashboard' }).first().click();
 	await page.waitForURL(/\/projects$/);
 	const chip = row(page, p.name).locator('.chip').first();

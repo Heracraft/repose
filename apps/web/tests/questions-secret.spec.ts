@@ -4,7 +4,16 @@
 // as the project's secret, never as an answer. A notification's link
 // (?answer=<id>) opens the same dialog.
 import { test, expect } from '@playwright/test';
-import { signIn, createProject, apiURLFromEnv, addQuestion, closeQuestion } from './helpers';
+import {
+	signIn,
+	createProject,
+	apiURLFromEnv,
+	addQuestion,
+	closeQuestion,
+	cleanSlate
+} from './helpers';
+
+cleanSlate();
 
 test.beforeEach(async ({ page }) => {
 	await signIn(page);

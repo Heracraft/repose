@@ -1,6 +1,8 @@
 import { test, expect } from '@playwright/test';
 import { BASE_URL } from './fixtures';
-import { signIn } from './helpers';
+import { signIn, cleanSlate } from './helpers';
+
+cleanSlate();
 
 test('sign-in, callback and sign-out round trip', async ({ page }) => {
 	await page.goto('/');
@@ -13,7 +15,7 @@ test('sign-in, callback and sign-out round trip', async ({ page }) => {
 	// The logo goes home from the dashboard too (I-655).
 	const logo = page.getByRole('link', { name: 'repose, home' });
 	await expect(logo).toBeVisible();
-	await expect(logo).toHaveAttribute('href', '/');
+	await expect(logo).toHaveAttribute('href', '/?home');
 
 	// Sign out is in the Account menu (I-655).
 	await page.getByRole('button', { name: 'Account', exact: true }).click();
@@ -24,13 +26,18 @@ test('sign-in, callback and sign-out round trip', async ({ page }) => {
 	).toBeVisible();
 });
 
-// DECISIONS I-330: a signed-in visitor can read the landing page; it offers
-// the dashboard where a signed-out one sees sign-in.
-test('a signed-in visitor stays on the landing page, which links to the dashboard', async ({
+// ENG-239 (amending I-330): a signed-in visitor to / goes to the dashboard
+// before the landing paints; /?home, where the logo points, still shows
+// the landing on purpose, with the dashboard where sign-in would be.
+test('a signed-in visitor to / lands on the dashboard; /?home shows the landing', async ({
 	page
 }) => {
 	await signIn(page);
 	await page.goto('/');
+	await expect(page).toHaveURL('/projects');
+	await expect(page.locator('.hero')).toHaveCount(0);
+
+	await page.goto('/?home');
 	const nav = page.getByRole('navigation', { name: 'Site' });
 	await expect(nav.getByRole('link', { name: 'Dashboard' })).toBeVisible();
 	// exact: the install step's docs link reads "Install and sign in".
@@ -38,7 +45,7 @@ test('a signed-in visitor stays on the landing page, which links to the dashboar
 	await expect(page.getByRole('link', { name: 'Start a free week' })).toHaveCount(0);
 	// Give a stray redirect time to fire before asserting it did not.
 	await page.waitForTimeout(500);
-	await expect(page).toHaveURL('/');
+	await expect(page).toHaveURL('/?home');
 
 	await page.getByRole('link', { name: 'Open the dashboard' }).first().click();
 	await expect(page).toHaveURL('/projects');

@@ -2,7 +2,9 @@
 // I-841): the size spelled out, and the minute samples drawn from GET
 // /projects/:id/samples.
 import { test, expect } from '@playwright/test';
-import { signIn, createProject, apiURLFromEnv } from './helpers';
+import { signIn, createProject, apiURLFromEnv, cleanSlate } from './helpers';
+
+cleanSlate();
 
 test.beforeEach(async ({ page }) => {
 	await signIn(page);

@@ -534,11 +534,8 @@ func (c *Client) ProjectLogs(ctx context.Context, id, kind, since string) ([]Log
 // Billing is the part of GET /billing the CLI reads: whether there is a
 // plan, and the disk its projects hold against it (DECISIONS I-585).
 type Billing struct {
-	Subscription *struct {
-		Plan   string `json:"plan"`
-		Status string `json:"status"`
-	} `json:"subscription"`
-	Usage struct {
+	Subscription *BillingSubscription `json:"subscription"`
+	Usage        struct {
 		// DiskHeldGB is absent from an api older than I-585.
 		DiskHeldGB       *float64 `json:"disk_held_gb"`
 		DiskGB           int      `json:"disk_gb"`
@@ -551,6 +548,18 @@ type Billing struct {
 		ID   string `json:"id"`
 		Name string `json:"name"`
 	} `json:"plans"`
+}
+
+// BillingSubscription is GET /billing's subscription, as the CLI reads it.
+type BillingSubscription struct {
+	Plan   string `json:"plan"`
+	Status string `json:"status"`
+	// The next charge and a trial's end, which `login --status`
+	// says (ENG-39); absent from an older api.
+	TrialEnd        *time.Time `json:"trial_end"`
+	CancelAt        *time.Time `json:"cancel_at"`
+	NextBilledAt    *time.Time `json:"next_billed_at"`
+	NextChargeCents *int64     `json:"next_charge_cents"`
 }
 
 func (c *Client) GetBilling(ctx context.Context) (*Billing, error) {
