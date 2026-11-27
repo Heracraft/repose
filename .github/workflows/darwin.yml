@@ -46,6 +46,7 @@ jobs:
       - run: go test -race -p 2 -timeout 30m ./internal/hostd/... ./cmd/hostd ./internal/parkkey/...
       # The CLI's tests drive a stub machine that runs tmux on this host.
       - run: brew install tmux
+        if: ${{ !cancelled() }}
       # The CLI as a Mac user runs it (host add, host restart, the Keychain).
       - run: go test -p 2 -timeout 25m ./internal/cli/... ./cmd/repose
         if: ${{ !cancelled() }}
