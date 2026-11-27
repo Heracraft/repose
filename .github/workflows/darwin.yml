@@ -1,0 +1,44 @@
+# hostd on a Mac (design 2, DECISIONS I-1662): the darwin substrate's Go
+# tests, which no Linux job can run (launchd, APFS, VZ save, the userspace
+# network all build with GOOS=darwin only), and the VM launcher, which only
+# a Mac's swiftc builds. On every push that touches them, so a queued
+# branch runs it before its pull request, and by hand (DECISIONS I-1688).
+
+name: darwin
+
+on:
+  push:
+    paths:
+      - "cmd/hostd/**"
+      - "cmd/repose-vm/**"
+      - "internal/hostd/**"
+      - "internal/parkkey/**"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/darwin.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  hostd:
+    name: darwin hostd tests and the VM launcher
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: the launcher builds, signed with the virtualization entitlement
+        run: |
+          sh cmd/repose-vm/build.sh "$RUNNER_TEMP/repose-vm"
+          codesign -d --entitlements - "$RUNNER_TEMP/repose-vm" 2>&1 | grep -q com.apple.security.virtualization
+      - run: go build ./cmd/hostd ./cmd/repose
+      - run: go vet ./internal/hostd/... ./cmd/hostd ./internal/parkkey/...
+      - run: go test -race -p 2 -timeout 30m ./internal/hostd/... ./cmd/hostd ./internal/parkkey/...
+      # An exact version, as ci.yml's lint (DECISIONS I-429).
+      - run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
+        if: ${{ !cancelled() }}
+      - run: golangci-lint run ./internal/hostd/... ./cmd/hostd ./internal/parkkey/...
+        if: ${{ !cancelled() }}
