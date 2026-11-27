@@ -59,7 +59,11 @@ type Guest struct {
 	// MemMiB is the memory this guest's VM was started with, when the
 	// host sizes each start to what is left of its memory (a Mac,
 	// Config.CommitMemMiB, DECISIONS I-1666); 0 is the class's.
-	MemMiB        uint64 `json:"mem_mib,omitempty"`
+	MemMiB uint64 `json:"mem_mib,omitempty"`
+	// VCPUs is the vCPUs this guest's VM was started with, when the host
+	// sizes each start to what is left of its cores (Config.CommitVCPUs);
+	// 0 is the class's.
+	VCPUs         uint32 `json:"vcpus,omitempty"`
 	SystemClosure string `json:"system_closure"`
 	// BaseVersion is the erofs base an erofs guest boots (DECISIONS
 	// I-1458, I-1478): the base_versions label of the bundle under the

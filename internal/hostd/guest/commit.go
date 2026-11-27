@@ -71,3 +71,43 @@ func (m *Manager) commitRoom(guestID, class string) *Error {
 	_, e := m.commitSize(&state.Guest{GuestID: guestID, Class: class})
 	return e
 }
+
+// MinCommitVCPUs is the fewest vCPUs a machine starts with when the
+// host's cores are taken: it still starts, a little over the budget,
+// rather than being refused for CPU.
+const MinCommitVCPUs = 2
+
+// committedVCPUs is what the guests holding a VM, other than except, were
+// started with.
+func (m *Manager) committedVCPUs(except string) uint32 {
+	gs, err := m.d.State.ListGuests()
+	if err != nil {
+		return 0
+	}
+	var n uint32
+	for _, g := range gs {
+		if g.GuestID == except {
+			continue
+		}
+		switch g.State {
+		case StateRunning, StateStarting, StateStopping:
+			if g.VCPUs > 0 {
+				n += g.VCPUs
+			} else {
+				n += m.classOf(g.Class).VCPUs
+			}
+		}
+	}
+	return n
+}
+
+// commitVCPUs is the vCPUs g starts with now: want, or what the running
+// machines leave of CommitVCPUs, never fewer than MinCommitVCPUs.
+func (m *Manager) commitVCPUs(g *state.Guest, want uint32) uint32 {
+	used := m.committedVCPUs(g.GuestID)
+	left := uint32(0)
+	if m.cfg.CommitVCPUs > used {
+		left = m.cfg.CommitVCPUs - used
+	}
+	return max(min(want, left), MinCommitVCPUs)
+}

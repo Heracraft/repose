@@ -106,3 +106,35 @@ func TestHeldParkExpiresAfterTheAgeLimit(t *testing.T) {
 		t.Fatal("still held")
 	}
 }
+
+// The park's room counts what the image will take when the host can tell
+// (a Mac: the VM's footprint), not the class's memory: three 12 GiB
+// machines were refused on 47 GB free (d2-lab, 2026-11-26).
+func TestParkRoomUsesTheImageEstimate(t *testing.T) {
+	fh := newParkHarness(t, nil)
+	fh.create(gid1)
+	fh.create(gid2)
+	// Room for one class-sized image (8 GiB large) but not two.
+	fh.lvm.PoolSize, fh.lvm.PoolFree = 100<<30, 100<<30-(85<<30)+(12<<30)
+	res := fh.m.ParkAll(context.Background(), ParkOperator)
+	parked := 0
+	for _, r := range res {
+		if r.Outcome == "parked" {
+			parked++
+		}
+	}
+	if parked != 1 {
+		t.Fatalf("without an estimate %d parked, want 1: %+v", parked, res)
+	}
+	fh2 := newParkHarness(t, nil)
+	fh2.create(gid1)
+	fh2.create(gid2)
+	fh2.lvm.PoolSize, fh2.lvm.PoolFree = 100<<30, 100<<30-(85<<30)+(12<<30)
+	fh2.m.d.Park.ImageEstimate = func(context.Context, string) (uint64, bool) { return 1 << 30, true }
+	res = fh2.m.ParkAll(context.Background(), ParkOperator)
+	for _, r := range res {
+		if r.Outcome != "parked" {
+			t.Fatalf("with a 1 GiB estimate: %+v", res)
+		}
+	}
+}

@@ -7,7 +7,9 @@ import (
 	"log/slog"
 	"os"
 	"os/user"
+	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -81,7 +83,7 @@ func platformFor(o Options) platform {
 				}
 				if time.Since(swept) > 10*time.Minute && o.SnapshotDir != "" {
 					swept = time.Now()
-					mgr.SweepKeptClones(ctx, storedSnapshots(o.SnapshotDir))
+					mgr.SweepKeptClones(ctx, newestPerProject(storedSnapshots(o.SnapshotDir), keptPerProject))
 				}
 				if _, err := mgr.RestoreHeld(ctx); err != nil {
 					log.Warn("held parked machines not restored", "event", "guest_unpark", "err", err.Error())
@@ -180,7 +182,19 @@ func adaptMac(ctx context.Context, o Options, m MacOptions, u macUser, r shell.R
 	// A VM is one process: one that ends under a running machine is
 	// booted again (I-1664).
 	d.RestartOnExit = true
-	cfg.HostVCPUs = ownedVCPUs(o.OwnedVCPUs, uint32(cfg.Cores), false)
+	// Half the Mac's cores a machine by default (--owned-vcpus to change
+	// it): one machine builds Go in 29.3-29.6 s at 5 vCPUs on the 10-core
+	// M4 against ~25 s at 10, and two fit the cores (I-1666).
+	cfg.HostVCPUs = macGuestVCPUs(o.OwnedVCPUs, uint32(cfg.Cores))
+	// The machines' vCPUs together stay near the Mac's cores: thirty on
+	// ten made three Go builds take 503-519 s, twelve took 55-58 s, no
+	// swap either way (I-1666). Each start gets its vCPUs or what is left
+	// of the budget, at least two.
+	if m.VCPUCommit > 0 {
+		cfg.CommitVCPUs = uint32(m.VCPUCommit)
+	} else {
+		cfg.CommitVCPUs = uint32(cfg.Cores) + 2
+	}
 	cfg.OwnedMaxVCPUs = ownedBound(o.OwnedMaxVCPUs, false, cfg.Cores)
 
 	var net hnet.Net = noNet{}
@@ -239,6 +253,8 @@ func adaptMac(ctx context.Context, o Options, m MacOptions, u macUser, r shell.R
 	}
 	d.Systemd = ld
 	d.Park.CanRestore = func(ctx context.Context) bool { return session(ctx).Unlocked() }
+	// A park image is about the VM's footprint, not its configured size.
+	d.Park.ImageEstimate = vmFootprint(r, ld)
 	// An idle machine rests by save, giving its memory back, only where
 	// the save can be restored at the wake: an agent job in an unlocked
 	// session. Otherwise it rests by pause (I-1666).
@@ -414,4 +430,38 @@ func storedSnapshots(dir string) []string {
 		return nil
 	})
 	return out
+}
+
+// keptPerProject is how many of a project's snapshots keep their APFS
+// clone: a kept clone costs every block its volume has changed since, and
+// thirty-nine of them took the lab Mac's disk with the store (d2-lab,
+// 2026-11-26). Older snapshots restore from their stream (I-1666).
+const keptPerProject = 3
+
+// newestPerProject keeps the newest n store paths of each directory (a
+// project's snapshots, named by time so they sort by it).
+func newestPerProject(paths []string, n int) []string {
+	by := map[string][]string{}
+	for _, p := range paths {
+		d := path.Dir(p)
+		by[d] = append(by[d], p)
+	}
+	var out []string
+	for _, ps := range by {
+		sort.Strings(ps)
+		if len(ps) > n {
+			ps = ps[len(ps)-n:]
+		}
+		out = append(out, ps...)
+	}
+	return out
+}
+
+// macGuestVCPUs is each machine's vCPUs: the flag when set, else half the
+// Mac's cores, at least two.
+func macGuestVCPUs(flag uint, cores uint32) uint32 {
+	if flag > 0 {
+		return uint32(flag)
+	}
+	return max(cores/2, 2)
 }

@@ -49,3 +49,23 @@ func TestCommitSizesAndRefusesStarts(t *testing.T) {
 		t.Fatalf("after a stop the next start got %d MiB", got)
 	}
 }
+
+// vCPUs are sized as memory is, but never refused: a start gets the
+// class's vCPUs or what the running machines leave, at least two. Thirty
+// guest vCPUs on a 10-core Mac made three builds take 775-811 s, twelve
+// took 55-58 s (DECISIONS I-1666).
+func TestCommitSizesVCPUs(t *testing.T) {
+	h := newHarness(t, func(c *Config) { c.CommitVCPUs = 5 })
+	h.create(gid1)
+	h.create(gid2)
+	h.create(gidC3)
+	for id, want := range map[string]uint32{gid1: 2, gid2: 2, gidC3: 2} {
+		if got := h.guest(id).VCPUs; got != want {
+			t.Fatalf("%s started with %d vCPUs, want %d", id, got, want)
+		}
+	}
+	args, _ := os.ReadFile(filepath.Join(h.cfg.GuestsDir, gidC3, "ch.args"))
+	if !strings.Contains(string(args), "boot=2") {
+		t.Fatalf("argv:\n%s", args)
+	}
+}

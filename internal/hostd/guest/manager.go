@@ -219,7 +219,13 @@ type Config struct {
 	// started with together: each start gets the class's memory or what
 	// the others leave, and is refused below MinCommitMiB. A Mac, whose
 	// VZ VMs never give memory back (DECISIONS I-1666). Zero is off.
-	CommitMemMiB  uint64
+	CommitMemMiB uint64
+	// CommitVCPUs, when set, is the vCPUs the host's machines may be
+	// started with together: each start gets the class's vCPUs or what
+	// the others leave, never fewer than MinCommitVCPUs. A Mac, where
+	// thirty guest vCPUs on ten cores made three builds take 775-811 s
+	// against 55-58 s with twelve (DECISIONS I-1666). Zero is off.
+	CommitVCPUs   uint32
 	MaxOps        int
 	MaxBuilds     int
 	MaxBuildQueue int

@@ -19,5 +19,6 @@ func platformFlags(fs *flag.FlagSet, o *app.Options) {
 	fs.StringVar(&o.Mac.DiskCache, "mac-disk-cache", "cached", "each machine disk's VZ caching mode: automatic, cached or uncached; cached built the lab's Go benchmark 4.8x faster than automatic (DECISIONS I-1666)")
 	fs.StringVar(&o.Mac.DiskSync, "mac-disk-sync", "full", "each machine disk's VZ synchronization mode: full (F_FULLFSYNC on every guest flush, safe through a power cut), fsync (5x the small-sync rate, not safe through one), or none (DECISIONS I-1666)")
 	fs.UintVar(&o.Mac.MemoryCommitPct, "mac-memory-commit-pct", 100, "how much of the Mac's memory, less what macOS keeps, the machines may be started with together, in percent: a start gets its size or what is left, and is refused below 2048 MiB; 0 is no bound (DECISIONS I-1666)")
+	fs.UintVar(&o.Mac.VCPUCommit, "mac-vcpu-commit", 0, "the vCPUs the machines may be started with together: a start gets its vCPUs or what is left, at least 2; 0 is the Mac's cores plus two (DECISIONS I-1666)")
 	fs.StringVar(&o.Mac.E2fsck, "mac-e2fsck", "", "e2fsck, which checks a restored snapshot's volume")
 }

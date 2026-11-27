@@ -190,6 +190,12 @@ type ParkDeps struct {
 	// reason when not: a Mac VM started with nobody logged in cannot
 	// (I-1664). Nil is always.
 	CanPark func(ctx context.Context, id string) (bool, string)
+	// ImageEstimate is what a guest's park image will take, when the host
+	// can tell better than the class's memory: on a Mac VZ writes the
+	// memory the guest touched, about its VM's footprint, not its
+	// configured size (three 12 GiB machines were refused a park on 47 GB
+	// free, d2-lab 2026-11-26). ok false falls back to the class.
+	ImageEstimate func(ctx context.Context, id string) (bytes uint64, ok bool)
 }
 
 // ParkResult is one guest's outcome, for the operator and the log.
@@ -312,6 +318,11 @@ func (m *Manager) ParkAll(ctx context.Context, reason string) []ParkResult {
 	take := make([]bool, len(run))
 	for i, g := range run {
 		need := m.classOf(g.Class).MemMiB << 20
+		if est := m.d.Park.ImageEstimate; est != nil {
+			if b, ok := est(ctx, g.GuestID); ok {
+				need = b + b/8 // an eighth over: the guest runs until it pauses
+			}
+		}
 		if room >= 0 && need > uint64(room) {
 			results[i] = ParkResult{GuestID: g.GuestID, Outcome: "skipped", Reason: "pool has no room for the image"}
 			continue

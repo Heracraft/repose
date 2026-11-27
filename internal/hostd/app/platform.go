@@ -59,4 +59,7 @@ type MacOptions struct {
 	// the machines may be started with together, in percent; 0 is no
 	// bound (DECISIONS I-1666).
 	MemoryCommitPct uint
+	// VCPUCommit is the vCPUs the machines may be started with together;
+	// 0 is the Mac's cores plus two (DECISIONS I-1666).
+	VCPUCommit uint
 }

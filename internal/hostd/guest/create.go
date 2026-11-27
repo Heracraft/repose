@@ -304,6 +304,10 @@ func (m *Manager) boot(ctx context.Context, g *state.Guest, firstStep int, op st
 		}
 		g.MemMiB, class.MemMiB = mib, mib
 	}
+	if m.cfg.CommitVCPUs > 0 {
+		v := m.commitVCPUs(g, class.VCPUs)
+		g.VCPUs, class.VCPUs, class.CeilingVCPUs, class.MilliVCPUs = v, v, v, v*1000
+	}
 	dir := m.guestDir(g.GuestID)
 	if err := m.prepareGuestDir(dir); err != nil {
 		return m.fail(g, firstStep, err)
