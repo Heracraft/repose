@@ -21,6 +21,11 @@ on:
 permissions:
   contents: read
 
+# macOS's own TMPDIR (/var/folders/...) leaves too little of a unix socket
+# path's 104 bytes for the tests' sockets under t.TempDir().
+env:
+  TMPDIR: /tmp
+
 jobs:
   hostd:
     name: darwin hostd tests and the VM launcher
