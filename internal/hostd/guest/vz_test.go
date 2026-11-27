@@ -268,3 +268,48 @@ func assertNoRefusal(t *testing.T, vh *vzHarness) {
 		t.Fatalf("the launcher refused: %s", strings.Join(n, "; "))
 	}
 }
+
+// A machine held for the unlock that the user stops (or removes) stays
+// stopped at the unlock: the unlock restores only what still waits, and
+// the stopped machine's image does not outlive it.
+func TestVZHeldMachineStoppedBeforeTheUnlockStaysStopped(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		c    *hostdv1.Command
+	}{
+		{"stop", cmd(&hostdv1.StopGuest{GuestId: gid1})},
+		{"destroy", cmd(&hostdv1.DestroyGuest{GuestId: gid1})},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			vh := newVZHarness(t)
+			vh.create(gid1)
+			if r := vh.parkOne(gid1); !r.OK {
+				t.Fatalf("park: %+v", r)
+			}
+			vh.lock(true)
+			vh.nextStart("boot-b")
+			if vh.m.HeldGuests() != 1 {
+				t.Fatalf("held %d", vh.m.HeldGuests())
+			}
+			vh.mustOK(tc.c)
+			vh.lock(false)
+			if _, err := vh.m.RestoreHeld(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if vh.vz.Count("restore ") != 0 || vh.unitActive(gid1) {
+				t.Fatalf("restored after the %s:\n%s", tc.name, strings.Join(vh.vz.Calls(), "\n"))
+			}
+			if vh.record(gid1) != nil || vh.img.has(gid1) {
+				t.Fatalf("the image outlived the %s", tc.name)
+			}
+			if tc.name == "stop" {
+				if g := vh.guest(gid1); g.State != StateStopped {
+					t.Fatalf("state %s after the stop and the unlock", g.State)
+				}
+			}
+			if vh.m.HeldGuests() != 0 {
+				t.Fatalf("still held: %d", vh.m.HeldGuests())
+			}
+		})
+	}
+}
