@@ -152,6 +152,11 @@ type Project struct {
 	// with its memory kept (DECISIONS I-1672). Absent from older apis and
 	// on every other host.
 	Parked *ProjectParked `json:"parked,omitempty"`
+	// VM is what a running machine's VM got and what it gets with its
+	// host to itself, from a host that sizes each start to what its
+	// running machines leave (a Mac, DECISIONS I-1680). Absent from older
+	// apis and on every other host.
+	VM *ProjectVM `json:"vm,omitempty"`
 	// KeepAwake is set while the project is held awake from its Config
 	// page: the api never freezes it (DECISIONS I-820). Set there, as
 	// hold_base_updates is, with no CLI flag.
@@ -191,6 +196,15 @@ type ProjectNotAnswering struct {
 type ProjectParked struct {
 	Since    time.Time `json:"since"`
 	WaitsFor string    `json:"waits_for"`
+}
+
+// ProjectVM is Project.vm (DECISIONS I-1680).
+type ProjectVM struct {
+	VCPUs        uint32 `json:"vcpus"`
+	MemBytes     int64  `json:"mem_bytes"`
+	FullVCPUs    uint32 `json:"full_vcpus"`
+	FullMemBytes int64  `json:"full_mem_bytes"`
+	SizedDown    bool   `json:"sized_down"`
 }
 
 // ProjectResting is Project.resting: when the machine was frozen.

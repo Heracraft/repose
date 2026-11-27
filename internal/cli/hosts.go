@@ -722,6 +722,26 @@ func sizeCell(p *Project) string {
 	return p.Class
 }
 
+// sizedDownLine is the line for a running machine whose VM got less than
+// it gets with its host to itself (DECISIONS I-1680): the host sized its
+// start to what the machines running beside it left, and a VM's size is
+// fixed until it stops. "" for any other machine.
+func sizedDownLine(p *Project) string {
+	v := p.VM
+	if p.State != "running" || v == nil || !v.SizedDown {
+		return ""
+	}
+	return fmt.Sprintf("runs with %s and %s of its %d and %s: the machines running beside it held the rest when it started. A start after one of them stops gives it all.",
+		vcpuWord(v.VCPUs), humanBytes(v.MemBytes), v.FullVCPUs, humanBytes(v.FullMemBytes))
+}
+
+func vcpuWord(n uint32) string {
+	if n == 1 {
+		return "1 vCPU"
+	}
+	return fmt.Sprintf("%d vCPUs", n)
+}
+
 // sizeIgnored is the one stderr line for --size on a machine of a host of
 // the account's own (I-1632): accepted, so an old script keeps working,
 // and ignored, because the machine there has no size. host may be "",

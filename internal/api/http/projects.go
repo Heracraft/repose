@@ -176,6 +176,14 @@ func (s *Server) projectJSON(ctx context.Context, p *store.Project, u *store.Use
 		// hide for a machine's first day.
 		out["resting"] = map[string]any{"since": *p.RestingSince}
 	}
+	if p.State == "running" && p.VMSize != nil {
+		// What the machine's VM got and what it gets with its host to
+		// itself, from a host that sizes each start (I-1680): a start
+		// sized below the full size is a slower machine, and the clients
+		// say so.
+		v := p.VMSize
+		out["vm"] = map[string]any{"vcpus": v.VCPUs, "mem_bytes": v.MemMiB << 20, "full_vcpus": v.FullVCPUs, "full_mem_bytes": v.FullMemMiB << 20, "sized_down": v.SizedDown()}
+	}
 	if x.idleSince != nil {
 		// A running machine unused for a day, still holding the plan's
 		// memory (I-262). hourly_cents is 0 since I-289, kept one release.

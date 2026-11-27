@@ -137,6 +137,9 @@ type Fake struct {
 	// poolDown is the host's thin pool unavailable (DECISIONS I-644):
 	// Hello and Heartbeat carry the flag and zero pool bytes, as hostd does.
 	poolDown bool
+	// vmSize is what a create or start reports its VM got (DECISIONS
+	// I-1680), as a Mac's hostd does; nil, every other host, reports none.
+	vmSize *hostdv1.VmSize
 	// freeMem is the free_mem_bytes this host reports, 200 GiB unless a
 	// test sets it (SetFreeMem): on a host the user owns it is what
 	// placement and the refusal read (DECISIONS I-1630).
@@ -426,12 +429,29 @@ func (f *Fake) SetPoolUnavailable(down bool) {
 	f.mu.Unlock()
 }
 
+// SetVMSize makes every create and start from now on report vm as the
+// size its VM got, as hostd on a Mac does when it sizes a start to what
+// the running machines leave (DECISIONS I-1680); nil reports none, as
+// every other host.
+func (f *Fake) SetVMSize(vm *hostdv1.VmSize) {
+	f.mu.Lock()
+	f.vmSize = vm
+	f.mu.Unlock()
+}
+
 // SetFreeMem sets the free_mem_bytes the fake host reports from its next
 // heartbeat on; 0 is the default, 200 GiB.
 func (f *Fake) SetFreeMem(b uint64) {
 	f.mu.Lock()
 	f.freeMem = b
 	f.mu.Unlock()
+}
+
+// vmSizeNow is the VmSize a result carries now.
+func (f *Fake) vmSizeNow() *hostdv1.VmSize {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.vmSize
 }
 
 // freeMemLocked is the free_mem_bytes to report; f.mu is held.
@@ -742,7 +762,7 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 		f.mu.Unlock()
 		f.setState(g, "running", "")
 		return ok(func(r *hostdv1.Result) {
-			r.Payload = &hostdv1.Result_Create{Create: &hostdv1.CreateResult{GuestIp: g.IP, VsockCid: g.CID, Boot: fakeBoot(true), MenuError: menuErr}}
+			r.Payload = &hostdv1.Result_Create{Create: &hostdv1.CreateResult{GuestIp: g.IP, VsockCid: g.CID, Boot: fakeBoot(true), MenuError: menuErr, Vm: f.vmSizeNow()}}
 		})
 	case *hostdv1.Command_StartGuest:
 		f.mu.Lock()
@@ -810,7 +830,7 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 		return ok(func(r *hostdv1.Result) {
 			// As hostd since I-720: every start reports the guest's address.
 			r.Payload = &hostdv1.Result_Start{Start: &hostdv1.StartResult{BootedClosure: booted, Boot: fakeBoot(false), GuestIp: g.IP, VsockCid: g.CID,
-				BootedBaseVersion: base, MenuError: menuErr}}
+				BootedBaseVersion: base, MenuError: menuErr, Vm: f.vmSizeNow()}}
 		})
 	case *hostdv1.Command_StopGuest:
 		f.mu.Lock()

@@ -130,7 +130,7 @@ func (m *Manager) create(ctx context.Context, c *hostdv1.CreateGuest) (*hostdv1.
 	if existing != nil {
 		switch existing.State {
 		case StateRunning:
-			return &hostdv1.CreateResult{GuestIp: existing.IP, VsockCid: existing.CID}, nil
+			return &hostdv1.CreateResult{GuestIp: existing.IP, VsockCid: existing.CID, Vm: m.vmSize(existing)}, nil
 		case StateCreating, StateError:
 			// A re-run after a crash or a failed attempt: continue with the
 			// same record; every step below tolerates what already exists.
@@ -267,7 +267,7 @@ func (m *Manager) create(ctx context.Context, c *hostdv1.CreateGuest) (*hostdv1.
 	if err := m.boot(ctx, g, stepRunner, "create", volume); err != nil {
 		return nil, err
 	}
-	return &hostdv1.CreateResult{GuestIp: g.IP, VsockCid: g.CID, Boot: m.lastBoot(g.GuestID), MenuError: m.lastMenuErr(g.GuestID)}, nil
+	return &hostdv1.CreateResult{GuestIp: g.IP, VsockCid: g.CID, Boot: m.lastBoot(g.GuestID), MenuError: m.lastMenuErr(g.GuestID), Vm: m.vmSize(g)}, nil
 }
 
 // fail records a create or start failure, rolling back everything but the
@@ -768,7 +768,9 @@ func (m *Manager) start(ctx context.Context, commandID string, c *hostdv1.StartG
 		}
 		// Nothing booted for this command, so it carries no timings, as
 		// create's running case does not (I-707).
-		return startResult(g, resent, "", nil), nil
+		r := startResult(g, resent, "", nil)
+		r.Vm = m.vmSize(g)
+		return r, nil
 	case StateStopped, StateError, StateStarting:
 	default:
 		return nil, errf(CodeInvalidArgument, "guest is %s; start needs stopped", g.State)
@@ -904,6 +906,7 @@ func (m *Manager) start(ctx context.Context, commandID string, c *hostdv1.StartG
 		}
 		r := startResult(g, resent, "", m.lastBoot(g.GuestID))
 		r.MenuError = m.lastMenuErr(g.GuestID)
+		r.Vm = m.vmSize(g)
 		return r, nil
 	}
 	// A fallback another command made is over once this one boots.
@@ -914,6 +917,7 @@ func (m *Manager) start(ctx context.Context, commandID string, c *hostdv1.StartG
 	}
 	r := startResult(g, fb, tail, m.lastBoot(g.GuestID))
 	r.MenuError = m.lastMenuErr(g.GuestID)
+	r.Vm = m.vmSize(g)
 	return r, nil
 }
 

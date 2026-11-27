@@ -747,6 +747,10 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		// `repose sync` ends on its sync line (DECISIONS I-628).
 		_, _ = fmt.Fprintf(e.ErrOut, "Ready in %s.\n", fmtElapsed(pr.Total()))
 	}
+	if l := sizedDownLine(project); l != "" {
+		// Started smaller than it would be on its own (I-1680).
+		_, _ = fmt.Fprintf(e.ErrOut, "%s %s\n", project.Slug, l)
+	}
 	if l := tempLine(project, time.Now()); l != "" {
 		_, _ = fmt.Fprintln(e.ErrOut, l)
 	}

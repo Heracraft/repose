@@ -383,6 +383,7 @@ func (m *Manager) CollectSamples(ctx context.Context) *hostdv1.Samples {
 					m.d.Metrics.BurstCPUSecondsTotal.WithLabelValues(g.Class).Add(float64(bd) / 1e9)
 				}
 			}
+			gsm.Vm = m.vmSize(g)
 			if since := m.heldSince(g.GuestID); since > 0 {
 				// Parked and held until its Mac's user logs in (park.go,
 				// DECISIONS I-1672): no guest runs and none is asked; the

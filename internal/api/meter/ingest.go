@@ -224,6 +224,14 @@ func (i *Ingest) insertGuest(ctx context.Context, hostID uuid.UUID, ts time.Time
 		// older than the one already recorded leaves it.
 		batch.Queue("update projects set disk_held_bytes = $2, disk_held_at = $3 where id = $1 and (disk_held_at is null or disk_held_at < $3)", pid, held, ts)
 	}
+	if v := g.GetVm(); v != nil && v.Vcpus > 0 && v.MemMib > 0 && g.State == "running" {
+		// What the running machine's VM got (DECISIONS I-1680), as the
+		// start's result said it; a sample corrects a result the api
+		// missed. Kept only from a host an account owns, as parked is.
+		vj, _ := json.Marshal(store.VMSize{VCPUs: v.Vcpus, MemMiB: v.MemMib, FullVCPUs: max(v.FullVcpus, v.Vcpus), FullMemMiB: max(v.FullMemMib, v.MemMib)})
+		batch.Queue(`update projects set vm_size = $2::jsonb where id = $1 and state = 'running' and vm_size is distinct from $2::jsonb
+			and exists (select 1 from hosts where id = $3 and owner_account_id is not null)`, pid, string(vj), hostID)
+	}
 	if guestFields {
 		seen := map[string]bool{}
 		for _, p := range g.Procs {

@@ -302,3 +302,49 @@ func TestParkedIsShownAndStartRestartsNothing(t *testing.T) {
 		t.Fatalf("repose start: %q", got)
 	}
 }
+
+// ENG-264 (DECISIONS I-1680): a machine started smaller than it gets with
+// its host to itself says so, once, in `repose start`, `repose ls` and
+// `repose status`; a machine at its full size says nothing more.
+func TestSizedDownStartIsSaid(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	e, p := newRoundtripEnv(t, fake)
+	ctx := context.Background()
+	out := &discardWriter{}
+	e.Out, e.ErrOut = out, &discardWriter{}
+	fake.SetProjectHost(p.ID, fake.AddOwnedHost("mac-mini"))
+	fake.SetState(p.ID, "stopped")
+	fake.SetVM(p.ID, &fakeapi.VM{VCPUs: 2, MemBytes: 3968 << 20, FullVCPUs: 5, FullMemBytes: 8 << 30})
+	line := "runs with 2 vCPUs and 3.9 GB of its 5 and 8.0 GB: the machines running beside it held the rest when it started. A start after one of them stops gives it all.\n"
+
+	if err := StartCmd(ctx, e, ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.buf.String(); !strings.HasSuffix(got, "It "+line) || strings.Count(got, "runs with") != 1 {
+		t.Fatalf("repose start:\n%s", got)
+	}
+	out.buf.Reset()
+	if err := ProjectsCmd(ctx, e); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.buf.String(); !strings.Contains(got, "todo-app: "+line) {
+		t.Fatalf("repose ls:\n%s", got)
+	}
+	out.buf.Reset()
+	if err := StatusCmd(ctx, e, ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.buf.String(); !strings.Contains(got, "  "+line) {
+		t.Fatalf("repose status:\n%s", got)
+	}
+
+	fake.SetVM(p.ID, &fakeapi.VM{VCPUs: 5, MemBytes: 8 << 30, FullVCPUs: 5, FullMemBytes: 8 << 30})
+	out.buf.Reset()
+	if err := ProjectsCmd(ctx, e); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.buf.String(); strings.Contains(got, "runs with") {
+		t.Fatalf("repose ls at the full size:\n%s", got)
+	}
+}
