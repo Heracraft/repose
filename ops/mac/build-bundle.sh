@@ -39,7 +39,7 @@ case $out in /*) ;; *) out=$PWD/$out ;; esac
 ncpu=$(sysctl -n hw.ncpu)
 
 fetch() { # url sha256 dest
-  curl -fsSL --retry 3 -o "$3" "$1"
+  curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 -o "$3" "$1" # a reset mid-transfer retries too; the checksum below is the guard
   echo "$2  $3" | shasum -a 256 -c - >/dev/null || { echo "build-bundle: $1 does not match its pinned checksum" >&2; exit 1; }
 }
 
