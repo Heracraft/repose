@@ -1,6 +1,8 @@
 // Checklist: "Every route in 5.2 exists and renders with the fake API."
 import { test, expect } from '@playwright/test';
-import { signIn, createProject, apiURLFromEnv, setAgents } from './helpers';
+import { signIn, createProject, apiURLFromEnv, setAgents, cleanSlate } from './helpers';
+
+cleanSlate();
 
 let projectId: string;
 let projectName: string;
@@ -77,10 +79,9 @@ for (const [tab, path] of [
 	});
 }
 
-test('/projects/[id]/config renders the Menu and Nix tabs and the secrets', async ({ page }) => {
+test('/projects/[id]/config renders the Nix editor and the secrets', async ({ page }) => {
 	await page.goto(`/projects/${projectId}/config`);
-	await expect(page.getByRole('tab', { name: 'Menu' })).toBeVisible();
-	await expect(page.getByRole('tab', { name: 'Nix' })).toBeVisible();
+	await expect(page.getByRole('heading', { level: 2, name: 'repose.nix' })).toBeVisible();
 	await expect(
 		page.getByRole('heading', { level: 2, name: /^(Secrets|\d+ secrets?)$/ })
 	).toBeVisible();

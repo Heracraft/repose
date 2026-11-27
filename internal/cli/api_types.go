@@ -152,6 +152,10 @@ type Project struct {
 	// with its memory kept (DECISIONS I-1672). Absent from older apis and
 	// on every other host.
 	Parked *ProjectParked `json:"parked,omitempty"`
+	// WaitingForHost is set while the project's create waits for a host
+	// of the account's own to finish installing (DECISIONS I-1700).
+	// Absent from older apis, which refused the create instead.
+	WaitingForHost *ProjectWaitingForHost `json:"waiting_for_host,omitempty"`
 	// VM is what a running machine's VM got and what it gets with its
 	// host to itself, from a host that sizes each start to what its
 	// running machines leave (a Mac, DECISIONS I-1680). Absent from older

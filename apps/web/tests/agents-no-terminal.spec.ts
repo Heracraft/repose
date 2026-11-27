@@ -5,7 +5,9 @@
 // only agent. AR_SHOTS=<dir> also writes the captures the change was
 // judged by, at 1x, 1440 and 390 wide, light and dark.
 import { test, expect, type Page } from '@playwright/test';
-import { addEvents, apiURLFromEnv, createProject, setAgents, signIn } from './helpers';
+import { addEvents, apiURLFromEnv, createProject, setAgents, signIn, cleanSlate } from './helpers';
+
+cleanSlate();
 
 test.beforeEach(async ({ page }) => {
 	await signIn(page);

@@ -6,7 +6,9 @@
 // by page.route, since the fake holds 100 projects at most and the
 // suite's account is shared.
 import { test, expect, type Page } from '@playwright/test';
-import { signIn } from './helpers';
+import { signIn, cleanSlate } from './helpers';
+
+cleanSlate();
 
 /**
  * The viewport at 1440 and 390 in both schemes, at 1x, for the review

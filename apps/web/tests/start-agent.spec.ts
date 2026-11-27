@@ -3,7 +3,16 @@
 // the account has no machine to go by, and a running machine's page has
 // Start agent, with Claude Code's Remote Control as an option.
 import { test, expect, type Page } from '@playwright/test';
-import { signIn, apiURLFromEnv, createProject, destroyProject, pruneProjects } from './helpers';
+import {
+	signIn,
+	apiURLFromEnv,
+	createProject,
+	destroyProject,
+	pruneProjects,
+	cleanSlate
+} from './helpers';
+
+cleanSlate();
 
 const litter: string[] = [];
 

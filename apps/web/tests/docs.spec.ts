@@ -1,4 +1,7 @@
 import { test, expect } from '@playwright/test';
+import { cleanSlate } from './helpers';
+
+cleanSlate();
 
 // /docs is public: a signed-out visitor stays on it, can move between pages
 // and can search.

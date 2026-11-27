@@ -1,9 +1,10 @@
 <script lang="ts">
 	// A project's Config tab (DECISIONS I-841): the base and machine.nix
-	// switches, the project's secrets, its webhook routes (I-1110), the
-	// packages (the menu or the Nix fragment) with Apply in a bar at the
-	// window's foot, then the revisions. The layout above holds the
-	// project and the header.
+	// switches, the project's secrets, its webhook routes (I-1110), and on
+	// a Nix machine the fragment with Apply in a bar at the window's foot,
+	// then the revisions. The menu is gone (I-1698): an Ubuntu machine
+	// installs with apt-get, and an earlier menu's entries are listed
+	// read-only. The layout above holds the project and the header.
 	import { onMount, onDestroy, tick } from 'svelte';
 	import { beforeNavigate } from '$app/navigation';
 	import { leaveAnyway, leavingAnyway } from '$lib/leave';
@@ -12,7 +13,6 @@
 	import {
 		getConfig,
 		putConfig,
-		getCatalog,
 		listRevisions,
 		applyRevision,
 		patchProject,
@@ -23,43 +23,23 @@
 	} from '$lib/api/client';
 	import { toast } from 'svelte-sonner';
 	import { toastApiError } from '$lib/api/toast';
-	import { ApiError } from '$lib/api/errors';
 	import { dateTime } from '$lib/format';
-	import {
-		toggleSelection,
-		groupCatalog,
-		buildMenuSelection,
-		parseMenuSelection,
-		menuEditable,
-		validPackageName
-	} from '$lib/menuSelection';
+	import { menuEntries } from '$lib/menuSelection';
 	import ProjectSecrets from '$lib/components/project/ProjectSecrets.svelte';
 	import { useProject } from '$lib/components/project/context.svelte';
 	import NixEditor from '$lib/components/NixEditor.svelte';
 	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
-	import type { CatalogItem, Config, Revision } from '$lib/api/types';
+	import type { Config, Revision } from '$lib/api/types';
 
 	const ctx = useProject();
 	const id = ctx.id;
 	let project = $derived(ctx.project);
-	// An erofs machine (I-1462) boots the Ubuntu base and takes the menu
-	// alone: no Nix tab, no machine.nix switch, and a newer base waits
-	// for a restart (I-1490).
+	// An erofs machine (I-1462) boots the Ubuntu base: no Nix editor, no
+	// machine.nix switch, and a newer base waits for a restart (I-1490).
 	let erofs = $derived(project?.guest_runtime === 'erofs');
-	$effect(() => {
-		if (erofs) activeTab = 'menu';
-	});
 
 	let config = $state<Config | undefined>(undefined);
-	let catalog = $state<CatalogItem[]>([]);
 	let revisions = $state<Revision[]>([]);
-	const TABS = [
-		['menu', 'Menu'],
-		['nix', 'Nix']
-	] as const;
-	let activeTab = $state<'menu' | 'nix'>('nix');
-	let tabPicked = false;
-	let search = $state('');
 	let loadFailed = $state(false);
 	let loadError = $state<string | undefined>(undefined);
 	/** The revision a Re-apply was sent for, until its build starts. */
@@ -67,27 +47,6 @@
 	let holdSaving = $state(false);
 	let personalSaving = $state(false);
 	let keepAwakeSaving = $state(false);
-
-	// Menu tab state.
-	let selectedPackages = $state<Set<string>>(new Set());
-	let selectedServices = $state<Set<string>>(new Set());
-	let menuOptions = $state<Record<string, string>>({});
-	// nixpkgs packages added by name (`repose config add gcc`, I-220).
-	let extraPackages = $state<string[]>([]);
-
-	// What the menu held at load, to tell an unapplied change from none.
-	let savedMenuKey = $state('');
-	let menuKey = $derived(
-		JSON.stringify([
-			[...selectedPackages, ...selectedServices].sort(),
-			Object.entries(menuOptions).sort(),
-			[...extraPackages].sort()
-		])
-	);
-	let menuDirty = $derived(menuKey !== savedMenuKey);
-	let selectedCount = $derived(
-		selectedPackages.size + selectedServices.size + extraPackages.length
-	);
 
 	// The newest revisions show; the rest wait behind one toggle.
 	const REVISIONS_SHOWN = 8;
@@ -98,27 +57,23 @@
 	// fragment's length.
 	const wide = new MediaQuery('min-width: 64rem');
 
-	// Nix tab state.
+	// The Nix editor.
 	let fragmentText = $state('');
 	let nixDirty = $derived(!!config && fragmentText !== (config.fragment ?? ''));
 	let nixOverrideEditable = $state(false);
+	// A fragment the menu wrote stays read-only until the reader takes it
+	// over, which turns that menu off (the api's "custom fragment" rule).
 	let nixReadonly = $derived(!!config?.menu && !nixOverrideEditable);
-	// A fragment written by hand turns the menu off; the starting file and
-	// one the menu wrote keep it on (the api's "custom fragment" rule).
-	let menuOn = $derived(!!config && (erofs || menuEditable(config)));
+	// What an earlier menu holds, installed again at every base update
+	// (I-1698); an Ubuntu machine lists it and nothing more.
+	let oldMenu = $derived(menuEntries(config?.menu));
 
-	// Build/apply state, shared by both tabs.
+	// Build/apply state.
 	let applying = $state(false);
 	let buildLines = $state<string[]>([]);
 	let buildDone = $state(false);
 	let buildError = $state<string | undefined>(undefined);
 	let currentOpId = $state<string | undefined>(undefined);
-	/**
-	 * How the last Apply ended, said at the Apply bar where it was pressed
-	 * (I-1514): the log and its banner are below the fold on any long
-	 * menu. Cleared by the next change to the selection.
-	 */
-	let outcome = $state<{ ok: boolean; text: string; stale?: boolean } | undefined>(undefined);
 	/** An op's error without the code the api stores in front of it. */
 	function plainError(err: string | undefined): string {
 		return (err ?? '').replace(/^menu_failed: /, '').split('\n')[0];
@@ -134,27 +89,8 @@
 
 	async function load() {
 		try {
-			[config, catalog, revisions] = await Promise.all([
-				getConfig(id),
-				getCatalog(),
-				listRevisions(id)
-			]);
-			// The first load picks the tab; a reload after a build keeps the
-			// one the reader is on.
-			if (!tabPicked)
-				activeTab =
-					ctx.project?.guest_runtime === 'erofs' || (config && menuEditable(config))
-						? 'menu'
-						: 'nix';
-			tabPicked = true;
+			[config, revisions] = await Promise.all([getConfig(id), listRevisions(id)]);
 			fragmentText = config?.fragment ?? '';
-			const menu = parseMenuSelection(config?.menu);
-			const services = new Set(catalog.filter((c) => c.kind === 'service').map((c) => c.id));
-			selectedPackages = new Set(menu.ids.filter((i) => !services.has(i)));
-			selectedServices = new Set(menu.ids.filter((i) => services.has(i)));
-			menuOptions = menu.options;
-			extraPackages = menu.packages;
-			savedMenuKey = menuKey;
 			loadFailed = false;
 		} catch (err) {
 			if (!config) {
@@ -207,28 +143,12 @@
 		return () => (ctx.holdPrimary = false);
 	});
 
-	// The two tabs switch a panel in place (the URL stays), so they are
-	// ARIA tabs: one tab stop for the pair, and the arrow keys, Home and
-	// End move between them and show the panel at once.
-	let tabButtons = $state<Record<string, HTMLButtonElement | undefined>>({});
-	function onTabKey(e: KeyboardEvent) {
-		const i = TABS.findIndex(([t]) => t === activeTab);
-		let next: number;
-		if (e.key === 'ArrowRight') next = (i + 1) % TABS.length;
-		else if (e.key === 'ArrowLeft') next = (i - 1 + TABS.length) % TABS.length;
-		else if (e.key === 'Home') next = 0;
-		else if (e.key === 'End') next = TABS.length - 1;
-		else return;
-		e.preventDefault();
-		activeTab = TABS[next][0];
-		tabButtons[activeTab]?.focus();
-	}
 	onDestroy(() => eventSource?.close());
 
 	// An edit not applied yet holds a navigation away (I-578): the bar asks,
 	// Stay keeps the page and Leave goes on. Closing the tab gets the
 	// browser's own question.
-	let dirty = $derived(!applying && (menuDirty || nixDirty));
+	let dirty = $derived(!applying && nixDirty);
 	let heldNavigation = $state<URL | undefined>(undefined);
 	let stayButton = $state<HTMLButtonElement | undefined>(undefined);
 	beforeNavigate(({ cancel, type, to }) => {
@@ -244,35 +164,7 @@
 		if (url) await leaveAnyway(url);
 	}
 
-	let groups = $derived(groupCatalog(catalog, search));
-
-	// A package the menu lacks, added by name from the search, as `repose
-	// config add NAME` does (I-1508): a valid name for the machine's
-	// runtime that is no menu id and not already added.
-	let addable = $derived.by(() => {
-		const name = search.trim();
-		if (!name || catalog.some((c) => c.id === name) || extraPackages.includes(name)) return '';
-		return validPackageName(project?.guest_runtime, name) ? name : '';
-	});
-	function addPackage(name: string) {
-		extraPackages = [...extraPackages, name];
-		search = '';
-	}
-
-	function toggleItem(item: CatalogItem, checked: boolean) {
-		if (item.kind === 'service') {
-			selectedServices = toggleSelection(selectedServices, item.id, checked);
-		} else {
-			selectedPackages = toggleSelection(selectedPackages, item.id, checked);
-		}
-	}
-
-	function isSelected(item: CatalogItem): boolean {
-		return item.kind === 'service' ? selectedServices.has(item.id) : selectedPackages.has(item.id);
-	}
-
 	function startBuild(opId: string) {
-		outcome = undefined;
 		currentOpId = opId;
 		rememberOp(opId);
 		buildLines = [];
@@ -293,19 +185,13 @@
 				rememberOp(undefined);
 				buildDone = true;
 				applying = false;
-				let ended: typeof outcome = undefined;
 				try {
 					const op = await getOp(id, opId);
 					if (op.state === 'error') buildError = plainError(op.error);
-					ended =
-						op.state === 'error'
-							? { ok: false, text: plainError(op.error) }
-							: { ok: true, text: 'Applied' };
 				} catch {
 					// The revision list below still shows failed/applied.
 				}
 				await load();
-				outcome = ended;
 			});
 			es.onerror = () => {
 				es.close();
@@ -313,35 +199,6 @@
 				applying = false;
 			};
 		})();
-	}
-
-	async function applyMenu() {
-		applying = true;
-		const menu = buildMenuSelection(
-			catalog,
-			new Set([...selectedPackages, ...selectedServices]),
-			menuOptions,
-			extraPackages
-		);
-		try {
-			// The revision this page loaded (I-1524, api.md I-1528): a menu
-			// changed since, from another tab or the CLI, is refused rather
-			// than replaced by this page's older copy.
-			const { op_id } = await putConfig(id, { menu, base_revision_id: config?.revision_id });
-			startBuild(op_id);
-		} catch (err) {
-			applying = false;
-			if (err instanceof ApiError && err.code === 'menu_stale') {
-				await load();
-				outcome = {
-					ok: false,
-					stale: true,
-					text: 'The menu changed elsewhere since you loaded it, and is reloaded.'
-				};
-				return;
-			}
-			toastApiError(err, 'Could not apply the menu selection.');
-		}
 	}
 
 	async function applyNix() {
@@ -374,7 +231,6 @@
 
 	function editAsNix() {
 		nixOverrideEditable = true;
-		activeTab = 'nix';
 	}
 
 	// The machine.nix switch (DECISIONS I-490) follows the project like the
@@ -540,157 +396,41 @@
 				Never freeze this machine
 			</label>
 		</div>
+		{#if erofs && oldMenu.length}
+			<!-- An earlier menu's entries (I-1698): installed again at every
+			     base update, so the reader sees what comes back; nothing to
+			     edit. -->
+			<div class="cfact-row">
+				<p class="cfact" data-testid="old-menu">
+					Installed again after every base update, from the menu:
+					<span class="hk-mono">{oldMenu.join(', ')}</span>
+				</p>
+			</div>
+		{/if}
 	</div>
 
 	<ProjectSecrets projectId={id} projectName={project?.slug} />
 {/if}
 
-<section class="hk-section packages" aria-labelledby="packages-title">
-	<LoadState
-		status={project && config ? 'ready' : loadFailed ? 'failed' : 'loading'}
-		onretry={load}
-		error={loadError}
-	>
-		{#if project && config}
-			<!-- The two tabs switch a panel in place (the URL stays), so they
-			     are ARIA tabs: one tab stop for the pair, the arrow keys, Home
-			     and End move between them. Only the current tab names a panel. -->
-			<div class="hk-section-head chead">
-				<div class="chead-left">
-					<h2 id="packages-title" class="hk-h2-app">Packages</h2>
-					{#if !erofs}
-						<div class="hk-tablist" role="tablist" aria-label="Config editor">
-							{#each TABS as [tab, name] (tab)}
-								<button
-									type="button"
-									role="tab"
-									id="config-tab-{tab}"
-									aria-selected={activeTab === tab}
-									aria-controls={activeTab === tab ? `config-panel-${tab}` : undefined}
-									tabindex={activeTab === tab ? 0 : -1}
-									bind:this={tabButtons[tab]}
-									onkeydown={onTabKey}
-									onclick={() => (activeTab = tab)}>{name}</button
-								>
-							{/each}
-						</div>
+{#if !erofs}
+	<section class="hk-section packages" aria-labelledby="packages-title">
+		<LoadState
+			status={project && config ? 'ready' : loadFailed ? 'failed' : 'loading'}
+			onretry={load}
+			error={loadError}
+		>
+			{#if project && config}
+				<div class="hk-section-head chead">
+					<h2 id="packages-title" class="hk-h2-app">repose.nix</h2>
+					{#if config.applied_at}
+						<span class="applied">Applied {dateTime(config.applied_at)}</span>
 					{/if}
 				</div>
-				{#if config.applied_at}
-					<span class="applied">Applied {dateTime(config.applied_at)}</span>
-				{/if}
-			</div>
 
-			{#if erofs || activeTab === 'menu'}
-				<div
-					class="cpanel"
-					role={erofs ? undefined : 'tabpanel'}
-					id="config-panel-menu"
-					aria-labelledby={erofs ? 'packages-title' : 'config-tab-menu'}
-				>
-					{#if !menuOn}
-						<div class="hk-banner" role="status">
-							<p>
-								The menu is off for this project: its config was written by hand. Applying the file
-								a new project starts with, on the Nix tab, turns it back on (<a
-									class="hk-link"
-									href={resolve('/docs/[slug]', { slug: 'config' })}>Config</a
-								>).
-							</p>
-						</div>
-					{:else}
-						<input
-							type="search"
-							class="hk-input hk-input--search"
-							placeholder="Search packages and services…"
-							aria-label="Search packages and services"
-							bind:value={search}
-						/>
-						{#each [...groups.entries()] as [group, items] (group)}
-							<div class="cgroup">
-								<h3 class="group-title">
-									{group}<span class="group-n">{items.length}</span>
-								</h3>
-								<div class="citems">
-									{#each items as item (item.id)}
-										<div class="citem">
-											<label class="hk-check citem-check">
-												<input
-													type="checkbox"
-													checked={isSelected(item)}
-													onchange={(e) => toggleItem(item, e.currentTarget.checked)}
-												/>
-												<span class="citem-text">
-													<span class="citem-name">{item.label}</span>
-													<span class="citem-desc">{item.description}</span>
-												</span>
-											</label>
-											{#if item.options?.length && isSelected(item)}
-												<select
-													class="hk-select citem-select"
-													aria-label={`${item.label} ${item.options[0].id}`}
-													value={menuOptions[item.id] ?? item.options[0].default}
-													onchange={(e) => (menuOptions[item.id] = e.currentTarget.value)}
-												>
-													{#each item.options[0].values as v (v)}
-														<option value={v}>{v}</option>
-													{/each}
-												</select>
-											{/if}
-										</div>
-									{/each}
-								</div>
-							</div>
-						{:else}
-							{#if search.trim()}
-								<div class="hk-empty-row">
-									<span>No package matches “{search.trim()}”.</span>
-								</div>
-							{/if}
-						{/each}
-						{#if addable}
-							<div class="hk-empty-row cadd">
-								<span
-									>{erofs ? 'An apt package' : 'A nixpkgs package'}:
-									<span class="hk-mono">{addable}</span></span
-								>
-								<button
-									type="button"
-									class="hk-btn-secondary hk-btn-sm"
-									aria-label={`Add package ${addable}`}
-									onclick={() => addPackage(addable)}>Add</button
-								>
-							</div>
-						{/if}
-						{#if extraPackages.length}
-							<div class="cgroup">
-								<h3 class="group-title">
-									Extra packages<span class="group-n">{extraPackages.length}</span>
-								</h3>
-								<ul class="extras">
-									{#each extraPackages as pkg (pkg)}
-										<li class="extra">
-											<span class="hk-mono">{pkg}</span>
-											<!-- Undone by adding the package back before Apply. -->
-											<button
-												type="button"
-												class="hk-btn-ghost hk-btn-sm extra-remove"
-												aria-label={`Remove ${pkg}`}
-												onclick={() => (extraPackages = extraPackages.filter((p) => p !== pkg))}
-												>Remove</button
-											>
-										</li>
-									{/each}
-								</ul>
-							</div>
-						{/if}
-					{/if}
-				</div>
-			{:else}
-				<div class="cpanel" role="tabpanel" id="config-panel-nix" aria-labelledby="config-tab-nix">
+				<div class="cpanel">
 					{#if nixReadonly}
 						<div class="hk-banner" role="status">
-							<p>This project is managed by the menu. Editing here takes over from the menu.</p>
+							<p>The menu wrote this file. Editing it here turns that menu off.</p>
 							<button type="button" class="hk-banner-action" onclick={editAsNix}>Edit as Nix</button
 							>
 						</div>
@@ -702,123 +442,106 @@
 						errorLine={fragmentErrorLine(buildError)}
 					/>
 				</div>
-			{/if}
 
-			{#if currentOpId}
-				<section class="build" aria-labelledby="build-title">
-					<h3 id="build-title" class="build-title">{erofs ? 'Install log' : 'Build log'}</h3>
-					<div class="hk-code">
-						<pre class="hk-code-body build-log" bind:this={logEl}>{buildLines.join('\n')}</pre>
-					</div>
-					{#if buildDone && buildError}
-						<div class="hk-banner hk-banner--err build-result" role="alert">
-							<p class="build-error">{buildError}</p>
+				{#if currentOpId}
+					<section class="build" aria-labelledby="build-title">
+						<h3 id="build-title" class="build-title">Build log</h3>
+						<div class="hk-code">
+							<pre class="hk-code-body build-log" bind:this={logEl}>{buildLines.join('\n')}</pre>
 						</div>
-					{:else if buildDone}
-						<p class="build-ok" role="status">
-							<span class="hk-dot hk-dot--on" aria-hidden="true"></span>Applied.
-						</p>
-					{/if}
-				</section>
-			{/if}
-
-			<!-- One bar for both tabs, held to the foot of the window while the
-			     packages are in view, so Apply is in reach from any group
-			     (Guide B 12.23). -->
-			<div class="hk-bottom-bar cbar">
-				{#if heldNavigation}
-					<div class="hk-banner cguard" role="alert">
-						<p>Unsaved changes. Leave this page anyway?</p>
-						<span class="cguard-buttons">
-							<button
-								type="button"
-								class="hk-btn-secondary hk-btn-sm"
-								bind:this={stayButton}
-								onclick={() => (heldNavigation = undefined)}>Stay</button
-							>
-							<button type="button" class="hk-btn-ghost hk-btn-sm" onclick={leave}>Leave</button>
-						</span>
-					</div>
-				{/if}
-				<span class="cbar-status" role="status">
-					{#if activeTab === 'menu' && !menuOn}
-						Menu off
-					{:else if activeTab === 'menu'}
-						<!-- While the banner asks, it says "Unsaved changes" once. -->
-						{selectedCount} selected{#if applying}&nbsp;· {erofs
-								? 'Installing…'
-								: 'Building…'}{:else if menuDirty && !heldNavigation}&nbsp;·
-							<span class="cbar-dirty">Unsaved changes</span>{:else if outcome?.ok}&nbsp;·
-							<span class="cbar-ok">{outcome.text}</span>{:else if outcome}&nbsp;·
-							<span class="cbar-err"
-								>{outcome.stale
-									? outcome.text
-									: `${erofs ? 'Not installed' : 'Not applied'}: ${outcome.text}`}</span
-							>{/if}
-					{:else if applying}
-						Building…
-					{:else if nixReadonly}
-						Managed by the menu
-					{:else if nixDirty && !heldNavigation}
-						<span class="cbar-dirty">Unsaved changes</span>
-					{/if}
-				</span>
-				<!-- The screen's primary once there is something to apply. -->
-				<button
-					type="button"
-					class={(activeTab === 'menu' ? menuDirty : nixDirty) ? 'hk-btn' : 'hk-btn-secondary'}
-					disabled={applying ||
-						(activeTab === 'nix' && (nixReadonly || !nixDirty)) ||
-						(activeTab === 'menu' && (!menuOn || !menuDirty))}
-					onclick={erofs || activeTab === 'menu' ? applyMenu : applyNix}
-				>
-					{applying ? 'Applying…' : 'Apply'}
-				</button>
-			</div>
-		{/if}
-	</LoadState>
-</section>
-
-{#if project && config}
-	<section class="hk-section" aria-labelledby="rev-title">
-		<div class="hk-section-head">
-			<h2 id="rev-title" class="hk-h2-app">Revisions</h2>
-		</div>
-		{#if revisions.length === 0}
-			<div class="hk-empty-row"><span>No revisions yet.</span></div>
-		{:else}
-			<ul class="rev-list">
-				{#each shownRevisions as rev (rev.revision_id)}
-					{@const live = rev.status === 'applied' && rev.revision_id === config?.revision_id}
-					<li class="rev">
-						<span class="rev-date">{dateTime(rev.created_at)}</span>
-						<span class="rev-status"
-							>{#if rev.status === 'failed'}<span class="hk-dot hk-dot--err" aria-hidden="true"
-								></span>{/if}{live ? 'current' : rev.status}</span
-						>
-						{#if rev.status !== 'building' && !live}
-							<button
-								type="button"
-								class="hk-btn-ghost hk-btn-sm rev-apply"
-								disabled={applying}
-								onclick={() => reapply(rev)}
-								>{reapplying === rev.revision_id ? 'Re-applying…' : 'Re-apply'}</button
-							>
+						{#if buildDone && buildError}
+							<div class="hk-banner hk-banner--err build-result" role="alert">
+								<p class="build-error">{buildError}</p>
+							</div>
+						{:else if buildDone}
+							<p class="build-ok" role="status">
+								<span class="hk-dot hk-dot--on" aria-hidden="true"></span>Applied.
+							</p>
 						{/if}
-					</li>
-				{/each}
-			</ul>
-			{#if revisions.length > REVISIONS_SHOWN}
-				<button
-					type="button"
-					class="hk-btn-ghost hk-btn-sm revs-toggle"
-					aria-expanded={allRevisions}
-					onclick={() => (allRevisions = !allRevisions)}
-					>{allRevisions ? 'Show fewer' : `Show all ${revisions.length}`}</button
-				>
+					</section>
+				{/if}
+
+				<!-- Held to the foot of the window while the editor is in view
+				     (Guide B 12.23). -->
+				<div class="hk-bottom-bar cbar">
+					{#if heldNavigation}
+						<div class="hk-banner cguard" role="alert">
+							<p>Unsaved changes. Leave this page anyway?</p>
+							<span class="cguard-buttons">
+								<button
+									type="button"
+									class="hk-btn-secondary hk-btn-sm"
+									bind:this={stayButton}
+									onclick={() => (heldNavigation = undefined)}>Stay</button
+								>
+								<button type="button" class="hk-btn-ghost hk-btn-sm" onclick={leave}>Leave</button>
+							</span>
+						</div>
+					{/if}
+					<span class="cbar-status" role="status">
+						{#if applying}
+							Building…
+						{:else if nixReadonly}
+							Written by the menu
+						{:else if nixDirty && !heldNavigation}
+							<span class="cbar-dirty">Unsaved changes</span>
+						{/if}
+					</span>
+					<!-- The screen's primary once there is something to apply. -->
+					<button
+						type="button"
+						class={nixDirty ? 'hk-btn' : 'hk-btn-secondary'}
+						disabled={applying || nixReadonly || !nixDirty}
+						onclick={applyNix}
+					>
+						{applying ? 'Applying…' : 'Apply'}
+					</button>
+				</div>
 			{/if}
-		{/if}
+		</LoadState>
 	</section>
+
+	{#if project && config}
+		<section class="hk-section" aria-labelledby="rev-title">
+			<div class="hk-section-head">
+				<h2 id="rev-title" class="hk-h2-app">Revisions</h2>
+			</div>
+			{#if revisions.length === 0}
+				<div class="hk-empty-row"><span>No revisions yet.</span></div>
+			{:else}
+				<ul class="rev-list">
+					{#each shownRevisions as rev (rev.revision_id)}
+						{@const live = rev.status === 'applied' && rev.revision_id === config?.revision_id}
+						<li class="rev">
+							<span class="rev-date">{dateTime(rev.created_at)}</span>
+							<span class="rev-status"
+								>{#if rev.status === 'failed'}<span class="hk-dot hk-dot--err" aria-hidden="true"
+									></span>{/if}{live ? 'current' : rev.status}</span
+							>
+							{#if rev.status !== 'building' && !live}
+								<button
+									type="button"
+									class="hk-btn-ghost hk-btn-sm rev-apply"
+									disabled={applying}
+									onclick={() => reapply(rev)}
+									>{reapplying === rev.revision_id ? 'Re-applying…' : 'Re-apply'}</button
+								>
+							{/if}
+						</li>
+					{/each}
+				</ul>
+				{#if revisions.length > REVISIONS_SHOWN}
+					<button
+						type="button"
+						class="hk-btn-ghost hk-btn-sm revs-toggle"
+						aria-expanded={allRevisions}
+						onclick={() => (allRevisions = !allRevisions)}
+						>{allRevisions ? 'Show fewer' : `Show all ${revisions.length}`}</button
+					>
+				{/if}
+			{/if}
+		</section>
+	{/if}
 {/if}
 
 <style>
@@ -857,12 +580,6 @@
 	.cbase {
 		margin: 0 0 0.75rem;
 	}
-	.cadd {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 1rem;
-	}
 	.cbase-buttons {
 		display: flex;
 		gap: 0.25rem;
@@ -870,12 +587,6 @@
 
 	/* ---- Packages ---- */
 	.chead {
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.5rem 1rem;
-	}
-	.chead-left {
-		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
 		gap: 0.5rem 1rem;
@@ -890,102 +601,6 @@
 	}
 	.cpanel > :global(.hk-banner) {
 		margin-bottom: 1rem;
-	}
-	@media (max-width: 639.98px) {
-		.chead-left,
-		.chead .hk-tablist {
-			display: grid;
-			grid-template-columns: 1fr 1fr;
-			width: 100%;
-		}
-	}
-
-	/* ---- Menu ---- */
-	.cgroup {
-		margin-top: 2rem;
-	}
-	/* Guide B's group header: 11px caps with a count. A heading element
-	   under Packages (tests read "Extra packages" as one), in the sans. */
-	.group-title {
-		display: flex;
-		align-items: baseline;
-		gap: 0.5rem;
-		margin: 0 0 0.25rem;
-		font-family: var(--hk-font-sans);
-		font-size: 0.6875rem;
-		font-weight: 500;
-		line-height: 1rem;
-		letter-spacing: 0.04em;
-		text-transform: uppercase;
-		color: var(--hk-text-3);
-	}
-	.group-n {
-		font-variant-numeric: tabular-nums;
-		letter-spacing: 0;
-	}
-	.citems {
-		display: grid;
-		border-bottom: 1px solid var(--hk-hairline);
-	}
-	@container dash (min-width: 640px) {
-		.citems {
-			grid-template-columns: repeat(2, minmax(0, 1fr));
-			column-gap: 2rem;
-		}
-	}
-	.citem {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: flex-start;
-		justify-content: space-between;
-		gap: 0.25rem 0.75rem;
-		padding: 0.625rem 0;
-		border-top: 1px solid var(--hk-hairline);
-	}
-	.citem-check {
-		align-items: flex-start;
-		min-width: 0;
-	}
-	.citem-check :global(input) {
-		margin-top: 0.1875rem;
-	}
-	.citem-text {
-		display: flex;
-		flex-direction: column;
-		min-width: 0;
-	}
-	.citem-name {
-		font-family: var(--hk-font-mono);
-		font-size: 0.8125rem;
-		font-weight: 500;
-		color: var(--hk-text);
-	}
-	.citem-desc {
-		font-size: 0.8125rem;
-		color: var(--hk-text-3);
-	}
-	.citem-select {
-		width: auto;
-		height: 1.875rem;
-		font-size: 0.8125rem;
-	}
-	.extras {
-		margin: 0;
-		padding: 0;
-		list-style: none;
-		border-bottom: 1px solid var(--hk-hairline);
-	}
-	.extra {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 1rem;
-		padding: 0.375rem 0;
-		border-top: 1px solid var(--hk-hairline);
-		font-size: 0.8125rem;
-	}
-	.extra-remove {
-		margin-right: -0.625rem;
 	}
 
 	/* ---- Build ---- */
@@ -1028,13 +643,6 @@
 	}
 	.cbar-dirty {
 		color: var(--hk-text);
-	}
-	.cbar-ok {
-		color: var(--hk-text);
-	}
-	.cbar-err {
-		color: var(--hk-err);
-		overflow-wrap: anywhere;
 	}
 	.cguard {
 		flex-basis: 100%;
@@ -1089,7 +697,6 @@
 	}
 	/* Forced colours draw a ghost's border: keep it inside the frame. */
 	@media (forced-colors: active) {
-		.extra-remove,
 		.rev-apply {
 			margin-inline: 0;
 		}

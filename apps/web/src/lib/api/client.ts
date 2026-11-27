@@ -9,14 +9,12 @@ import { reachability } from './reachability.svelte';
 import type {
 	ApiErrorBody,
 	Billing,
-	CatalogItem,
 	Checkout,
 	Config,
 	DestroyedProject,
 	EventsPage,
 	Invoice,
 	Me,
-	MenuSelection,
 	OpStatus,
 	PersonalConfig,
 	PutPersonalResult,
@@ -268,10 +266,7 @@ export const getProjectRoute = (id: string) => request<Route>(`/projects/${id}/r
 
 // Config.
 export const getConfig = (id: string) => request<Config>(`/projects/${id}/config`);
-export const putConfig = (
-	id: string,
-	body: ({ fragment: string } | { menu: MenuSelection }) & { base_revision_id?: string }
-) =>
+export const putConfig = (id: string, body: { fragment: string; base_revision_id?: string }) =>
 	request<{ revision_id: string; op_id: string }>(`/projects/${id}/config`, {
 		method: 'PUT',
 		body
@@ -280,7 +275,6 @@ export const listRevisions = (id: string) =>
 	request<Revision[]>(`/projects/${id}/config/revisions`);
 export const applyRevision = (id: string, rev: string) =>
 	request<{ op_id: string }>(`/projects/${id}/config/revisions/${rev}/apply`, { method: 'POST' });
-export const getCatalog = () => request<CatalogItem[]>('/catalog');
 
 // Secrets.
 export const listSecrets = (id: string) => request<SecretMeta[]>(`/projects/${id}/secrets`);
@@ -294,6 +288,9 @@ export const deleteSecret = (id: string, name: string) =>
 
 // Webhook routes: a public URL into the machine (DECISIONS I-1110).
 export const listWebhooks = (id: string) => request<WebhookRoute[]>(`/projects/${id}/webhooks`);
+/** One route with its newest 20 deliveries (api.md, ENG-56). */
+export const getWebhook = (id: string, name: string) =>
+	request<WebhookRoute>(`/projects/${id}/webhooks/${encodeURIComponent(name)}`);
 export const putWebhook = (id: string, name: string, target: string, allowStart: boolean) =>
 	request<WebhookRoute>(`/projects/${id}/webhooks`, {
 		method: 'POST',

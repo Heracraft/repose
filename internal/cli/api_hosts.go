@@ -63,6 +63,10 @@ type Install struct {
 // CreateHostRequest is POST /hosts. An empty Name lets the api name it.
 type CreateHostRequest struct {
 	Name string `json:"name,omitempty"`
+	// Provider is `mac` when the host is this Mac, which `repose host
+	// add` installs on (DECISIONS I-1700): a create waiting for it says
+	// "your Mac". Empty is the api's `metal`.
+	Provider string `json:"provider,omitempty"`
 }
 
 func (c *Client) ListHosts(ctx context.Context) ([]Host, error) {

@@ -12,8 +12,11 @@ import {
 	createProject,
 	destroyProject,
 	apiURLFromEnv,
-	type BillingState
+	type BillingState,
+	cleanSlate
 } from './helpers';
+
+cleanSlate();
 
 test.afterAll(async () => {
 	await resetBilling();
@@ -655,17 +658,23 @@ test('invoices come six to a page, newest first, with Newer and Older', async ({
 test('a plan that never arrives points at the support address', async ({ page }) => {
 	await setBilling({ mode: 'none' });
 	await page.clock.install();
+	let reads = 0;
+	page.on('response', (r) => {
+		if (r.request().method() === 'GET' && new URL(r.url()).pathname.endsWith('/billing')) reads++;
+	});
 	await page.goto('/billing?checkout=done');
 	await expect(page.getByTestId('setting-up')).toBeVisible();
 
 	// Thirty rounds of 2s, and the webhook never lands. Each round awaits
-	// a real GET /billing, so the clock is stepped a round at a time
-	// rather than jumped: one jump fires the timers and leaves thirty
-	// fetches unresolved.
-	for (let i = 0; i < 32; i++) {
+	// a real GET /billing, so the clock is stepped a round at a time and
+	// each step waits for that round's read to come back, not for a fixed
+	// time: a 20 ms wait lost the race under load (ENG-220).
+	for (let i = 0; i < 30; i++) {
+		const before = reads;
 		await page.clock.runFor(2100);
-		await page.waitForTimeout(20);
+		await expect.poll(() => reads, { timeout: 10_000 }).toBeGreaterThan(before);
 	}
+	await page.clock.runFor(2100);
 
 	const banner = page.getByText('The plan has not arrived.');
 	await expect(banner).toBeVisible();

@@ -1749,6 +1749,12 @@ func (e *Engine) onFail(ctx context.Context, op *store.Op, code, msg string, lin
 		// the machine (the lab's F2). The op keeps the refusal, which the
 		// CLI and the dashboard show; no event, nothing billed.
 		_, _ = e.pool.Exec(ctx, "update projects set state = 'destroyed', destroyed_at = now(), host_id = null, last_error = $2 where id = $1 and state <> 'destroyed'", p.ID, CreateRefusedPrefix+short) // best effort; the op carries the error
+	case op.Kind == KindCreate && code == "capacity" && waitHostOf(op) != uuid.Nil && p.HostID == nil:
+		// A create that waited for its host and can no longer have it
+		// (removed, or never joined, I-1700) made nothing anywhere: the
+		// project goes, as one refused at placement never exists
+		// (I-1648), and GET /projects/:id says why it was not created.
+		_, _ = e.pool.Exec(ctx, "update projects set state = 'destroyed', destroyed_at = now(), host_id = null, last_error = $2 where id = $1 and state <> 'destroyed'", p.ID, CreateRefusedPrefix+short) // best effort; the op carries the error
 	case op.Kind == KindCreate || op.Kind == KindStart || op.Kind == KindRestore:
 		if code == "capacity" {
 			_, _ = e.pool.Exec(ctx, "update projects set host_id = null where id = $1", p.ID) // free the placement
@@ -1990,6 +1996,15 @@ func (e *Engine) ownHostRefusalDetail(ctx context.Context, p *store.Project, pin
 func (e *Engine) ownHostWhy(h store.Host, class string, short bool, rooms map[uuid.UUID]scheduler.Room) string {
 	switch h.State {
 	case "registering":
+		if !waitable(h, e.now()) {
+			// Its token is spent or expired, so it cannot join on it:
+			// "not yet" promised an outcome that will not come (ENG-59,
+			// I-1722). A host that can still join is waited for (I-1700).
+			if short {
+				return "never finished installing"
+			}
+			return "never finished installing. Remove it and add it again: repose host rm " + h.Name + ", then repose host add"
+		}
 		return "has not joined your account yet"
 	case "unreachable":
 		// How long it has been quiet, not just that it is: a user
@@ -2122,15 +2137,40 @@ func (e *Engine) placeOp(ctx context.Context, op *store.Op, p *store.Project) (*
 			if err != nil {
 				return err
 			}
-			pk, err := scheduler.PickHost(ctx, tx, t, p.Class, p.HeldBytes(), p.VolumeBytes, e.now())
+			// A create waiting for its host to register goes there and
+			// nowhere else (I-1700).
+			pk, err := scheduler.PickHost(ctx, tx, pinTarget(t, op), p.Class, p.HeldBytes(), p.VolumeBytes, e.now())
 			if err != nil {
 				return err
 			}
 			picked = pk.HostID
 		}
+		if waitHostOf(op) != uuid.Nil {
+			// A destroy may have ended this create while it waited
+			// (CancelRegistrationWait); the op row is locked before the
+			// project row, as that does, and a create no longer open
+			// places nothing.
+			var state string
+			if err := tx.QueryRow(ctx, "select state from ops where id = $1 for update", op.ID).Scan(&state); err != nil {
+				return err
+			}
+			if state != "pending" && state != "running" {
+				return errPlacementWait
+			}
+		}
 		_, err := tx.Exec(ctx, "update projects set host_id = $2 where id = $1 and host_id is null", p.ID, picked)
 		return err
 	})
+	if errors.Is(err, errPlacementWait) {
+		return nil, err
+	}
+	if wh := waitHostOf(op); wh != uuid.Nil && errors.Is(err, scheduler.ErrNoOwnHost) {
+		if waits, werr := e.registrationWaits(ctx, op, p, wh); werr != nil {
+			return nil, werr
+		} else if waits {
+			return nil, errPlacementWait
+		}
+	}
 	if errors.Is(err, scheduler.ErrNoCapacity) && e.placementWaits(ctx, op, p) {
 		return nil, errPlacementWait
 	}

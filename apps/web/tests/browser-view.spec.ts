@@ -12,8 +12,11 @@ import {
 	apiURLFromEnv,
 	destroyProject,
 	setDesktop,
-	desktopPastes
+	desktopPastes,
+	cleanSlate
 } from './helpers';
+
+cleanSlate();
 
 test.beforeEach(async ({ page }) => {
 	await signIn(page);
@@ -160,6 +163,26 @@ test.describe('with frames coming', () => {
 		await expect
 			.poll(async () => await desktopPastes(), { timeout: 10_000 })
 			.toEqual(['https://admin.example.test/login']);
+
+		// ENG-241: the watcher's own paste on the view reaches the machine,
+		// and the view goes full screen and back.
+		await page.getByTestId('view-frame').evaluate((el) => {
+			const dt = new DataTransfer();
+			dt.setData('text/plain', 'pasted on the view');
+			el.querySelector('canvas')!.dispatchEvent(
+				new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })
+			);
+		});
+		await expect
+			.poll(async () => await desktopPastes(), { timeout: 10_000 })
+			.toEqual(['https://admin.example.test/login', 'pasted on the view']);
+		await page.getByRole('button', { name: 'Full screen' }).click();
+		await expect(page.getByRole('button', { name: 'Exit full screen' })).toBeVisible();
+		expect(await page.evaluate(() => document.fullscreenElement?.getAttribute('data-testid'))).toBe(
+			'view-frame'
+		);
+		await page.getByRole('button', { name: 'Exit full screen' }).click();
+		await expect(page.getByRole('button', { name: 'Full screen' })).toBeVisible();
 
 		// The look, at 1x, at both widths and in both schemes: the review
 		// CLAUDE.md asks for, on the state that has the panel in it.

@@ -27,7 +27,7 @@ func TestUnknownCommandSuggests(t *testing.T) {
 		{[]string{"secrets", "lsit"}, "Did you mean `repose secrets list`?"},
 		{[]string{"secrets", "--project", "izma", "imprt"}, "Did you mean `repose secrets import`?"},
 		{[]string{"snapshots", "lst"}, "Did you mean `repose snapshots list`?"},
-		{[]string{"config", "remov", "air"}, "Did you mean `repose config remove`?"},
+		{[]string{"config", "revisons"}, "Did you mean `repose config revisions`?"},
 		{[]string{"zzzz"}, "`repose --help` shows its usage."},
 		// Real commands, aliases, help and completion are not unknown.
 		{[]string{"ls"}, ""},

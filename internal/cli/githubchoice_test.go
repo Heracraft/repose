@@ -31,6 +31,12 @@ func TestGithubChoiceMenuKeys(t *testing.T) {
 		{"\x1b", githubChoiceNone},
 		{"", githubChoiceNone},     // the input ended
 		{"zx c", githubChoiceCopy}, // anything else is ignored
+		// A key that sends an escape sequence is ignored whole, never read
+		// as Esc (ENG-192): up arrow, Insert, F5, an SS3 arrow.
+		{"\x1b[At", githubChoiceToken},
+		{"\x1b[2~n", githubChoiceNo},
+		{"\x1b[15~c", githubChoiceCopy},
+		{"\x1bOBt", githubChoiceToken},
 	} {
 		var out bytes.Buffer
 		got, err := githubChoiceMenu(strings.NewReader(c.in), &out)

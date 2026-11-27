@@ -14,7 +14,7 @@ import (
 
 // MsgNixConfigRetired is the api's sentence for a Nix file sent to an
 // erofs machine (internal/api/http.MsgNixConfigRetired).
-const MsgNixConfigRetired = "This machine runs the Ubuntu base; custom Nix files are not used, and `repose config add <item>` installs packages and services."
+const MsgNixConfigRetired = "This machine runs the Ubuntu base; custom Nix files are not used. Install packages on the machine with apt-get."
 
 // MsgMenuStale is the api's sentence for a config PUT whose
 // base_revision_id is not the project's current revision

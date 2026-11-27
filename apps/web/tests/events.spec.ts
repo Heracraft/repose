@@ -3,7 +3,16 @@
 // kind; the page lives in the URL, so Back and a reload keep it
 // (DECISIONS I-662, which replaced I-414's Show older; the tab is I-841).
 import { test, expect, type Page } from '@playwright/test';
-import { signIn, createProject, apiURLFromEnv, addEvents, addQuestion } from './helpers';
+import {
+	signIn,
+	createProject,
+	apiURLFromEnv,
+	addEvents,
+	addQuestion,
+	cleanSlate
+} from './helpers';
+
+cleanSlate();
 
 /**
  * The viewport at 1440 and 390 in both schemes, at 1x ("Judge visuals at

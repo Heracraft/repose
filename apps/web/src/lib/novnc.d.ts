@@ -24,6 +24,8 @@ declare module '@novnc/novnc' {
 		focus(): void;
 		/** Hands the server's clipboard this text (docs/API.md). */
 		clipboardPasteFrom(text: string): void;
+		/** Sends one key event: an X keysym, its DOM code, down or up. */
+		sendKey(keysym: number, code: string | null, down?: boolean): void;
 		/**
 		 * The server sent clipboard data (docs/API.md "clipboard"). Named
 		 * here so the Browser tab's handler is typed; the second signature

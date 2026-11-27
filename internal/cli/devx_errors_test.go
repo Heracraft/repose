@@ -5,6 +5,7 @@ import (
 	"context"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -295,8 +296,19 @@ func TestLoginStatus(t *testing.T) {
 	if err := loginStatus(context.Background(), e); err != nil {
 		t.Fatal(err)
 	}
-	if got := out.String(); !strings.HasSuffix(got, ", Plus plan\n") {
+	// What it costs and when, where a customer looks for it from the CLI
+	// (ENG-39): the next charge, and a trial's end.
+	if got := out.String(); !regexp.MustCompile(`, Plus plan, next charge \$[0-9]+(\.[0-9]{2})? on [0-9]{4}-[0-9]{2}-[0-9]{2}\n$`).MatchString(got) {
 		t.Errorf("status on a plan %q", got)
+	}
+	fake.SetBilling(fakeapi.BillingTrial)
+	fake.SetPlan("solo")
+	out.Reset()
+	if err := loginStatus(context.Background(), e); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.String(); !regexp.MustCompile(`, Solo plan, trial until [0-9]{4}-[0-9]{2}-[0-9]{2}, then \$[0-9]+(\.[0-9]{2})?\n$`).MatchString(got) {
+		t.Errorf("status on a trial %q", got)
 	}
 	e.Client = newClient(fake.URL()+"/v1", notLoggedInSource{})
 	var errOut bytes.Buffer

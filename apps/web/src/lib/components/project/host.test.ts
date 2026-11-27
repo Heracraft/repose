@@ -9,7 +9,8 @@ import {
 	offlineHostText,
 	ownHostName,
 	projectHostLabel,
-	projectRowReason
+	projectRowReason,
+	waitingForHostText
 } from './host';
 
 const host = (over: Partial<OwnedHost> = {}): OwnedHost => ({
@@ -60,7 +61,11 @@ describe('host readout (I-1392)', () => {
 describe('offlineHostText', () => {
 	it('names an owned host from host_name even before /hosts resolves', () => {
 		expect(
-			offlineHostText({ host_id: 'h1', host_name: 'mac-mini', host_unreachable: true }, new Map(), NOW)
+			offlineHostText(
+				{ host_id: 'h1', host_name: 'mac-mini', host_unreachable: true },
+				new Map(),
+				NOW
+			)
 		).toBe('your host mac-mini has not answered');
 	});
 
@@ -75,6 +80,37 @@ describe('offlineHostText', () => {
 		expect(offlineHostText({ host_id: 'host-02', host_unreachable: true }, new Map(), NOW)).toBe(
 			'server not answering'
 		);
+	});
+});
+
+describe('a create waiting for its host (I-1700)', () => {
+	it('names a Mac as your Mac and any other host by its name, on the row too', () => {
+		const mac = {
+			state: 'creating' as const,
+			last_error: null,
+			waiting_for_host: { name: 'mac-mini', provider: 'mac' }
+		};
+		const want =
+			"Waiting for your Mac (mac-mini) to finish installing. This project starts there when it's ready.";
+		expect(waitingForHostText(mac)).toBe(want);
+		expect(projectRowReason(mac)).toBe(want);
+		expect(
+			waitingForHostText({
+				state: 'creating',
+				waiting_for_host: { name: 'box-1', provider: 'metal' }
+			})
+		).toBe(
+			"Waiting for your host box-1 to finish installing. This project starts there when it's ready."
+		);
+	});
+	it('says nothing once the machine is past creating', () => {
+		expect(
+			waitingForHostText({
+				state: 'running',
+				waiting_for_host: { name: 'mac-mini', provider: 'mac' }
+			})
+		).toBe('');
+		expect(waitingForHostText({ state: 'creating', waiting_for_host: null })).toBe('');
 	});
 });
 
@@ -106,7 +142,11 @@ describe('error and capacity copy', () => {
 		);
 		expect(capacityRefusalText(ownErr)).toBe('Your host stalehost has not registered yet.');
 
-		const fleetErr = new ApiError({ code: 'capacity', message: 'no host with capacity' }, 503, null);
+		const fleetErr = new ApiError(
+			{ code: 'capacity', message: 'no host with capacity' },
+			503,
+			null
+		);
 		expect(capacityRefusalText(fleetErr)).toBe('No capacity right now.');
 	});
 });
@@ -138,7 +178,10 @@ describe('destroyRefusalMessage', () => {
 
 	it('returns undefined for non-conflict errors', () => {
 		expect(
-			destroyRefusalMessage(new ApiError({ code: 'internal', message: 'internal' }, 500, null), 'starting')
+			destroyRefusalMessage(
+				new ApiError({ code: 'internal', message: 'internal' }, 500, null),
+				'starting'
+			)
 		).toBeUndefined();
 	});
 });
