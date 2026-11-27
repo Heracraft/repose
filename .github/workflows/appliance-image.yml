@@ -45,6 +45,10 @@ on:
       - .github/workflows/appliance-image.yml
   push:
     tags: ["appliance-*"]
+    # The design 2 program's branches run check and mac (never hostd, which
+    # only a tag reaches), as no pull request of theirs exists before the
+    # program merges to main (DECISIONS I-1688). Drop with that merge.
+    branches: ["design2", "d2-*"]
 permissions: {}
 jobs:
   check:
