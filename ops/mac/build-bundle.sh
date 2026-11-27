@@ -3,7 +3,9 @@
 # I-1684, I-1686), on macOS on Apple silicon with Xcode's command line
 # tools (swiftc, clang, codesign) and Go. It holds, under bin/:
 #
-#   hostd, repose-hostd-update   Go, cross-built (the same bytes from any machine)
+#   hostd, repose-hostd-update   Go, cross-built (the same bytes from any machine
+#                                with the same official Go release; a patched Go,
+#                                such as nixpkgs', gives other bytes)
 #   repose-vm                    the VM launcher, Swift, signed ad hoc with
 #                                com.apple.security.virtualization (cmd/repose-vm)
 #   mke2fs e2fsck dumpe2fs debugfs   e2fsprogs, from its pinned release

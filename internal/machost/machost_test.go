@@ -308,7 +308,7 @@ func newFakeMac(t *testing.T, current string) *fakeMac {
 				w.WriteHeader(int(s))
 				return
 			}
-			fmt.Fprintf(w, `[{"tag_name":"hostd-2026.12.1","assets":[{"name":"manifest-darwin.json","browser_download_url":"%s/manifest"}]}]`, f.srv.URL)
+			_, _ = fmt.Fprintf(w, `[{"tag_name":"hostd-2026.12.1","assets":[{"name":"manifest-darwin.json","browser_download_url":"%s/manifest"}]}]`, f.srv.URL)
 		case r.URL.Path == "/manifest":
 			_, _ = w.Write(f.man)
 		case strings.HasPrefix(r.URL.Path, "/b/"):

@@ -314,11 +314,9 @@ func macHostInstall(ctx context.Context, e *Env, argument, hostName, argumentPat
 		who = "This Mac"
 	}
 	_, _ = fmt.Fprintf(e.ErrOut, "waiting for %s to join your account\n", who)
-	id, err := macWaitJoined(ctx, p.ControlSock())
-	if err != nil {
+	if _, err := macWaitJoined(ctx, p.ControlSock()); err != nil {
 		return exitf(ExitGeneric, "%s has not joined your account after %s: %v. hostd keeps trying; its log is %s.", who, macJoinWait, err, machost.HostdLog())
 	}
-	_ = id
 	_ = os.RemoveAll(unpacked)
 	_ = os.Remove(bundle)
 	if argumentPath != "" && hostName != "" {

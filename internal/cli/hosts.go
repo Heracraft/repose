@@ -392,7 +392,7 @@ func HostRmCmd(ctx context.Context, e *Env, name string, yes bool, confirm func(
 		case rec.Host != "":
 			_, _ = fmt.Fprintf(e.ErrOut, "This Mac runs %s, not %s; repose stays on it.\n", rec.Host, h.Name)
 		default:
-			_, _ = fmt.Fprintln(e.ErrOut, "This Mac's repose was added with --join and stays; `repose host rm --local` removes it.")
+			_, _ = fmt.Fprintln(e.ErrOut, "This Mac's repose was added with --join and stays.")
 		}
 	}
 	// Design 1's appliance, which no longer runs (I-1684).
