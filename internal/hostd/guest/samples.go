@@ -407,6 +407,13 @@ func (m *Manager) CollectSamples(ctx context.Context) *hostdv1.Samples {
 				// environment's agent is not answering".
 				gsm.Resting = true
 				m.fillResting(g.GuestID, gsm)
+				if m.restSaved(g) {
+					// Resting as a save: its VM has ended and holds none
+					// of the Mac's memory, so the guest's last figure is
+					// not repeated; the api then shows no memory in use
+					// (review-dash P2 #4, I-1690 amendment).
+					gsm.GuestMemUsedBytes = 0
+				}
 			} else if sess, err := m.session(g.GuestID); err == nil {
 				sctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 				sr, err := sess.Sample(sctx)

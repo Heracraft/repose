@@ -239,7 +239,9 @@ test('Connect offers repose attach first and never repose run', async ({ page })
 	const rows = page.getByRole('list', { name: 'Connect' }).getByRole('listitem');
 	await expect(rows).toHaveCount(3);
 	await expect(rows.nth(0)).toContainText(`repose attach ${p.slug}`);
-	await expect(rows.nth(0).getByRole('button', { name: 'Copy the repose attach command' })).toBeVisible();
+	await expect(
+		rows.nth(0).getByRole('button', { name: 'Copy the repose attach command' })
+	).toBeVisible();
 	await expect(rows.nth(1)).toContainText(`ssh ${p.slug}.repose`);
 	await expect(rows.nth(2)).toContainText(`repose code ${p.slug}`);
 	await expect(page.getByRole('list', { name: 'Connect' })).not.toContainText('repose run');
@@ -277,7 +279,10 @@ test('the Overview sits in two columns at 1440 and stacks in one column at 1024 
 		await page.setViewportSize({ width, height: 900 });
 		const stacked = await boxes(page, ORDER);
 		const ys = ORDER.map((n) => stacked[n].y);
-		expect([...ys].sort((m, n) => m - n), `at ${width}`).toEqual(ys);
+		expect(
+			[...ys].sort((m, n) => m - n),
+			`at ${width}`
+		).toEqual(ys);
 		for (const n of ORDER) {
 			expect(Math.abs(stacked[n].x - stacked.Connect.x), `${n} at ${width}`).toBeLessThanOrEqual(1);
 		}

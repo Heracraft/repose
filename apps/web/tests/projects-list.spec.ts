@@ -704,7 +704,9 @@ test('no cell in the projects table is clipped at the widths it is drawn at', as
 			cells
 				.filter((c) => getComputedStyle(c).overflow === 'hidden')
 				.filter((c) => c.scrollWidth > c.clientWidth + 1)
-				.map((c) => `${c.className}: ${c.clientWidth} of ${c.scrollWidth} for ${c.textContent?.trim()}`)
+				.map(
+					(c) => `${c.className}: ${c.clientWidth} of ${c.scrollWidth} for ${c.textContent?.trim()}`
+				)
 		);
 		expect(clipped, `clipped at ${width}`).toEqual([]);
 	}

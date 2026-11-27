@@ -387,6 +387,9 @@ export interface OwnedHost {
 	/** A Mac that parks its machines before a restart, so Restart keeps
 	 * their memory (I-1690). */
 	can_restart?: boolean;
+	/** Set between a restart through repose and the return of its
+	 * machines (I-1690 amendment). */
+	restarting_since?: string;
 	last_heartbeat_at?: string;
 	registered_at?: string;
 	created_at: string;

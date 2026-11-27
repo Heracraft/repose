@@ -72,7 +72,13 @@
 	} from '$lib/projectList';
 	import type { DestroyedProject, OwnedHost, Project, Question } from '$lib/api/types';
 	import { frozenSince } from '$lib/frozen';
-	import { notAnsweringSince, notAnsweringText, parkedText, restingWaitText } from '$lib/answering';
+	import {
+		notAnsweringSince,
+		notAnsweringText,
+		parkedText,
+		restingWaitText,
+		sizedDownShort
+	} from '$lib/answering';
 	import { stopWarning } from '$lib/busyAgents';
 	import { focusAfterRender, focusOnMount } from '$lib/focus';
 	import { tabStopWhenScrolls } from '$lib/scroller';
@@ -583,6 +589,10 @@
 	{#if p.pending_base_version}
 		<!-- A newer base waits for the machine's next restart (I-1522). -->
 		<span class="sub">new base at next restart</span>
+	{/if}
+	{#if sizedDownShort(p)}
+		<!-- Started smaller than its size on a Mac (I-1680, review-dash P3 #8). -->
+		<span class="sub" data-testid="row-sized-down">started at {sizedDownShort(p)}</span>
 	{/if}
 	{#if restingWaitText(p)}
 		<!-- Resting as a save a locked Mac cannot read (I-1682). -->

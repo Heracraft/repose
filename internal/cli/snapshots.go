@@ -69,11 +69,11 @@ func SnapshotsListCmd(ctx context.Context, e *Env, projectArg string) error {
 	return tw.Flush()
 }
 
-// snapshotReasonCell is the REASON cell, with "gone with host NAME" for
+// snapshotReasonCell is the REASON cell, with "gone with removed host NAME" for
 // a snapshot its host's removal deleted (DECISIONS I-1544).
 func snapshotReasonCell(s Snapshot) string {
 	if s.GoneWithHost != nil {
-		return s.Reason + ", gone with host " + *s.GoneWithHost
+		return s.Reason + ", gone with removed host " + *s.GoneWithHost
 	}
 	return s.Reason
 }

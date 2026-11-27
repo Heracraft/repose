@@ -122,6 +122,11 @@ func (f *Fake) out(p *project) Project {
 		if p.memUsed > 0 {
 			o.MemUsedBytes = p.memUsed
 		}
+		if o.Resting != nil && p.restSaved {
+			// Resting as a save on a Mac: hostd reports no memory in
+			// use, and the api sends none (I-1690 amendment).
+			o.MemUsedBytes = 0
+		}
 	}
 	return o
 }
@@ -132,6 +137,16 @@ func (f *Fake) SetMemUsed(projectID string, b int64) {
 	defer f.mu.Unlock()
 	if p := f.projects[projectID]; p != nil {
 		p.memUsed = b
+	}
+}
+
+// SetRestSaved makes a resting machine on a Mac one resting as a save,
+// whose VM holds none of the Mac's memory (I-1690 amendment), or not.
+func (f *Fake) SetRestSaved(projectID string, saved bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if p := f.projects[projectID]; p != nil {
+		p.restSaved = saved
 	}
 }
 
@@ -239,7 +254,9 @@ func (f *Fake) SetWaitsFor(projectID, waits string) {
 		p.Resting.WaitsFor = waits
 	}
 	if p.Parked != nil {
-		if waits != "unlock" {
+		// "restart": parked by a restart through repose while the Mac
+		// reboots (I-1690 amendment).
+		if waits != "unlock" && waits != "restart" {
 			waits = "login"
 		}
 		p.Parked.WaitsFor = waits
@@ -433,6 +450,8 @@ type project struct {
 	owner string
 	// memUsed is what SetMemUsed set, 0 for the default.
 	memUsed int64
+	// restSaved is a Mac machine resting as a save (SetRestSaved).
+	restSaved bool
 	// goneUnsized: destroyed off a host of the account's own that
 	// shares, where it had no size (I-1654).
 	goneUnsized bool

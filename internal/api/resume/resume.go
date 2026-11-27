@@ -15,6 +15,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/jackc/pgx/v5"
 	"log/slog"
 	"os"
 	"sort"
@@ -134,6 +135,12 @@ func (r *Resumer) OnHello(ctx context.Context, hostID uuid.UUID, h *hostdv1.Hell
 		t := time.Unix(h.HostBootAt, 0).UTC()
 		bootAt = &t
 	}
+	// A host the account owns is named as theirs: "the server" read as
+	// repose's on a customer's Mac (review-dash P3 #9).
+	var ownName string
+	if err := r.pool.QueryRow(ctx, "select name from hosts where id = $1 and owner_account_id is not null", hostID).Scan(&ownName); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("resume: host name: %w", err)
+	}
 	inserted := 0
 	for _, g := range h.Guests {
 		if g.InterruptedBootId == "" || g.State == "running" {
@@ -166,7 +173,7 @@ func (r *Resumer) OnHello(ctx context.Context, hostID uuid.UUID, h *hostdv1.Hell
 			}
 			inserted++
 			r.log.Info("machine stopped by a host restart", "event", "guest_resume", "project_id", p.ID.String(), "host_id", hostID.String(), "outcome", OutcomePending)
-			return events.InsertProjectQuiet(ctx, tx, p.ID, r.Now(), EventHostRestarted, restartedSummary(bootAt, at))
+			return events.InsertProjectQuiet(ctx, tx, p.ID, r.Now(), EventHostRestarted, restartedSummary(bootAt, at, ownName))
 		})
 		if err != nil {
 			return fmt.Errorf("resume: record interrupted guest: %w", err)
@@ -178,10 +185,13 @@ func (r *Resumer) OnHello(ctx context.Context, hostID uuid.UUID, h *hostdv1.Hell
 	return nil
 }
 
-func restartedSummary(bootAt *time.Time, at time.Time) string {
+func restartedSummary(bootAt *time.Time, at time.Time, ownHost string) string {
 	t := at
 	if bootAt != nil {
 		t = *bootAt
+	}
+	if ownHost != "" {
+		return "your host " + ownHost + " restarted, and what this machine held in memory is lost; it was back at " + t.UTC().Format("15:04") + " UTC"
 	}
 	return "the server running this machine restarted; it was back at " + t.UTC().Format("15:04") + " UTC"
 }

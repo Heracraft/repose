@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // SetOwnedHostRestart makes the account's live host called name one whose
@@ -111,4 +112,34 @@ func (f *Fake) accountOwnedHost(owner, id string) *ownedHostRec {
 		}
 	}
 	return nil
+}
+
+// SetOwnedHostRestarting makes the account's live host called name one
+// restarting through repose, or one that is back (I-1690 amendment): the
+// api's restarting_since on the host, and parked waits_for "restart" on
+// each running machine there, as the real api derives them.
+func (f *Fake) SetOwnedHostRestarting(name string, on bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, h := range f.ownedHosts {
+		if h.Name != name || h.State == "retired" || h.State == "lost" {
+			continue
+		}
+		var since *time.Time
+		if on {
+			t := f.now()
+			since = &t
+		}
+		h.RestartingSince = since
+		for _, p := range f.projects {
+			if p.HostID != h.ID || p.State != "running" {
+				continue
+			}
+			if on {
+				p.Parked = &Parked{Since: *since, WaitsFor: "restart"}
+			} else if p.Parked != nil && p.Parked.WaitsFor == "restart" {
+				p.Parked = nil
+			}
+		}
+	}
 }

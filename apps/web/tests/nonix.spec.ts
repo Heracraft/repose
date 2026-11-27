@@ -152,9 +152,16 @@ test('adding a host shows the Mac step with its size and the x86 installer', asy
 		await dialog.getByLabel('Name', { exact: true }).fill('box');
 		await dialog.getByRole('button', { name: 'Add', exact: true }).click();
 		await expect(dialog.getByRole('heading', { name: 'On a Mac', exact: true })).toBeVisible();
+		// The step is a repose command, so the CLI comes first (review-dash P2 #3).
+		await expect(dialog.getByTestId('host-mac-cli')).toHaveText(
+			'The Mac needs the repose CLI and repose login first: Install.'
+		);
+		// Escape keeps the one view of the step (review-dash P3 #6).
+		await page.keyboard.press('Escape');
+		await expect(dialog.getByTestId('host-install')).toBeVisible();
 		await expect(dialog.getByTestId('host-install')).toContainText('repose host add --join ');
 		await expect(dialog.getByTestId('host-mac-size')).toHaveText(
-			'It downloads about 20 MB, and the first machine about 3 GB more; it needs 10 GB of free disk.'
+			'Repose takes about 50 MB on the Mac, and the first machine downloads about 3 GB more; it needs 10 GB of free disk.'
 		);
 		// Finding 9: what the installer takes for the machines' disks.
 		await expect(dialog.getByTestId('host-x86-disk')).toHaveText(

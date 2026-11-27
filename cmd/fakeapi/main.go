@@ -142,6 +142,8 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 		var body struct {
 			ProjectID string `json:"project_id"`
 			Minutes   int    `json:"minutes"`
+			// Saved: resting as a save on a Mac (I-1690 amendment).
+			Saved bool `json:"saved"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -155,6 +157,7 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 		if err := f.SetResting(body.ProjectID, since); err != nil {
 			http.Error(w, err.Error(), http.StatusNotFound)
 		}
+		f.SetRestSaved(body.ProjectID, body.Saved)
 	})
 	// {project_id, minutes}: the machine was parked that many minutes ago
 	// on a Mac and waits for its user to log in; minutes < 0 clears it
@@ -255,6 +258,9 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 			// Locked: the Mac's screen is locked, so its restart parks
 			// nothing (I-1682).
 			Locked bool `json:"locked"`
+			// Restarting, with state_host: the host is restarting through
+			// repose, or back with false (I-1690 amendment).
+			Restarting *bool `json:"restarting"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -280,6 +286,9 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 		}
 		if body.StateHost != "" && body.Restart != nil {
 			f.SetOwnedHostRestart(body.StateHost, *body.Restart, body.NotParked, body.Locked)
+		}
+		if body.StateHost != "" && body.Restarting != nil {
+			f.SetOwnedHostRestarting(body.StateHost, *body.Restarting)
 		}
 		if body.StateHost != "" && body.FreeBytes != nil {
 			f.SetOwnedHostFree(body.StateHost, *body.FreeBytes)
