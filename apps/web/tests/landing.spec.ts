@@ -405,9 +405,9 @@ test('the Mac part draws every figure from lib/data/mac-figures.ts and says wher
 	);
 	await expect(mac.locator('ul.mf .item-title')).toHaveText([
 		'Start in seconds',
-		'Snapshot in under a second',
-		'Idle sandboxes give memory back',
-		'Restart through repose and keep memory'
+		'Restore a snapshot in seconds',
+		'Stopped sandboxes give memory back',
+		'Restart and keep memory, when there is room'
 	]);
 	// Each value on the page is the data file's, formatted once.
 	const vals = (await mac.locator('.mf-val').allTextContents()).map((t) => t.trim());
@@ -418,14 +418,13 @@ test('the Mac part draws every figure from lib/data/mac-figures.ts and says wher
 		}
 	}
 	await expect(mac.locator('ul.mf .copy').nth(0)).toContainText(
-		`saved to disk in ${seconds(REST.save)}`
-	);
-	await expect(mac.locator('ul.mf .copy').nth(0)).toContainText(
-		`woken by your next command in ${seconds(REST.wake)}`
+		`your next command wakes it in ${seconds(REST.wake)}`
 	);
 	// The conditions travel with the figures.
-	await expect(mac.locator('ul.mf .copy').nth(0)).toContainText('While your Mac is unlocked');
+	await expect(mac.locator('ul.mf .copy').nth(0)).toContainText('keeps its memory');
+	await expect(mac.locator('ul.mf .copy').nth(1)).toContainText('refuses when the disk');
 	await expect(mac.locator('.mf-note')).toHaveText([
+		START.note!,
 		SNAPSHOT.note!,
 		REST.chart.note!,
 		RESTART.note!

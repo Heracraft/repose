@@ -40,18 +40,26 @@ describe('mac-figures', () => {
 			}
 			expect(ticks(c).at(-1)).toBe(c.max);
 		}
-		for (const v of [REST.save, REST.wake]) expect(v.n).toBeGreaterThanOrEqual(1);
+		expect(REST.wake.n).toBeGreaterThanOrEqual(1);
 	});
 
 	it('the claims in the titles hold for the figures', () => {
-		// "Snapshot in under a second"
-		expect(SNAPSHOT.rows[0].own.hi).toBeLessThan(1);
-		// "Idle sandboxes give their memory back"
+		// "Restore a snapshot in seconds": under 10 s, and ahead of the nested layout
+		expect(SNAPSHOT.rows[1].own.hi).toBeLessThan(10);
+		expect(SNAPSHOT.rows[1].own.hi).toBeLessThan(SNAPSHOT.rows[1].nested.lo);
+		// "Stopped sandboxes give memory back"
+		expect(REST.chart.rows[0].label).toMatch(/stopped/);
 		expect(REST.chart.rows[0].own.hi).toBe(0);
-		// "Start a sandbox in seconds": under a minute, and ahead of the nested layout
+		// "Start in seconds": under a minute, and starting from faster than the nested layout
 		for (const r of START.rows) {
 			expect(r.own.hi).toBeLessThan(60);
-			expect(r.own.hi).toBeLessThan(r.nested.lo);
+			expect(r.own.lo).toBeLessThan(r.nested.lo);
 		}
+		// A stopped one starts ahead of the nested layout's fastest run.
+		expect(START.rows[1].own.hi).toBeLessThan(START.rows[1].nested.lo);
+		// The new-sandbox slow run is said on the page.
+		expect(START.note).toContain(seconds({ ...START.rows[0].own, lo: START.rows[0].own.hi }));
+		// "when there is room": the refusals travel with the restart figure.
+		expect(RESTART.note).toMatch(/refused/);
 	});
 });
