@@ -133,7 +133,7 @@ test('an account with no machine opens on the form, the name offered and selecte
 		await field.evaluate((el: HTMLInputElement) => [el.selectionStart, el.selectionEnd])
 	).toEqual([0, offered.length]);
 	await expect(form(page).getByTestId('nm-summary')).toHaveText(
-		'large · 2 cores · 8 GB · kept until you destroy it'
+		'large · 2 cores · 8 GB · starts Claude Code · kept until you destroy it'
 	);
 });
 

@@ -470,9 +470,7 @@ test.afterAll(async () => {
 });
 
 const ghSwitch = (page: Page) =>
-	page
-		.locator('section#github')
-		.getByRole('checkbox', { name: 'Laptops may copy their gh login' });
+	page.locator('section#github').getByRole('checkbox', { name: 'Laptops may copy their gh login' });
 
 test('settings shows what the machines use for GitHub and turns the login copy off', async ({
 	page

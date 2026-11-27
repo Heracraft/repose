@@ -33,9 +33,9 @@ func newHostCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			"here and waits for the Mac to join your account: hostd, which starts when\n" +
 			"the Mac boots, before anyone logs in, and runs each machine as a virtual\n" +
 			"machine of its own; sudo asks for your password once to install it.\n" +
-			"Anywhere else it prints, on stdout alone so it pipes, the\n" +
-			"one step to run on the machine being added, which carries a token that\n" +
-			"works once. Without NAME, repose names it.\n\n" +
+			"Anywhere else it prints, on stdout alone so it pipes, the one step to\n" +
+			"run on the machine being added, which carries a token that works once.\n" +
+			"Without NAME, repose names it.\n\n" +
 			"https://repose.run/docs/own-hardware has what the machine needs first.",
 		Example: "  repose host add\n" +
 			"  repose host add mac-mini\n" +
@@ -113,11 +113,12 @@ func newHostCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		Aliases:    []string{"remove"},
 		SuggestFor: []string{"delete", "retire"},
 		Short:      "Take your hardware off your account",
-		Long: "Take NAME off your account, after one question. The machines on it stop and\n" +
-			"their snapshots stay on its disk. On the Mac that is NAME, repose is removed\n" +
-			"from it too, every machine's disk and snapshot included, and its memory and\n" +
-			"disk are the Mac's again; elsewhere the machine itself is untouched. --local\n" +
-			"removes repose from this Mac and nothing on your account.",
+		Long: "Take NAME off your account, after one question, which says how many\n" +
+			"snapshots are kept on it: removing the host deletes them, and repose has\n" +
+			"no copy. A host that is answering and still holds machines is refused;\n" +
+			"`repose rm` them first. One that has stopped answering is removed with\n" +
+			"its machines. On the Mac that is NAME, repose is removed from it too.\n" +
+			"--local removes repose from this Mac and nothing on your account.",
 		Args: argsN(0, 1, "one NAME, or --local"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			e, err := env()
@@ -127,6 +128,10 @@ func newHostCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			name := ""
 			if len(args) == 1 {
 				name = args[0]
+				// A bad name is refused before the question (review-cli).
+				if err := checkHostName(name); err != nil {
+					return err
+				}
 			}
 			if name == "" && !local {
 				return cobraUsageError{errors.New("rm takes one NAME, or --local")}
@@ -162,20 +167,23 @@ func newHostCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		Short: "Restart this Mac, keeping every machine's memory",
 		Long: "Park every machine on this Mac, each one's memory saved to a file, then\n" +
 			"restart the Mac; when you log in again the machines come back where they\n" +
-			"were. A machine that\n" +
-			"cannot be parked stops the restart, and the parked ones run again;\n" +
-			"--force restarts anyway, and those machines start fresh.",
+			"were. A machine that cannot be parked stops the restart, and the parked\n" +
+			"ones run again; --force restarts anyway, and those machines start fresh.",
 		Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			e, err := env()
 			if err != nil {
 				return err
 			}
+			// Off a Mac it says so before it asks anything (review-cli).
+			if !onMac() {
+				return exitf(ExitUsage, "repose host restart runs on the Mac it restarts.")
+			}
 			if !restartYes {
 				if !canPrompt(os.Stdin) {
 					return exitf(ExitUsage, "Restarting this Mac needs a confirmation; pass --yes to skip it.")
 				}
-				ok, err := askYesNo(cmd.Context(), "Restart this Mac? Its machines keep their memory.", false, "restarting")
+				ok, err := askYesNo(cmd.Context(), "Restart this Mac? Its machines keep their memory; save your work in its own apps first, since it may restart without waiting for them.", false, "restarting")
 				if err != nil {
 					return err
 				}
@@ -186,6 +194,7 @@ func newHostCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			return HostRestartCmd(cmd.Context(), e, restartForce)
 		},
 	}
+	restart.Flags().BoolVar(&g.json, "json", false, "print each machine's park as JSON before the restart; the line goes to stderr")
 	restart.Flags().BoolVarP(&restartYes, "yes", "y", false, "skip the confirmation")
 	restart.Flags().BoolVar(&restartForce, "force", false, "restart even if a machine could not be parked; it starts fresh")
 

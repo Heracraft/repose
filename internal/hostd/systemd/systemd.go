@@ -230,7 +230,12 @@ func (f *Fake) HasOp(op string) bool {
 	return slices.Contains(f.Ops, op)
 }
 
-func (f *Fake) Kill(_ context.Context, unit string) error {
+func (f *Fake) Kill(ctx context.Context, unit string) error {
+	// As the real one, whose systemctl (or launchctl) never runs on an
+	// ended context.
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.Ops = append(f.Ops, "kill "+unit)

@@ -61,6 +61,7 @@
 	import WaitingCard from '$lib/components/questions/WaitingCard.svelte';
 	import MachineCard, { DISK_SIZES_GB } from '$lib/components/project/MachineCard.svelte';
 	import AgentsCard from '$lib/components/project/AgentsCard.svelte';
+	import StartAgent from '$lib/components/project/StartAgent.svelte';
 	import OpenInClaude from '$lib/components/project/OpenInClaude.svelte';
 	import Conversation from '$lib/components/project/Conversation.svelte';
 	import { AGENT_KINDS, THREAD_READ } from '$lib/thread';
@@ -411,7 +412,25 @@
 	<div class="ogrid">
 		<div class="oside">
 			{#if agents}
-				<AgentsCard signals={project.signals} {questions} updated={ctx.lastUpdated} />
+				<div>
+					<AgentsCard signals={project.signals} {questions} updated={ctx.lastUpdated} />
+					{#if project.multiplexer !== 'herdr'}
+						<!-- Start agent (I-1702): what `repose run` does from a laptop. -->
+						<StartAgent
+							projectId={id}
+							defaultAgent={project.agent_default}
+							heading={false}
+							onstarted={() => void ctx.refresh()}
+						/>
+					{/if}
+				</div>
+			{:else if project.state === 'running' && project.multiplexer !== 'herdr'}
+				<StartAgent
+					projectId={id}
+					defaultAgent={project.agent_default}
+					heading={true}
+					onstarted={() => void ctx.refresh()}
+				/>
 			{/if}
 			<MachineCard
 				{project}

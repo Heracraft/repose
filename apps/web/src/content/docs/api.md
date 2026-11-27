@@ -95,6 +95,7 @@ The scope each route needs. `:id` is a project's id, which `GET /projects` lists
 | `POST /projects/:id/start`                       | `projects`                                                                    |
 | `POST /projects/:id/stop`                        | `projects`                                                                    |
 | `POST /projects/:id/wake`                        | `projects`                                                                    |
+| `POST /projects/:id/agents`                      | `projects` (start an agent: `agent`, `remote_control`)                        |
 | `POST /projects/:id/resize`                      | `projects`                                                                    |
 | `POST /projects/restore`                         | `projects`                                                                    |
 | `POST /projects/:id/snapshots`                   | `projects`                                                                    |

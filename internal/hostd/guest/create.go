@@ -296,18 +296,29 @@ func (m *Manager) boot(ctx context.Context, g *state.Guest, firstStep int, op st
 	bootStart := m.d.Now()
 	m.setMenuErr(g.GuestID, nil)
 	class := m.classOf(g.Class)
-	if m.cfg.CommitMemMiB > 0 {
+	if m.cfg.CommitMemMiB > 0 || m.cfg.CommitVCPUs > 0 {
 		// Sized to what the running machines leave of the host's memory
-		// (commit.go); refused when that is too little.
-		mib, e := m.commitSize(g)
-		if e != nil {
-			return m.fail(g, firstStep, e)
+		// and cores (commit.go); refused when the memory is too little.
+		// One sizing at a time, each holding its share until its record
+		// says starting: three machines booted together after a restart
+		// each read the others as not yet started and took 8 GiB each,
+		// 24 GiB on a 24 GB Mac (lab Mac, 2026-11-27; DECISIONS I-1712).
+		m.commitMu.Lock()
+		if m.cfg.CommitMemMiB > 0 {
+			mib, e := m.commitSize(g)
+			if e != nil {
+				m.commitMu.Unlock()
+				return m.fail(g, firstStep, e)
+			}
+			g.MemMiB, class.MemMiB = mib, mib
 		}
-		g.MemMiB, class.MemMiB = mib, mib
-	}
-	if m.cfg.CommitVCPUs > 0 {
-		v := m.commitVCPUs(g, class.VCPUs)
-		g.VCPUs, class.VCPUs, class.CeilingVCPUs, class.MilliVCPUs = v, v, v, v*1000
+		if m.cfg.CommitVCPUs > 0 {
+			v := m.commitVCPUs(g, class.VCPUs)
+			g.VCPUs, class.VCPUs, class.CeilingVCPUs, class.MilliVCPUs = v, v, v, v*1000
+		}
+		m.reserve(g.GuestID, g.MemMiB, g.VCPUs)
+		m.commitMu.Unlock()
+		defer m.reserve(g.GuestID, 0, 0)
 	}
 	dir := m.guestDir(g.GuestID)
 	if err := m.prepareGuestDir(dir); err != nil {
@@ -974,7 +985,12 @@ func (m *Manager) startMonitor(g *state.Guest) *monitor {
 	m.monitors[g.GuestID] = mon
 	m.mu.Unlock()
 	if m.d.ConsoleStart != nil {
-		mon.stopCon = m.d.ConsoleStart(g.GuestID, m.guestDir(g.GuestID))
+		// Under mon.mu: the monitor is in m.monitors already, so a Close
+		// or a restart's stop may read stopCon now.
+		stopCon := m.d.ConsoleStart(g.GuestID, m.guestDir(g.GuestID))
+		mon.mu.Lock()
+		mon.stopCon = stopCon
+		mon.mu.Unlock()
 	}
 	go mon.run()
 	return mon
@@ -1057,8 +1073,14 @@ func (mon *monitor) stop() {
 func (mon *monitor) stopKeepConsole() func() {
 	mon.cancel()
 	<-mon.done
+	// Two stops can meet here: a launcher that ended under a running
+	// machine boots it again (RestartOnExit) and stops the old monitor
+	// while Close stops every monitor (TestVZKilledLauncherBootsAgain,
+	// a race 1 in 50). Only one of them gets the console's stop.
+	mon.mu.Lock()
 	stopCon := mon.stopCon
 	mon.stopCon = nil
+	mon.mu.Unlock()
 	return stopCon
 }
 

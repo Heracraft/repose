@@ -396,6 +396,23 @@ message AnswerQuestion {
 // is never logged. window empty means the guest's single agent window;
 // invalid_argument names the windows when there is more than one, and
 // not_found is a guest that is not running or has no agent there.
+// StartAgent opens a window running an agent in the guest's tmux session,
+// in its checkout (its home when it has none), as `repose run` opens one
+// over SSH (DECISIONS I-1702). agent is one of the five the guest ships;
+// slug is the project's, which names the session. remote_control turns
+// on the machine's Claude Code Remote Control switch first, the switch
+// `remote_control = true` carries from a laptop (I-1136). A window
+// already running that agent is left as it is and answered with
+// existed, so a resent command opens nothing twice. hostd runs it
+// through guestd's Exec as dev, one of hostd's own Execs: no guest
+// change, so it reaches machines that are already running.
+message StartAgent {
+  string guest_id = 1;
+  string agent = 2;
+  string slug = 3;
+  bool remote_control = 4;
+}
+
 message SayToAgent {
   string guest_id = 1;
   string say_id = 2;
@@ -476,6 +493,7 @@ message Command {
     WriteTriggerPrompt write_trigger_prompt = 30; // DECISIONS I-1266
     DeleteSnapshot delete_snapshot = 31; // DECISIONS I-1636
     RestartHost restart_host = 32; // DECISIONS I-1690
+    StartAgent start_agent = 33;   // DECISIONS I-1702
   }
 }
 
@@ -527,6 +545,7 @@ message Result {
     SayResult say = 19;      // DECISIONS I-1144
     TriggerRunResult trigger_run = 20; // DECISIONS I-1256
     RestartResult restart = 21;        // DECISIONS I-1690
+    StartAgentResult start_agent = 22; // DECISIONS I-1702
   }
 }
 // RestartResult is RestartHost's answer, sent before the machine goes
@@ -599,12 +618,18 @@ message PauseResult { bool paused = 1; string why_not = 2; int64 at = 3; }
 // WakeResult answers a WakeGuest: was_resting says whether this call is
 // what resumed the guest, and wake_ms how long from the resume to
 // guestd's answer (DECISIONS I-818).
-message WakeResult { bool was_resting = 1; uint32 wake_ms = 2; }
+// waits_for (DECISIONS I-1712) is set, and nothing woken, when the guest
+// rests as a save file its Mac cannot read now: "unlock" or "login", as
+// GuestSample.waits_for. The guest wakes once its user unlocks or logs in.
+message WakeResult { bool was_resting = 1; uint32 wake_ms = 2; string waits_for = 3; }
 message ExecResult { int32 exit_code = 1; bytes stdout = 2; bytes stderr = 3; }
 // SayResult is guestd's answer to a SayToAgent (DECISIONS I-1144): state
 // delivered or waiting, the window it went to, and whether it replaced a
 // message that was still waiting there.
 message SayResult { string state = 1; string window = 2; bool replaced = 3; }
+// StartAgentResult: the window the agent runs in, and whether it was
+// already running there (nothing was opened).
+message StartAgentResult { string window = 1; bool existed = 2; }
 
 message BuildLog { string command_id = 1; uint64 seq = 2; string line = 3; }
 

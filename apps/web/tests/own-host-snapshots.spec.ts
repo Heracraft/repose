@@ -44,14 +44,16 @@ test('removing an own host says it deletes its snapshots, and they show as gone'
 	await page.goto('/settings/hosts');
 	await page.getByRole('button', { name: 'Remove mac-mini…' }).click();
 	const confirm = page.getByTestId('confirm-remove-host');
-	await expect(confirm).toContainText('This deletes the 1 snapshot kept on it; repose has no copy.');
+	await expect(confirm).toContainText(
+		'This deletes the 1 snapshot kept on it; repose has no copy.'
+	);
 	await shots(page, 'host-rm-snapshots', confirm);
 	await page.getByRole('button', { name: 'Remove mac-mini now' }).click();
 	await expect(confirm).toHaveCount(0);
 
 	await page.goto('/projects');
 	const row = page.getByTestId('destroyed-row').filter({ hasText: p.name });
-	await expect(row).toContainText('gone with host mac-mini');
+	await expect(row).toContainText('gone with removed host mac-mini');
 	await expect(row.getByRole('button', { name: 'Restore…' })).toHaveCount(0);
 	await shots(page, 'destroyed-gone-with-host', row);
 	await ownedHost({ limit: 1, set_install: false });
@@ -77,12 +79,15 @@ test('the Snapshots tab says a snapshot went with its host and offers no Restore
 			if (route.request().method() !== 'GET') return route.fallback();
 			const res = await route.fetch();
 			const list = (await res.json()) as object[];
-			await route.fulfill({ response: res, json: list.map((s) => ({ ...s, gone_with_host: 'mac-mini' })) });
+			await route.fulfill({
+				response: res,
+				json: list.map((s) => ({ ...s, gone_with_host: 'mac-mini' }))
+			});
 		}
 	);
 	await page.goto(`/projects/${p.id}/snapshots`);
 	const row = page.getByTestId('snapshot-row').first();
-	await expect(row).toContainText('gone with host mac-mini');
+	await expect(row).toContainText('gone with removed host mac-mini');
 	await expect(row.getByRole('button', { name: 'Restore…' })).toHaveCount(0);
 	await shots(page, 'snapshots-gone-with-host', row);
 });

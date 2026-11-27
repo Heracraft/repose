@@ -724,13 +724,7 @@ test.describe('the dashboard rail', () => {
 
 	test('no dashboard page scrolls sideways', async ({ page }) => {
 		const p = await project({ name: 'wide-app', remote_url: 'github.com/heracraft/wide-app' });
-		for (const path of [
-			'/projects',
-			'/questions',
-			`/projects/${p.id}`,
-			'/billing',
-			'/settings'
-		]) {
+		for (const path of ['/projects', '/questions', `/projects/${p.id}`, '/billing', '/settings']) {
 			await page.goto(path);
 			await waitPageSettled(page);
 			for (const width of [320, 390, 768, 1024, 1280]) {

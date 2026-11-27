@@ -110,7 +110,7 @@ func (o *Overage) DiskOverPlan(ctx context.Context) ([]uuid.UUID, error) {
 			// a plan that sold both still gets the email.
 			continue
 		}
-		held, _, err := HeldDisk(ctx, o.pool, sub.UserID)
+		held, _, err := HeldFleetDisk(ctx, o.pool, sub.UserID)
 		if err != nil {
 			return told, err
 		}

@@ -383,6 +383,14 @@ func (m *Manager) CollectSamples(ctx context.Context) *hostdv1.Samples {
 					m.d.Metrics.BurstCPUSecondsTotal.WithLabelValues(g.Class).Add(float64(bd) / 1e9)
 				}
 			}
+			if hb := m.d.HeldBytes; hb != nil {
+				gsm.MemRssBytes = 0
+				if !m.restSaved(g) {
+					if b, ok := hb(ctx, g.GuestID); ok {
+						gsm.MemRssBytes = b
+					}
+				}
+			}
 			gsm.Vm = m.vmSize(g)
 			gsm.WaitsFor = m.waitsFor(ctx, g)
 			if since := m.heldSince(g.GuestID); since > 0 {
@@ -407,6 +415,13 @@ func (m *Manager) CollectSamples(ctx context.Context) *hostdv1.Samples {
 				// environment's agent is not answering".
 				gsm.Resting = true
 				m.fillResting(g.GuestID, gsm)
+				if m.restSaved(g) {
+					// Resting as a save: its VM has ended and holds none
+					// of the Mac's memory, so the guest's last figure is
+					// not repeated; the api then shows no memory in use
+					// (review-dash P2 #4, I-1690 amendment).
+					gsm.GuestMemUsedBytes = 0
+				}
 			} else if sess, err := m.session(g.GuestID); err == nil {
 				sctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 				sr, err := sess.Sample(sctx)

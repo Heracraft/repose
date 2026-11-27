@@ -71,3 +71,54 @@ func TestHostRestart(t *testing.T) {
 		t.Fatalf("another account's op read: %d", g.status)
 	}
 }
+
+// Between a restart through repose and the machines' first samples after
+// it, a running machine on that Mac reads parked with waits_for "restart"
+// and the host restarting_since; a sample after the restart ends both
+// (I-1690 amendment, review-dash P2 #2).
+func TestRestartingMacShowsItsMachinesParked(t *testing.T) {
+	e := newEnv(t)
+	tok := e.signIn(t, "sub-rsg", "rsg")
+	uid := e.exempt(t, "sub-rsg")
+	if _, err := e.h.Pool.Exec(e.h.Ctx, "update hosts set owner_account_id = $1, features = array_cat(features, '{shared,restart}') where id = $2", uid, e.h.HostID); err != nil {
+		t.Fatal(err)
+	}
+	r := e.do(t, tok, "POST", "/projects", map[string]any{"name": "rsg", "class": "large"})
+	if r.status != 201 {
+		t.Fatalf("create: %d %s", r.status, r.raw)
+	}
+	id := r.body["id"].(string)
+	if op := e.waitOp(t, r); op.State != "done" {
+		t.Fatalf("create op: %+v", op.Error)
+	}
+	sample := func(ago string) {
+		t.Helper()
+		if _, err := e.h.Pool.Exec(e.h.Ctx, `insert into meter_samples (ts, project_id, host_id, state, class, mem_used)
+			values (now() - $3::interval, $1, $2, 'running', 'large', 1)`, id, e.h.HostID, ago); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sample("2 minutes")
+	if p := e.do(t, tok, "GET", "/projects/"+id, nil); p.body["parked"] != nil {
+		t.Fatalf("parked before any restart: %s", p.raw)
+	}
+	if _, err := e.h.Pool.Exec(e.h.Ctx, `insert into ops (id, host_id, kind, state, result, finished_at)
+		values (gen_random_uuid(), $1, 'host_restart', 'done', '{"restarting": true}', now() - interval '1 minute')`, e.h.HostID); err != nil {
+		t.Fatal(err)
+	}
+	p := e.do(t, tok, "GET", "/projects/"+id, nil)
+	parked, _ := p.body["parked"].(map[string]any)
+	if parked["waits_for"] != "restart" {
+		t.Fatalf("during the restart: %s, want parked waits_for restart", p.raw)
+	}
+	if l := e.do(t, tok, "GET", "/hosts", nil); len(l.list) != 1 || l.list[0].(map[string]any)["restarting_since"] == nil {
+		t.Fatalf("hosts during the restart: %s, want restarting_since", l.raw)
+	}
+	sample("0 seconds")
+	if p := e.do(t, tok, "GET", "/projects/"+id, nil); p.body["parked"] != nil {
+		t.Fatalf("after its first sample back: %s, want no parked", p.raw)
+	}
+	if l := e.do(t, tok, "GET", "/hosts", nil); l.list[0].(map[string]any)["restarting_since"] != nil {
+		t.Fatalf("hosts after: %s", l.raw)
+	}
+}

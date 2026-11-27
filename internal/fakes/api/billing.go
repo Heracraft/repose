@@ -49,7 +49,7 @@ type PlanDef struct {
 	DiskGB     int    `json:"disk_gb"`
 	EgressGB   int    `json:"egress_gb"`
 	// Hosts is how many hosts of their own the account may register:
-	// 1 on the Own hardware plan, 0 on the hosted ones (I-1364).
+	// any number on every plan since I-1704 (billing.Plan.Hosts).
 	Hosts int `json:"hosts"`
 	// ProjectLimit is ProjectCap on every plan; the api keeps sending it
 	// for one release after I-569.
@@ -68,9 +68,9 @@ type PlanDef struct {
 // (SetBillingState's own_for_sale, the fake's stand-in for the api's
 // POLAR_PRODUCT_OWN; DECISIONS I-1364).
 var Plans = []PlanDef{
-	{ID: "solo", Name: "Solo", PriceCents: 4900, Currency: "USD", TrialDays: 7, Seats: 1, MemoryGB: 8, DiskGB: 100, EgressGB: 250, ProjectLimit: ProjectCap, IntroPriceCents: 3900, IntroMonths: 12},
-	{ID: "plus", Name: "Plus", PriceCents: 8900, Currency: "USD", TrialDays: 7, Seats: 2, MemoryGB: 16, DiskGB: 250, EgressGB: 500, ProjectLimit: ProjectCap},
-	{ID: "pro", Name: "Pro", PriceCents: 16900, Currency: "USD", TrialDays: 7, Seats: 4, MemoryGB: 32, DiskGB: 500, EgressGB: 1000, ProjectLimit: ProjectCap},
+	{ID: "solo", Name: "Solo", PriceCents: 4900, Currency: "USD", TrialDays: 7, Seats: 1, MemoryGB: 8, DiskGB: 100, EgressGB: 250, Hosts: unlimitedHosts, ProjectLimit: ProjectCap, IntroPriceCents: 3900, IntroMonths: 12},
+	{ID: "plus", Name: "Plus", PriceCents: 8900, Currency: "USD", TrialDays: 7, Seats: 2, MemoryGB: 16, DiskGB: 250, EgressGB: 500, Hosts: unlimitedHosts, ProjectLimit: ProjectCap},
+	{ID: "pro", Name: "Pro", PriceCents: 16900, Currency: "USD", TrialDays: 7, Seats: 4, MemoryGB: 32, DiskGB: 500, EgressGB: 1000, Hosts: unlimitedHosts, ProjectLimit: ProjectCap},
 }
 
 // OwnPlan is the Own hardware plan (billing.Own, DECISIONS I-1364): $10 a
@@ -89,11 +89,12 @@ const unlimitedHosts = math.MaxInt32
 const ProjectCap = 100
 
 // hostedPlan reports whether the plan is one of the hosted products
-// rather than the Own hardware one (billing.Plan.OwnHardware). It
+// rather than the Own hardware one (billing.Plan.OwnHardware): the one
+// that sells fleet memory, since every plan sells hosts (I-1704). It
 // answers which product a plan is, for the change-of-kind refusal; what
 // the plan sells on the fleet is its MemoryGB, which is what the gate
 // reads.
-func hostedPlan(p *PlanDef) bool { return p == nil || p.Hosts == 0 }
+func hostedPlan(p *PlanDef) bool { return p == nil || p.MemoryGB > 0 }
 
 // classGB is each size class's memory, the unit a plan counts
 // (docs/interfaces/README.md).
@@ -634,9 +635,16 @@ func (f *Fake) diskHeldGB(u *userRec) float64 {
 	if f.bill.diskHeldGB != nil {
 		return *f.bill.diskHeldGB
 	}
+	// A plan that sells disk counts what its servers hold, and a machine
+	// on a host the account owns holds none of it (the api's
+	// HeldFleetDisk, I-1704).
+	fleetOnly := false
+	if plan := f.currentPlan(); plan != nil && plan.DiskGB > 0 {
+		fleetOnly = true
+	}
 	var b int64
 	for _, p := range f.userProjects(u) {
-		if p.State == "destroying" {
+		if p.State == "destroying" || (fleetOnly && f.onOwnedHost(p)) {
 			continue
 		}
 		b += p.DiskUsedBytes
@@ -692,6 +700,20 @@ func fmtGB(gb float64) string {
 // whose own class is being counted, so a restart of a running project
 // does not count itself twice.
 func (f *Fake) gate(u *userRec, class string, disk *diskAsk, exclude *project) *apiError {
+	if e := f.standingGate(u); e != nil {
+		return e
+	}
+	if exclude != nil && f.onOwnedHost(exclude) {
+		// A machine on a host the account owns counts nothing against the
+		// plan (I-1704), as the api's Gate.check.
+		return nil
+	}
+	return f.resourceGate(u, class, disk, exclude)
+}
+
+// standingGate is the part of every gate that a machine on a host the
+// account owns still passes (I-1704): no plan, past due, suspended.
+func (f *Fake) standingGate(u *userRec) *apiError {
 	switch f.bill.mode {
 	case BillingOff, BillingExempt:
 		return nil
@@ -710,6 +732,16 @@ func (f *Fake) gate(u *userRec, class string, disk *diskAsk, exclude *project) *
 	case BillingSuspended:
 		return errf("payment_required", "Your account is suspended: the payment failed three days ago and your machines were stopped. Pay the invoice at https://repose.run/billing to start them again.").
 			withDetail(map[string]any{"reason": "suspended"})
+	}
+	return nil
+}
+
+// resourceGate is the plan's memory, disk and egress, for a machine on
+// repose's servers.
+func (f *Fake) resourceGate(u *userRec, class string, disk *diskAsk, exclude *project) *apiError {
+	switch f.bill.mode {
+	case BillingOff, BillingExempt:
+		return nil
 	}
 	plan := f.currentPlan()
 	if plan == nil {

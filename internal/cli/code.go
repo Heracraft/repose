@@ -168,7 +168,7 @@ func connectProject(ctx context.Context, e *Env, projectArg string, start bool) 
 		// connection reaches it (DECISIONS I-1682). The gateway still
 		// wakes it if this is lost; a wake that fails says so there.
 		go func(id string) {
-			wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+			wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
 			defer cancel()
 			_ = e.Client.WakeProject(wctx, id)
 		}(project.ID)

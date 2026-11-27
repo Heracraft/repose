@@ -121,8 +121,9 @@ connection. The host's memory is what may run at once, and `repose ls`
 prints no plan line for such an account, because the plan has no figure
 to print. The subscription holds no seat, so a checkout for it is never
 waitlisted even while the fleet is full, and `limits.hosts` on `GET /me`
-is 1 (a billing-exempt account has 1 too, so an operator can add a
-machine of their own without buying a plan from themselves).
+is 2147483647, any number (I-1594; a billing-exempt account has the
+same, so an operator can add a machine of their own without buying a
+plan from themselves).
 
 A plan cannot be changed between Own hardware and the hosted plans:
 `POST /billing/plan` answers `409 conflict`, `detail.reason =
@@ -132,6 +133,20 @@ Everything else is the same plan machinery: the seven-day trial, the
 card at checkout, Polar's tax, the invoice, and the three-day stop
 after a failed payment, which snapshots and stops the machines on the
 user's own host like any others.
+
+### Hosts of your own on a hosted plan
+
+Solo, Plus and Pro include any number of hosts of the user's own at no
+extra price (DECISIONS I-1704): `POST /hosts` takes them and
+`limits.hosts` is 2147483647 on every plan. A machine on such a host
+counts nothing against the plan: the gate skips its memory, disk and
+egress refusals for it (`billing.Request.OwnHost`, and the project's
+host for an existing one), `HeldFleetDisk` leaves its disk out, and the
+rollup leaves out the egress and burst of every sample from a host an
+account owns. The plan's figures are for the machines on repose's
+servers alone. Placement is unchanged: `own` puts a machine on the
+user's host when they have one, `hosted` (`repose run --host repose`,
+**Runs on** in the dashboard) on the fleet.
 
 The plan is offered only where the api has a Polar product id for it
 (`POLAR_PRODUCT_OWN`): elsewhere `GET /billing` does not list it and a

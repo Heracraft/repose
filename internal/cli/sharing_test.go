@@ -74,7 +74,7 @@ func TestSizeIsIgnoredOnAnOwnHost(t *testing.T) {
 	if err := ResizeClassCmd(ctx, e, "todo-app", "xl", nil); err != nil {
 		t.Fatalf("resize --size on an own host: %v", err)
 	}
-	if got, want := errOut.buf.String(), "--size is ignored: todo-app runs on your host mac-mini, where a machine has no size and uses the memory it needs.\n"; got != want {
+	if got, want := errOut.buf.String(), "--size is ignored: todo-app runs on your host mac-mini, where a machine has no size and the host gives it its memory and cores.\n"; got != want {
 		t.Fatalf("stderr %q, want %q", got, want)
 	}
 	if out.buf.Len() != 0 {
@@ -389,5 +389,33 @@ func TestLockedMacSaysWhatTheMachineWaitsFor(t *testing.T) {
 	}
 	if got := out.buf.String(); !strings.Contains(got, "todo-app: parked; it waits for you to unlock mac-mini, and its memory is kept.\n") || strings.Contains(got, "log in") {
 		t.Fatalf("repose ls parked:\n%s", got)
+	}
+	// Parked by a restart through repose while the Mac reboots.
+	fake.SetWaitsFor(p.ID, "restart")
+	out.buf.Reset()
+	if err := ProjectsCmd(ctx, e); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.buf.String(); !strings.Contains(got, "todo-app: parked; mac-mini is restarting, and its memory is kept.\n") {
+		t.Fatalf("repose ls parked, restarting:\n%s", got)
+	}
+}
+
+// DECISIONS I-1712: on a Mac MEMORY is what macOS gives up for a machine
+// (its VM's footprint), 0 while it rests as a save, not what the guest
+// uses.
+func TestMacMemoryCellIsWhatTheMacHolds(t *testing.T) {
+	p := &Project{State: "running", MemUsedBytes: 3864 << 20, VM: &ProjectVM{VCPUs: 5, MemBytes: 8 << 30, FullVCPUs: 5, FullMemBytes: 8 << 30}}
+	if got := usedCell(p); got != "3.8 GB held" {
+		t.Fatalf("cell %q", got)
+	}
+	p.MemUsedBytes = 0
+	if got := usedCell(p); got != "0 B held" {
+		t.Fatalf("saved cell %q", got)
+	}
+	p.VM = nil
+	p.MemUsedBytes = 1400 << 20
+	if got := usedCell(p); got != "1.4 GB used" {
+		t.Fatalf("x86 cell %q", got)
 	}
 }

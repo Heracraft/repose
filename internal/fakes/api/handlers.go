@@ -418,13 +418,17 @@ func (f *Fake) stop(p *project, snapshot bool) *Snapshot {
 }
 
 func (f *Fake) create(u *userRec, name, remoteURL, class string) (*project, *apiError) {
-	return f.createGated(u, name, remoteURL, class, class)
+	return f.createGated(u, name, remoteURL, class, class, false)
 }
 
 // createGated is create with the class the memory gate is asked about:
 // "" for a project that is not started, as a restore with start: false
 // (the api's gateClass).
-func (f *Fake) createGated(u *userRec, name, remoteURL, class, gateClass string) (*project, *apiError) {
+//
+// own is a create that placement puts on a host the account owns, which
+// counts nothing against the plan (I-1704): only the account's standing
+// is gated.
+func (f *Fake) createGated(u *userRec, name, remoteURL, class, gateClass string, own bool) (*project, *apiError) {
 	if !nameRe.MatchString(name) {
 		return nil, invalid("name: must match [A-Za-z0-9._-]{1,64}")
 	}
@@ -437,8 +441,12 @@ func (f *Fake) createGated(u *userRec, name, remoteURL, class, gateClass string)
 	}
 	// The billing gate runs on every create and restore as on a
 	// start (I-290): no plan, no compute; a plan, its memory and disk.
-	if e := f.gate(u, gateClass, &diskAsk{addGB: newProjectHeldGB, volumeBytes: classes[class]}, nil); e != nil {
-		return nil, e
+	gate := f.gate(u, gateClass, &diskAsk{addGB: newProjectHeldGB, volumeBytes: classes[class]}, nil)
+	if own {
+		gate = f.standingGate(u)
+	}
+	if gate != nil {
+		return nil, gate
 	}
 	if e := f.projectCap(u, 1); e != nil {
 		return nil, e
@@ -508,9 +516,26 @@ func (f *Fake) createProject(w http.ResponseWriter, r *http.Request) *apiError {
 		Host *string `json:"host"`
 		// GuestRuntime is nix or erofs (I-1462).
 		GuestRuntime *string `json:"guest_runtime"`
+		// StartAgent and RemoteControl as the api (I-1702).
+		StartAgent    bool `json:"start_agent"`
+		RemoteControl bool `json:"remote_control"`
 	}
 	if e := decodeBody(r, &body, false); e != nil {
 		return e
+	}
+	if body.StartAgent {
+		agent := body.AgentDefault
+		if agent == "" {
+			agent = "claude"
+		}
+		if e := checkAgentChoice(agent, body.RemoteControl); e != nil {
+			return e
+		}
+		if body.Multiplexer != nil && *body.Multiplexer == multiplexer.Herdr {
+			return invalid("start_agent starts an agent in tmux; a herdr machine starts one with `repose run`").withDetail(map[string]any{"reason": "start_agent"})
+		}
+	} else if body.RemoteControl {
+		return invalid("remote_control goes with start_agent").withDetail(map[string]any{"reason": "remote_control"})
 	}
 	runtime, e := f.createRuntime(body.GuestRuntime)
 	if e != nil {
@@ -570,7 +595,7 @@ func (f *Fake) createProject(w http.ResponseWriter, r *http.Request) *apiError {
 	}
 	// A create that waits for its host is made but not run (I-1700).
 	f.createWaits = waitFor != nil
-	p, e := f.create(u, body.Name, body.RemoteURL, body.Class)
+	p, e := f.createGated(u, body.Name, body.RemoteURL, body.Class, body.Class, ownHostID != "")
 	f.createWaits = false
 	if e != nil {
 		return e
@@ -648,13 +673,117 @@ func (f *Fake) createProject(w http.ResponseWriter, r *http.Request) *apiError {
 			defer f.mu.Unlock()
 			p.OpID = ""
 			f.run(p)
+			if body.StartAgent {
+				o.Result = f.startAgentOn(p, p.AgentDefault)
+			}
 			o.State = "done"
 		}()
 		writeJSON(w, http.StatusCreated, out)
 		return nil
 	}
+	if body.StartAgent {
+		// The api's create ends with the agent's start (I-1702); the
+		// fake's create is done at once, so is the agent.
+		o := f.newOp(p, "create")
+		o.Result = f.startAgentOn(p, p.AgentDefault)
+		out := f.out(p)
+		out.OpID = o.id
+		writeJSON(w, http.StatusCreated, out)
+		return nil
+	}
 	writeJSON(w, http.StatusCreated, f.out(p))
 	return nil
+}
+
+// fakeAgents are the agents a machine ships (the api's startableAgents).
+var fakeAgents = []string{"claude", "opencode", "codex", "gemini", "pi"}
+
+// checkAgentChoice is the api's agentChoice refusals (I-1702).
+func checkAgentChoice(agent string, remoteControl bool) *apiError {
+	if !slices.Contains(fakeAgents, agent) {
+		return invalid("agent must be one of claude, opencode, codex, gemini, pi").withDetail(map[string]any{"reason": "agent"})
+	}
+	if remoteControl && agent != "claude" {
+		return invalid("remote_control is Claude Code's; it needs agent claude").withDetail(map[string]any{"reason": "remote_control"})
+	}
+	return nil
+}
+
+// startAgentOn opens agent's window on p as hostd's StartAgent does: a
+// window of that name already open is left alone and answered existed
+// (I-1702). The new agent is idle at its prompt, as an agent that has
+// just started is. The answer is the agent op's result.
+func (f *Fake) startAgentOn(p *project, agent string) map[string]any {
+	if agent == "" {
+		agent = "claude"
+	}
+	if p.Signals == nil {
+		p.Signals = &Signals{GuestdOK: true}
+	}
+	for _, a := range p.Signals.Agents {
+		if a.Window == agent {
+			return map[string]any{"agent": agent, "window": agent, "existed": true}
+		}
+	}
+	p.Signals.Agents = append(p.Signals.Agents, AgentSignal{Agent: agent, Window: agent, State: "idle", Terminal: "tmux:" + agent})
+	f.agentStarts++
+	return map[string]any{"agent": agent, "window": agent, "existed": false}
+}
+
+// startAgent is POST /v1/projects/{id}/agents (I-1702), with the api's
+// refusals.
+func (f *Fake) startAgent(w http.ResponseWriter, r *http.Request) *apiError {
+	p, e := f.project(userFrom(r), r.PathValue("id"))
+	if e != nil {
+		return e
+	}
+	var body struct {
+		Agent         string `json:"agent"`
+		RemoteControl bool   `json:"remote_control"`
+	}
+	if e := decodeBody(r, &body, true); e != nil {
+		return e
+	}
+	agent := body.Agent
+	if agent == "" {
+		agent = p.AgentDefault
+	}
+	if agent == "" {
+		agent = "claude"
+	}
+	if e := checkAgentChoice(agent, body.RemoteControl); e != nil {
+		return e
+	}
+	if p.Multiplexer == multiplexer.Herdr {
+		return errf("conflict", "%s's terminals are herdr's; start an agent there with `repose run`", p.Slug).withDetail(map[string]any{"reason": "herdr"})
+	}
+	if p.State != "running" {
+		return errf("conflict", "%s is %s; start it first", p.Slug, p.State).withDetail(map[string]any{"reason": "not_running", "state": p.State})
+	}
+	o := f.newOp(p, "agent")
+	if msg := f.agentFails; msg != "" {
+		o.State, o.Error = "error", msg
+	} else {
+		p.Resting = nil
+		o.Result = f.startAgentOn(p, agent)
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"op_id": o.id, "agent": agent})
+	return nil
+}
+
+// SetAgentFailure makes every agent op fail with msg ("" puts success
+// back), as a hostd that refuses StartAgent does.
+func (f *Fake) SetAgentFailure(msg string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.agentFails = msg
+}
+
+// AgentStarts is how many agent windows the fake has opened.
+func (f *Fake) AgentStarts() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.agentStarts
 }
 
 // createRefusedPrefix is the api's ops.CreateRefusedPrefix (I-1648).
@@ -875,6 +1004,7 @@ func (f *Fake) finishDestroy(p *project) {
 		f.snapshot(p, "stop")
 	}
 	p.goneUnsized = !f.out(p).Sized
+	p.goneHostID = p.HostID
 	p.State = "destroyed"
 	p.HostID = ""
 	p.destroyed = true
@@ -1222,7 +1352,7 @@ func (f *Fake) resizeProject(w http.ResponseWriter, r *http.Request) *apiError {
 	if body.VolumeBytes <= p.VolumeBytes {
 		return invalid("volume_bytes: volumes only grow").withDetail(map[string]any{"volume_bytes": p.VolumeBytes})
 	}
-	if e := f.gate(userFrom(r), "", &diskAsk{volumeBytes: body.VolumeBytes}, nil); e != nil {
+	if e := f.gate(userFrom(r), "", &diskAsk{volumeBytes: body.VolumeBytes}, p); e != nil {
 		return e
 	}
 	if p.State == "running" && f.ownedHostProvider(p.HostID) == "mac" {
@@ -1917,12 +2047,26 @@ func (f *Fake) restoreAsNew(u *userRec, p *project, snap *Snapshot, name string)
 			return nil, errf("conflict", "a project named %s already exists; pick another name for the restored one", slugOf(name)).withDetail(map[string]any{"reason": "name_taken", "name": slugOf(name)})
 		}
 	}
-	np, e := f.create(u, name, remote, p.Class)
+	// A copy of a machine on a host the account owns counts nothing
+	// against the plan (I-1704).
+	np, e := f.createGated(u, name, remote, p.Class, p.Class, f.onOwnedHost(p))
 	if e != nil {
 		return nil, e
 	}
 	f.copyMultiplexer(p, np)
 	copyHeld(p, np)
+	// A snapshot is readable only on the host it was taken on, so a copy
+	// of one taken on a host of the account's own comes back there, as
+	// the api places it (review-cli R1, d2-core's TestRestoreAsNewGoesWhereTheSnapshotIs).
+	src := p.HostID
+	if src == "" {
+		src = p.goneHostID
+	}
+	for _, h := range f.ownedHosts {
+		if h.ID == src {
+			np.HostID = src
+		}
+	}
 	// The volume's layout is the runtime's, so a copy keeps it, as the
 	// api's insertRestored does (I-1462).
 	np.GuestRuntime = p.GuestRuntime
@@ -2348,8 +2492,17 @@ func (f *Fake) internalWake(w http.ResponseWriter, r *http.Request) *apiError {
 		return notFound("project")
 	}
 	f.wakes++
+	if d := f.wakeDelay; d > 0 {
+		// Under f.mu (ServeHTTP), as the real wake holds the request.
+		f.mu.Unlock()
+		time.Sleep(d)
+		f.mu.Lock()
+	}
 	if f.wakeFails {
 		return errf("internal", "%s did not wake", p.Slug)
+	}
+	if f.wakeWaits != "" && p.Resting != nil {
+		return errf("conflict", "%s", f.wakeWaits)
 	}
 	was := p.State == "running" && p.Resting != nil
 	p.Resting = nil

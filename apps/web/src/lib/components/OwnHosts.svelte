@@ -22,7 +22,7 @@
 	import { listHosts, createHost, deleteHost, restartHost, getHostOp } from '$lib/api/client';
 	import { toastApiError } from '$lib/api/toast';
 	import { ApiError, errorText } from '$lib/api/errors';
-	import { gb, relativeTime } from '$lib/format';
+	import { gb, heldText, relativeTime } from '$lib/format';
 	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
 	import CodeCopy from '$lib/components/CodeCopy.svelte';
 	import { focusAfterRender, focusOnMount } from '$lib/focus';
@@ -33,11 +33,11 @@
 
 	const NAME_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
 	/** What a Mac downloads and the free disk `repose host add` asks for
-	 * (I-1684): the bundle (repose-host-darwin-arm64.tar.gz, 18.3 MB), the
+	 * (I-1684): repose installed (49 MB unpacked, review-mac), the
 	 * erofs base the first machine fetches, and the 10 GB refusal. The
 	 * api's install answer carries none of them, so they are
 	 * own-hardware.md's figures. */
-	const MAC_DOWNLOAD = 'about 20 MB';
+	const MAC_DOWNLOAD = 'about 50 MB';
 	const MAC_BASE = 'about 3 GB';
 	const MAC_FREE_DISK = '10 GB';
 	/** What takes repose off an x86 box again (I-1590); `repose host rm` prints it too. */
@@ -213,10 +213,15 @@
 
 	/** What a Restart does to this host's machines, in one sentence. */
 	function restartWarning(h: OwnedHost): string {
-		if (!h.running_projects) return 'No machine is running on it.';
+		// The Mac's own apps may be quit without asking to save (hostd
+		// falls back to shutdown -r, I-1690): a loss nobody can undo, so
+		// the question says it (review-dash P1 #1).
+		const apps =
+			" Save your work in the Mac's own apps first: it may restart without waiting for them.";
+		if (!h.running_projects) return `No machine is running on it.${apps}`;
 		if (h.running_projects === 1)
-			return 'Its running machine is parked with its memory, then the Mac restarts; the machine runs again when you log in to the Mac.';
-		return `Its ${h.running_projects} running machines are parked with their memory, then the Mac restarts; they run again when you log in to the Mac.`;
+			return `Its running machine is parked with its memory, then the Mac restarts; the machine runs again when you log in to the Mac.${apps}`;
+		return `Its ${h.running_projects} running machines are parked with their memory, then the Mac restarts; they run again when you log in to the Mac.${apps}`;
 	}
 
 	function keep(id: string) {
@@ -265,6 +270,21 @@
 		}
 	}
 
+	/** What kind of machine it is, in words a customer uses: an aarch64
+	 * host is a Mac (review-dash P3 #12). */
+	function archWord(arch?: string): string {
+		if (arch === 'aarch64') return 'Mac';
+		if (arch === 'x86_64') return 'x86';
+		return arch ?? '';
+	}
+
+	/** The state word, with a restart through repose shown as such
+	 * (I-1690 amendment, review-dash P2 #2). */
+	function hostWord(h: OwnedHost): string {
+		if (h.state === 'ready' && h.restarting_since) return 'restarting';
+		return stateWord(h.state);
+	}
+
 	function tone(s: HostState): 'on' | 'busy' | 'idle' {
 		if (s === 'ready') return 'on';
 		if (s === 'registering' || s === 'draining') return 'busy';
@@ -287,7 +307,20 @@
 		const silent = (projectsStore.list ?? []).filter(
 			(p) => p.host_id === h.id && !!notAnsweringSince(p)
 		).length;
-		return `${h.projects} ${word}, ${h.running_projects} running${silent ? `, ${silent} not answering` : ''}`;
+		// Frozen ones are named too: on a Mac they rest with their memory
+		// saved and given back (review-dash P2 #4).
+		const frozen = (projectsStore.list ?? []).filter(
+			(p) => p.host_id === h.id && p.state === 'running' && !!p.resting
+		).length;
+		// On a Mac, what macOS gives up for its machines together, in the
+		// CLI's word (I-1712).
+		const mac = (projectsStore.list ?? []).filter(
+			(p) => p.host_id === h.id && p.state === 'running' && !!p.vm
+		);
+		const held = mac.length
+			? `, ${heldText(mac.reduce((n, p) => n + (p.mem_used_bytes ?? 0), 0))}`
+			: '';
+		return `${h.projects} ${word}, ${h.running_projects} running${frozen ? `, ${frozen} frozen` : ''}${silent ? `, ${silent} not answering` : ''}${held}`;
 	}
 
 	// What the confirmation says. A host that is answering cannot be
@@ -303,6 +336,11 @@
 			const disks = h.projects === 1 ? 'its disk is' : 'their disks are';
 			return `It is not answering, and ${what} cannot be recovered: ${disks} on that host and repose has no copy.${snapshotsGo(h)}`;
 		}
+		// An answering host still holding machines is refused by the
+		// api; the question names them first (review-dash P2 #5).
+		const on = (projectsStore.list ?? []).filter((p) => p.host_id === h.id).map((p) => p.name);
+		if (on.length)
+			return `It still holds ${on.join(', ')}, and a host is removed only once its machines are: remove ${on.length === 1 ? 'it' : 'them'} first.${snapshotsGo(h)}`;
 		return `It stops taking your projects, and it joins again only with a new install.${snapshotsGo(h)}`;
 	}
 
@@ -412,15 +450,15 @@
 						<tr class:open={confirming === h.id}>
 							<td class="c-name">
 								<span class="name">{h.name}</span>
-								{#if h.arch}<span class="arch">{h.arch}</span>{/if}
+								{#if archWord(h.arch)}<span class="arch">{archWord(h.arch)}</span>{/if}
 								<!-- A host that has not registered has nothing to say but
 								     its state: no size, no machines, no heartbeat. -->
 								<!-- One fact a line, so a wrap never starts a line with
 								     a separator (review-dash 9, I-1654). -->
 								<span class="phone-meta">
 									<span class="pm-line"
-										><span class="dot" data-tone={tone(h.state)}></span>{stateWord(
-											h.state
+										><span class="dot" data-tone={tone(h.state)}></span>{hostWord(
+											h
 										)}{#if h.last_heartbeat_at}<span class="nw">&nbsp;· heard {heard(h)}</span
 											>{/if}</span
 									>
@@ -429,13 +467,13 @@
 								</span>
 							</td>
 							<td class="c-state"
-								><span class="dot" data-tone={tone(h.state)}></span>{stateWord(h.state)}</td
+								><span class="dot" data-tone={tone(h.state)}></span>{hostWord(h)}</td
 							>
 							<td class="c-size">{size(h)}</td>
 							<td class="c-machines">{machines(h)}</td>
 							<td class="c-when">{heard(h)}</td>
 							<td class="c-act">
-								{#if h.can_restart && h.state === 'ready' && restartFor !== h.id && confirming !== h.id}
+								{#if h.can_restart && h.state === 'ready' && !h.restarting_since && restartFor !== h.id && confirming !== h.id}
 									<button
 										type="button"
 										id={`host-restart-${h.id}`}
@@ -474,7 +512,7 @@
 										{#if restartRefusal}
 											<p role="alert" data-testid="host-restart-refused">{restartRefusal}</p>
 										{:else}
-											<p>Restart <code>{h.name}</code>? {restartWarning(h)}</p>
+											<p>Restart <strong>{h.name}</strong>? {restartWarning(h)}</p>
 										{/if}
 										<div class="hk-confirm-actions">
 											<button
@@ -507,7 +545,7 @@
 								<td colspan="6">
 									<div class="hk-confirm" data-testid="confirm-remove-host">
 										<p>
-											Remove <code>{h.name}</code>? {removeWarning(h)}
+											Remove <strong>{h.name}</strong>? {removeWarning(h)}
 										</p>
 										{#if h.arch === 'x86_64'}
 											<!-- An x86 box keeps hostd and its disk until the installer's
@@ -516,6 +554,18 @@
 												Repose keeps running on the box until you run this there as root:
 											</p>
 											<CodeCopy command={X86_UNINSTALL} what="the uninstall step" wrap />
+										{:else if h.arch === 'aarch64'}
+											<!-- A Mac keeps hostd, its launchd daemons and the machines'
+											     disks until `repose host rm --local` runs on it
+											     (I-1684; review-dash P2 #5). -->
+											<p data-testid="host-uninstall-mac">
+												Repose keeps running on the Mac, with its disks, until you run this there:
+											</p>
+											<CodeCopy
+												command="repose host rm --local"
+												what="the Mac's uninstall step"
+												wrap
+											/>
 										{/if}
 										<div class="hk-confirm-actions">
 											<button
@@ -551,7 +601,9 @@
 	data-testid="host-dialog"
 	oncancel={(e) => {
 		e.preventDefault();
-		close();
+		// Escape must not lose the one view of the join step either
+		// (review-dash P3 #6): with it shown, only Done closes.
+		if (!made) close();
 	}}
 	onclick={(e) => {
 		// A stray click must not lose the one view of the join token.
@@ -609,13 +661,20 @@
 						Run this on the machine you are adding. It is not shown again, and it works once.
 					</p>
 					{#if x86Step}<h3 class="hdlg-where">On a Mac</h3>{/if}
+					{#if !made?.install?.command}
+						<!-- The step is a repose command (review-dash P2 #3). -->
+						<p class="hdlg-facts hdlg-first" data-testid="host-mac-cli">
+							The Mac needs the repose CLI and <code>repose login</code> first:
+							<a class="hk-link" href={resolve('/docs/[slug]', { slug: 'cli' })}>Install</a>.
+						</p>
+					{/if}
 					<div data-testid="host-install">
 						<CodeCopy command={step} what="the install step" wrap />
 					</div>
 					{#if x86Step}
 						<p class="hdlg-facts" data-testid="host-mac-size">
-							It downloads {MAC_DOWNLOAD}, and the first machine {MAC_BASE} more; it needs {MAC_FREE_DISK}
-							of free disk.
+							Repose takes {MAC_DOWNLOAD} on the Mac, and the first machine downloads {MAC_BASE} more;
+							it needs {MAC_FREE_DISK} of free disk.
 						</p>
 						<h3 class="hdlg-where">On an x86 box with Ubuntu 24.04</h3>
 						<div data-testid="host-install-x86">
@@ -825,5 +884,8 @@
 		margin: 0.75rem 0 0;
 		font-size: 0.8125rem;
 		color: var(--hk-text-3);
+	}
+	.hdlg-first {
+		margin: 0 0 0.5rem;
 	}
 </style>

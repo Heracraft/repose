@@ -445,6 +445,14 @@ func (m *Manager) wakeByID(ctx context.Context, id, reason string) (*hostdv1.Wak
 	start := m.d.Now()
 	sock := ch.APISocket(m.guestDir(id))
 	fromSave := m.restSaved(g)
+	if w := m.waitsFor(ctx, g); fromSave && w != "" {
+		// A save the locked Mac cannot read (DECISIONS I-1712): the wake
+		// is answered at once with what it waits for, not tried and
+		// timed out, and it is done at the unlock.
+		m.wakeAtUnlock.Store(id, true)
+		m.log(g).Info("wake held: the Mac cannot read the rest save now", "event", "guest_resting", "reason", reason, "waits_for", w)
+		return &hostdv1.WakeResult{WasResting: true, WaitsFor: w}, nil
+	}
 	if err := m.restResume(ctx, g, sock); err != nil {
 		m.countWakeFailed("resume")
 		m.Warn("guest_wake_failed", "guest "+id+": the hypervisor did not resume")

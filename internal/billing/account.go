@@ -135,9 +135,9 @@ func (a Account) WriteTo(w io.Writer) (int64, error) {
 	// no fleet memory has no figures to print against, and one that sold
 	// both would print both.
 	if !a.Plan.SellsFleetMemory() {
-		row("limits", fmt.Sprintf("%d projects, xl %d, %d host of their own; no memory, disk or egress limit from the plan", a.Limits.Projects, a.Limits.XL, a.Limits.Hosts))
+		row("limits", fmt.Sprintf("%d projects, xl %d, %s of their own; no memory, disk or egress limit from the plan", a.Limits.Projects, a.Limits.XL, HostsPhrase(a.Limits.Hosts)))
 	} else {
-		row("limits", fmt.Sprintf("%d projects, xl %d, %d GB running, %d GB disk, %d GB egress, %d host(s) of their own", a.Limits.Projects, a.Limits.XL, a.Limits.MemoryGB, a.Limits.DiskGB, a.Limits.EgressGB, a.Limits.Hosts))
+		row("limits", fmt.Sprintf("%d projects, xl %d, %d GB running, %d GB disk, %d GB egress, %s of their own", a.Limits.Projects, a.Limits.XL, a.Limits.MemoryGB, a.Limits.DiskGB, a.Limits.EgressGB, HostsPhrase(a.Limits.Hosts)))
 	}
 	if a.Place != nil {
 		row("waitlist", fmt.Sprintf("position %d, joined %s, invited %s, hold until %s", a.Place.Position, a.Place.JoinedAt.UTC().Format(time.RFC3339), fmtT(a.Place.InvitedAt), fmtT(a.Place.HoldUntil)))

@@ -377,7 +377,7 @@ func HostRmCmd(ctx context.Context, e *Env, name string, yes bool, confirm func(
 			return err
 		}
 	}
-	if err := e.Client.DeleteHost(ctx, h.ID); err != nil {
+	if err := deleteHostAfterDestroys(ctx, e, h); err != nil {
 		return hostErr(err, name)
 	}
 	// The Mac this runs on, when it is the one that runs h: repose goes
@@ -608,11 +608,70 @@ func hostSnapshotsSentence(h *Host) string {
 	return fmt.Sprintf(" This deletes the %d snapshots kept on it; repose has no copy.", h.Snapshots)
 }
 
+// hostDestroyWait is how long `repose host rm` waits for machines that
+// are being destroyed to go; a var so a test can shorten it.
+var hostDestroyWait = 3 * time.Minute
+
+// deleteHostAfterDestroys removes h, waiting for any machine the api
+// names as still on it while every one of them is being destroyed: a
+// `repose rm` returns as soon as the destroy is accepted, and the api
+// refuses the host until it has finished, about 8 s on a Mac (d2-lab,
+// 2026-11-27). A machine that is not being destroyed is in the way, and
+// the api's refusal stands.
+func deleteHostAfterDestroys(ctx context.Context, e *Env, h *Host) error {
+	err := e.Client.DeleteHost(ctx, h.ID)
+	deadline := time.Now().Add(hostDestroyWait)
+	said := false
+	for err != nil {
+		var apiErr *APIError
+		if !errors.As(err, &apiErr) {
+			return err
+		}
+		if reason, _ := apiErr.Detail["reason"].(string); reason != "host_has_projects" {
+			return err
+		}
+		on := detailStrings(apiErr.Detail["projects"])
+		if len(on) == 0 || !allDestroying(ctx, e, on) || time.Now().After(deadline) {
+			return err
+		}
+		if !said {
+			_, _ = fmt.Fprintf(e.ErrOut, "Waiting for %s to be destroyed.\n", joinNames(on))
+			said = true
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Second):
+		}
+		err = e.Client.DeleteHost(ctx, h.ID)
+	}
+	return nil
+}
+
+// allDestroying is whether every slug is a machine of the user's being
+// destroyed now.
+func allDestroying(ctx context.Context, e *Env, slugs []string) bool {
+	ps, err := e.Client.ListProjects(ctx)
+	if err != nil {
+		return false
+	}
+	state := map[string]string{}
+	for _, p := range ps {
+		state[p.Slug] = p.State
+	}
+	for _, s := range slugs {
+		if state[s] != "destroying" {
+			return false
+		}
+	}
+	return true
+}
+
 // hostErr turns the api's answers on the host routes into the line the
 // user reads: an api from before these routes, a name that is taken, a
 // host that is not theirs, a plan's host limit (none is sold since
 // I-1594; an api from before it answers one), and an account with no
-// Own hardware plan.
+// plan.
 func hostErr(err error, name string) error {
 	var apiErr *APIError
 	if !errors.As(err, &apiErr) {
@@ -631,7 +690,9 @@ func hostErr(err error, name string) error {
 	case reason == "waiting_limit":
 		return exitf(ExitGeneric, "%s have not joined yet. Install repose on one, or `repose host rm` one, before you add another.", hostCount(detailInt(apiErr.Detail["limit"])))
 	case reason == "own_hardware_plan_required":
-		return exitf(ExitPaymentRequired, "Hardware of your own needs the Own hardware plan: https://repose.run/billing")
+		// Every plan includes hosts since I-1704, so this is an account
+		// with no plan; an older api also says it to a hosted plan.
+		return exitf(ExitPaymentRequired, "Hardware of your own needs a plan: Own hardware, or any hosted plan. Choose one at https://repose.run/billing")
 	case reason == "host_has_projects":
 		// A machine moves host only by restore (DESIGN §3), so the api
 		// refuses rather than leave them with nowhere to run. It names
@@ -749,6 +810,11 @@ func classNote(p *Project) string {
 // usedCell is the memory an unsized machine uses while it runs, "1.4 GB
 // used", or "" when it is not running or the api has no sample yet.
 func usedCell(p *Project) string {
+	if p.State == "running" && p.VM != nil {
+		// A Mac (I-1712): what macOS gives up for the machine, 0 while it
+		// rests as a save.
+		return humanBytes(max(p.MemUsedBytes, 0)) + " held"
+	}
 	if p.State != "running" || p.MemUsedBytes <= 0 {
 		return ""
 	}
@@ -793,7 +859,7 @@ func sizeIgnored(w io.Writer, slug, host string) {
 	if host != "" {
 		where = "your host " + host
 	}
-	_, _ = fmt.Fprintf(w, "--size is ignored: %s runs on %s, where a machine has no size and uses the memory it needs.\n", slug, where)
+	_, _ = fmt.Fprintf(w, "--size is ignored: %s runs on %s, where a machine has no size and the host gives it its memory and cores.\n", slug, where)
 }
 
 func ownHostName(p *Project, own map[string]Host) string {

@@ -782,14 +782,14 @@ func newStopCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		Long: "Snapshot and stop each PROJECT's machine (this checkout's, by default),\n" +
 			"several at once. Every process on it ends. It asks first when an agent is\n" +
 			"mid-turn or waiting for an answer; -y skips the question and is required\n" +
-			"without a terminal. It runs git fetch repose first in each checkout of the\n" +
-			"machine on this laptop and names what the machine keeps that the laptop\n" +
-			"lacks: commits not fetched, files not committed. Then it returns while the\n" +
+			"without a terminal. Nothing is fetched first: the line names what the\n" +
+			"machine keeps that this laptop's checkouts lack, commits not fetched and\n" +
+			"files not committed, and the snapshot keeps them. Then it returns while the\n" +
 			"snapshot and the shutdown go on; a stop that fails shows in repose ls and\n" +
 			"notifies you. --wait waits for the stop instead.\n\n" +
 			"With -w it closes that one agent window and the machine keeps running. The\n" +
 			"window's worktree is removed too when it has no uncommitted file, no other\n" +
-			"window works in it, and this laptop has its branch after the fetch.",
+			"window works in it, and this laptop has its branch tip.",
 		Example:           "  repose stop\n  repose stop api web\n  repose stop --unused\n  repose stop --wait\n  repose stop -w claude-2",
 		SuggestFor:        []string{"down", "halt"},
 		Args:              cobra.ArbitraryArgs,

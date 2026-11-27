@@ -28,6 +28,13 @@ describe('a machine on a host of your own', () => {
 		expect(r).toMatchObject({ limitGB: 8, usedGB: 4 });
 		expect(r!.holders.map((h) => h.name)).toEqual(['b']);
 	});
+	it('counts no plan memory on a host of your own that keeps sizes (I-1704)', () => {
+		const r = planRoom('active', { usage: { memory_gb: 8 } } as never, [
+			{ id: 'a', name: 'a', slug: 'a', class: 'large', state: 'running', sized: true, host_name: 'box-a' },
+			{ id: 'b', name: 'b', slug: 'b', class: 'small', state: 'running' }
+		]);
+		expect(r).toMatchObject({ limitGB: 8, usedGB: 4 });
+	});
 });
 
 describe('oomStopReason', () => {

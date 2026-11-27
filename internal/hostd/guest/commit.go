@@ -1,6 +1,7 @@
 package guest
 
 import (
+	"errors"
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
 	"github.com/heracraft/repose/internal/hostd/state"
 )
@@ -26,9 +27,21 @@ func (m *Manager) committedMiB(except string) uint64 {
 	if err != nil {
 		return 0
 	}
+	res := m.reservations()
 	var n uint64
+	for id, r := range res {
+		if id != except {
+			n += r.mib
+		}
+	}
 	for _, g := range gs {
-		if g.GuestID == except {
+		if _, held := res[g.GuestID]; g.GuestID == except || held {
+			continue
+		}
+		if m.restSaved(g) {
+			// Resting as a save file: macOS has all of its memory
+			// (DECISIONS I-1712). It takes it back at its wake, which
+			// checks for room first (restoreRest).
 			continue
 		}
 		switch g.State {
@@ -88,9 +101,18 @@ func (m *Manager) committedVCPUs(except string) uint32 {
 	if err != nil {
 		return 0
 	}
+	res := m.reservations()
 	var n uint32
+	for id, r := range res {
+		if id != except {
+			n += r.vcpus
+		}
+	}
 	for _, g := range gs {
-		if g.GuestID == except {
+		if _, held := res[g.GuestID]; g.GuestID == except || held {
+			continue
+		}
+		if m.restSaved(g) {
 			continue
 		}
 		switch g.State {
@@ -136,4 +158,50 @@ func (m *Manager) vmSize(g *state.Guest) *hostdv1.VmSize {
 		v.MemMib = g.MemMiB
 	}
 	return v
+}
+
+// restoreRoom says whether g, resting as a save, fits back in the memory
+// commit with spare MiB left over (DECISIONS I-1712): a restore takes
+// the VM's whole configured memory, whatever it used before its rest.
+func (m *Manager) restoreRoom(g *state.Guest, spare uint64) bool {
+	if m.cfg.CommitMemMiB == 0 {
+		return true
+	}
+	return m.committedMiB(g.GuestID)+m.guestMemMiB(g)+spare <= m.cfg.CommitMemMiB
+}
+
+// ErrNoRoomToRestore is a wake of a guest resting as a save that does not
+// fit back: the machines running on the host hold the memory it would
+// take (DECISIONS I-1712).
+var ErrNoRoomToRestore = errors.New("the machines running on this host hold the memory this machine comes back with; stopping one of them frees room")
+
+// reservation is the share of the commit a boot holds while it runs,
+// before its record says starting (DECISIONS I-1712).
+type reservation struct {
+	mib   uint64
+	vcpus uint32
+}
+
+// reserve sets a boot's share; zero for both removes it.
+func (m *Manager) reserve(id string, mib uint64, vcpus uint32) {
+	m.resMu.Lock()
+	defer m.resMu.Unlock()
+	if m.reserved == nil {
+		m.reserved = map[string]reservation{}
+	}
+	if mib == 0 && vcpus == 0 {
+		delete(m.reserved, id)
+		return
+	}
+	m.reserved[id] = reservation{mib: mib, vcpus: vcpus}
+}
+
+func (m *Manager) reservations() map[string]reservation {
+	m.resMu.Lock()
+	defer m.resMu.Unlock()
+	out := make(map[string]reservation, len(m.reserved))
+	for k, v := range m.reserved {
+		out[k] = v
+	}
+	return out
 }

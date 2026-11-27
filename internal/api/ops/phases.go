@@ -47,6 +47,10 @@ const (
 	// sits on a host that does not pause -- so a plan carrying it costs
 	// nothing on a host without the feature.
 	PhaseWake = "wake"
+	// PhaseStartAgent opens a window running an agent in the machine's
+	// tmux session (DECISIONS I-1702): the agent op's, and the last phase
+	// of a create the dashboard asked to start one.
+	PhaseStartAgent = "start_agent"
 )
 
 // Op kinds.
@@ -72,6 +76,9 @@ const (
 	// `repose start` asks for a start, and the process that holds the
 	// stream sends it.
 	KindWake = "wake"
+	// KindAgent starts an agent on a running machine (DECISIONS I-1702):
+	// the dashboard's Start agent, POST /projects/{id}/agents.
+	KindAgent = "agent"
 )
 
 // PlanCreate is build then create, for a Nix project.
@@ -270,6 +277,31 @@ func PlanUpdateSecrets() []string { return []string{PhaseWake, PhaseUpdateSecret
 // exec that answers guest_unresponsive on a resting machine is a false
 // incident.
 func PlanExec() []string { return []string{PhaseWake, PhaseExec} }
+
+// PlanAgent is a wake, for a machine that rests, then the agent's start
+// (DECISIONS I-1702).
+func PlanAgent() []string { return []string{PhaseWake, PhaseStartAgent} }
+
+// PlanCreateWithAgent is the create plan with an agent started at its end
+// (DECISIONS I-1702): what a machine made on the dashboard gets.
+func PlanCreateWithAgent(runtime string) []string {
+	return append(PlanCreateFor(runtime), PhaseStartAgent)
+}
+
+// startAgentCommand is a StartAgent for the project: the agent the op
+// names, else the project's default, and remote control when the op
+// asks for it.
+func startAgentCommand(op *store.Op, p *store.Project) *hostdv1.StartAgent {
+	agent, _ := op.Params["agent"].(string)
+	if agent == "" {
+		agent = p.AgentDefault
+	}
+	if agent == "" {
+		agent = "claude"
+	}
+	rc, _ := op.Params["remote_control"].(bool)
+	return &hostdv1.StartAgent{GuestId: p.GuestID.String(), Agent: agent, Slug: p.Slug, RemoteControl: rc}
+}
 
 // PlanWake is the wake alone (I-1642).
 func PlanWake() []string { return []string{PhaseWake} }
@@ -601,6 +633,11 @@ func (e *Engine) buildCommand(ctx context.Context, op *store.Op, phase string) (
 			return nil, uuid.Nil, false, err
 		}
 		return &hostdv1.Command{CommandId: newCommandID(), Cmd: &hostdv1.Command_UpdateSecrets{UpdateSecrets: &hostdv1.UpdateSecrets{GuestId: p.GuestID.String(), Secrets: d.secrets}}}, *p.HostID, false, nil
+	case PhaseStartAgent:
+		if p.GuestID == nil || p.HostID == nil {
+			return nil, uuid.Nil, false, &opError{code: "invalid", msg: "project has no guest"}
+		}
+		return &hostdv1.Command{CommandId: newCommandID(), Cmd: &hostdv1.Command_StartAgent{StartAgent: startAgentCommand(op, p)}}, *p.HostID, false, nil
 	case PhaseExec:
 		if p.GuestID == nil || p.HostID == nil {
 			return nil, uuid.Nil, false, &opError{code: "invalid", msg: "project has no guest"}
@@ -1035,10 +1072,35 @@ func (e *Engine) buildRestore(ctx context.Context, op *store.Op, p *store.Projec
 		hostID = uuid.MustParse(to)
 	}
 	if hostID == uuid.Nil {
+		// Where the snapshot is decides where it can be restored
+		// (DECISIONS I-1696): one taken on a host the account owns is on
+		// that host's own disk (I-1372), so only that host can restore
+		// it; one taken on repose's servers is in repose's store, which
+		// only those servers read. The project's placement used to
+		// decide, and a fleet snapshot restored `--as` landed on the
+		// account's Mac and failed "not in the store" (review-cli,
+		// 2026-11-27 08:51Z).
+		local, fleet, perr := e.snapshotHome(ctx, snap)
+		if perr != nil {
+			return nil, uuid.Nil, false, perr
+		}
+		if local != uuid.Nil {
+			h, err := store.GetHost(ctx, e.pool, local)
+			if err != nil || h.State != "ready" || h.Draining {
+				return nil, uuid.Nil, false, &opError{code: "unavailable", msg: "this snapshot is kept on " + hostName(h) + ", which is not connected; it restores there once that host is back"}
+			}
+			hostID = local
+		}
 		err := db.InTx(ctx, e.pool, func(tx db.Tx) error {
+			if hostID != uuid.Nil {
+				return nil
+			}
 			t, err := e.target(ctx, tx, p)
 			if err != nil {
 				return err
+			}
+			if fleet {
+				t.Hosted = true
 			}
 			pk, err := scheduler.PickHost(ctx, tx, t, p.Class, p.HeldBytes(), p.VolumeBytes, e.now())
 			if err != nil {
@@ -1515,7 +1577,7 @@ func (e *Engine) onResult(ctx context.Context, op *store.Op, phase string, res *
 		// The machine is awake, whether this phase woke it or found it
 		// so: the marker goes now rather than when hostd's event lands,
 		// so the phases after it never read a stale row (I-818).
-		if w := res.GetWake(); w == nil || w.WasResting {
+		if w := res.GetWake(); w == nil || (w.WasResting && w.GetWaitsFor() == "") {
 			if _, err := e.pool.Exec(ctx, "update projects set resting_since = null where id = $1 and resting_since is not null", p.ID); err != nil {
 				return err
 			}
@@ -1523,9 +1585,12 @@ func (e *Engine) onResult(ctx context.Context, op *store.Op, phase string, res *
 		if op.Kind == KindWake {
 			// The caller reads whether the host answered; a phase skipped
 			// for a host that is away leaves no result (I-1642).
-			return e.setResult(ctx, op, map[string]any{"was_resting": res.GetWake().GetWasResting(), "wake_ms": res.GetWake().GetWakeMs()})
+			return e.setResult(ctx, op, map[string]any{"was_resting": res.GetWake().GetWasResting(), "wake_ms": res.GetWake().GetWakeMs(), "waits_for": res.GetWake().GetWaitsFor()})
 		}
 		return nil
+	case PhaseStartAgent:
+		a := res.GetStartAgent()
+		return e.setResult(ctx, op, map[string]any{"agent": startAgentCommand(op, p).Agent, "window": a.GetWindow(), "existed": a.GetExisted()})
 	case PhaseExec:
 		x := res.GetExec()
 		if x == nil {
@@ -1721,6 +1786,35 @@ func vmSizeOf(v *hostdv1.VmSize) *store.VMSize {
 		return nil
 	}
 	return &store.VMSize{VCPUs: v.Vcpus, MemMiB: v.MemMib, FullVCPUs: max(v.FullVcpus, v.Vcpus), FullMemMiB: max(v.FullMemMib, v.MemMib)}
+}
+
+// snapshotHome is where snap can be restored from: local is the host of
+// the account's own whose disk holds it (I-1372), fleet whether it is in
+// repose's store, which only repose's servers read (DECISIONS I-1696). A
+// snapshot from before host_id was recorded is the fleet's.
+func (e *Engine) snapshotHome(ctx context.Context, snap *store.Snapshot) (local uuid.UUID, fleet bool, err error) {
+	if snap.HostID == nil {
+		return uuid.Nil, true, nil
+	}
+	var owner *uuid.UUID
+	if err := e.pool.QueryRow(ctx, "select owner_account_id from hosts where id = $1", *snap.HostID).Scan(&owner); err != nil {
+		if db.IsNoRows(err) {
+			return uuid.Nil, true, nil
+		}
+		return uuid.Nil, false, err
+	}
+	if owner != nil {
+		return *snap.HostID, false, nil
+	}
+	return uuid.Nil, true, nil
+}
+
+// hostName is "your host NAME" for a sentence, "your host" when unknown.
+func hostName(h *store.Host) string {
+	if h == nil || h.Name == "" {
+		return "your host"
+	}
+	return "your host " + h.Name
 }
 
 // CreateRefusedPrefix begins the last_error of a project whose create the

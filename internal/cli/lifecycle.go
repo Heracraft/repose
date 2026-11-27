@@ -61,6 +61,9 @@ func StartCmd(ctx context.Context, e *Env, projectArg string) error {
 		_, _ = fmt.Fprintf(e.Out, "%s is already running.\n", project.Slug)
 		return nil
 	}
+	// The time is the command's own: with --json there is no progress
+	// line, so its clock read 0.0s (review-cli, 2026-11-27).
+	started := time.Now()
 	pr := e.newProgress()
 	defer pr.Fail()
 	// requireProject read the project a moment ago: acted on without a
@@ -69,7 +72,7 @@ func StartCmd(ctx context.Context, e *Env, projectArg string) error {
 		return err
 	}
 	pr.Fail()
-	_, _ = fmt.Fprintf(e.Out, "%s is running%s, ready in %s.\n", project.Slug, classNote(project), fmtElapsed(pr.Total()))
+	_, _ = fmt.Fprintf(e.Out, "%s is running%s, ready in %s.\n", project.Slug, classNote(project), fmtElapsed(time.Since(started)))
 	if l := sizedDownLine(project); l != "" {
 		// Started smaller than it would be on its own (I-1680).
 		_, _ = fmt.Fprintf(e.Out, "It %s\n", l)
@@ -356,10 +359,8 @@ func stopBegin(ctx context.Context, e *Env, project *Project, snapshot bool) sto
 		r.line = withLeft(fmt.Sprintf("Stopped %s in %s.", project.Slug, fmtElapsed(time.Since(started))), stopClause(left))
 		// I-158, as stopOne says it: a stop whose snapshot failed is not
 		// a clean stop.
-		if p, err := e.Client.GetProject(ctx, project.ID); err == nil && p.LastError != nil {
-			if reason := projectReason(p); reason != "" {
-				r.note = fmt.Sprintf("Note: %s.", reason)
-			}
+		if p, err := e.Client.GetProject(ctx, project.ID); err == nil {
+			r.note = stopNote(project, p)
 		}
 	default:
 		r.line = stoppingLine(project.Slug, left)
@@ -503,12 +504,28 @@ func stopOne(ctx context.Context, e *Env, project *Project, snapshot bool, pr *p
 	r.line = withLeft(r.line, stopClause(left))
 	r.done = true
 	saveStopLeft(e.Dir, p.ID, left, time.Now())
-	if reason := projectReason(p); reason != "" && p.LastError != nil {
-		// I-158: a stop whose snapshot failed leaves the project stopped
-		// with last_error set; say so rather than implying a snapshot.
-		r.note = fmt.Sprintf("Note: %s.", reason)
-	}
+	// I-158: a stop whose snapshot failed leaves the project stopped
+	// with last_error set; say so rather than implying a snapshot.
+	r.note = stopNote(project, p)
 	return r
+}
+
+// stopNote is the line after a stop for what the stop itself left in
+// last_error (I-158): one it wrote, or a snapshot that failed again. A
+// last_error from an earlier op (a refused resize, d2-lab 2026-11-27)
+// is not this stop's, and the stop says nothing of it.
+func stopNote(before, after *Project) string {
+	if after == nil || after.LastError == nil {
+		return ""
+	}
+	code, _ := splitLastError(*after.LastError)
+	if before != nil && before.LastError != nil && *before.LastError == *after.LastError && code != "snapshot_failed" {
+		return ""
+	}
+	if reason := projectReason(after); reason != "" {
+		return fmt.Sprintf("Note: %s.", reason)
+	}
+	return ""
 }
 
 // stopWaitUnderWay is --wait on a project another command is stopping:

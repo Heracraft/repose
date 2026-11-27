@@ -335,5 +335,17 @@ func apiRefusal(apiErr *APIError) string {
 	if m == "" {
 		return fmt.Sprintf("The api refused it (%s).", apiErr.Code)
 	}
-	return fmt.Sprintf("%s (%s).", strings.ToUpper(m[:1])+m[1:], apiErr.Code)
+	return fmt.Sprintf("%s (%s).", capitalFirst(m), apiErr.Code)
+}
+
+// capitalFirst capitalises a sentence's first letter, unless its first
+// word is a name (a machine's or a host's: a hyphen or a digit in it),
+// which is written as the user wrote it: "E2e-rc-f2 has no usable volume"
+// (review-cli, 2026-11-27).
+func capitalFirst(m string) string {
+	first, _, _ := strings.Cut(m, " ")
+	if strings.ContainsAny(first, "-0123456789_") {
+		return m
+	}
+	return strings.ToUpper(m[:1]) + m[1:]
 }

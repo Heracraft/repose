@@ -58,6 +58,15 @@ func platformFor(o Options) platform {
 		// are restored when it comes.
 		loop: func(ctx context.Context, mgr *guest.Manager, log *slog.Logger) {
 			macMgr.Store(mgr)
+			if o.SnapshotDir != "" {
+				// A destroyed machine's kept clones go at once, not at
+				// the next ten-minute sweep (I-1712).
+				mgr.SetOnDestroyed(func() {
+					if live := mgr.LiveProjects(); live != nil {
+						mgr.SweepKeptClones(context.WithoutCancel(ctx), keptClonesWanted(o.SnapshotDir, live))
+					}
+				})
+			}
 			// The control socket is the user's, so `repose host restart`
 			// parks without sudo (hostd, root, still connects).
 			go func() {
@@ -91,12 +100,23 @@ func platformFor(o Options) platform {
 				if r, ok := macSession.Load().(*sessionReader); ok && r != nil {
 					lw.step(ctx, r.read(ctx), time.Now(), mgr, log)
 				}
+				if tick%30 == 0 {
+					// The second step of a rest: a machine paused long
+					// enough, or any when macOS is short, is saved.
+					if n := mgr.SaveRests(ctx); n > 0 {
+						log.Info("resting machines saved", "event", "guest_resting", "guests", n)
+					}
+				}
 				if tick%3 != 0 {
 					continue
 				}
 				if time.Since(swept) > 10*time.Minute && o.SnapshotDir != "" {
 					swept = time.Now()
-					mgr.SweepKeptClones(ctx, newestPerProject(storedSnapshots(o.SnapshotDir), keptPerProject))
+					// An unreadable state sweeps nothing (a nil list
+					// would take every clone).
+					if live := mgr.LiveProjects(); live != nil {
+						mgr.SweepKeptClones(ctx, keptClonesWanted(o.SnapshotDir, live))
+					}
 				}
 				mgr.ExpireRestSaves(ctx)
 				if _, err := mgr.RestoreHeld(ctx); err != nil {
@@ -307,6 +327,8 @@ func adaptMac(ctx context.Context, o Options, m MacOptions, u macUser, r shell.R
 	// answer.
 	d.Park.GuestTouched = true
 	d.Park.ImageEstimate = vmFootprint(r, ld)
+	// What macOS gives up for each machine, for its samples (I-1712).
+	d.HeldBytes = vmFootprint(r, ld)
 	// An idle machine rests by save, giving all its memory back to
 	// macOS, wherever the save can be read back at the wake: an agent job
 	// in an unlocked session (DECISIONS I-1682, the owner's ruling on
@@ -320,6 +342,11 @@ func adaptMac(ctx context.Context, o Options, m MacOptions, u macUser, r shell.R
 		d.RestBySave = func(ctx context.Context, id string) bool {
 			return ld.Domain(ctx, guest.GuestUnit(id)) == "gui" && session(ctx).Unlocked()
 		}
+		// Two steps (I-1682): a pause first, the save after
+		// --mac-rest-save-after, or at once when macOS is short.
+		d.RestSaveAfter = m.RestSaveAfter
+		memInfo := d.MemInfo
+		d.MemoryTight = func() bool { return memoryTight(memInfo) }
 	}
 	d.SessionState = func(ctx context.Context) string {
 		switch s := session(ctx); {
@@ -494,6 +521,23 @@ func storedSnapshots(dir string) []string {
 	return out
 }
 
+// keptClonesWanted is the store paths whose APFS clone stays: the newest
+// keptPerProject of each project that still has a machine on this host.
+// A destroyed machine's clone owns every block of its disk once the disk
+// is gone, so keeping it kept the whole disk on the Mac for 30 days (22
+// clones, 36.8 GiB on the lab Mac after one morning, review-mac
+// 2026-11-27); its final snapshot stays, as a stream, and a restore reads
+// that (DECISIONS I-1712).
+func keptClonesWanted(dir string, live map[string]bool) []string {
+	var out []string
+	for _, p := range newestPerProject(storedSnapshots(dir), keptPerProject) {
+		if live[path.Base(path.Dir(p))] {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 // keptPerProject is how many of a project's snapshots keep their APFS
 // clone: a kept clone costs every block its volume has changed since, and
 // thirty-nine of them took the lab Mac's disk with the store (d2-lab,
@@ -549,4 +593,19 @@ func unreachable(path string, uid, gid int) string {
 		}
 		p = parent
 	}
+}
+
+// memoryTight reports whether macOS has under a quarter of its memory free
+// (free, inactive, speculative and purgeable pages): then a resting
+// machine is saved at once rather than after --mac-rest-save-after. An
+// unreadable figure is not tight: the save waits for its time.
+func memoryTight(memInfo func() (uint64, uint64, error)) bool {
+	if memInfo == nil {
+		return false
+	}
+	total, avail, err := memInfo()
+	if err != nil || total == 0 {
+		return false
+	}
+	return avail < total/4
 }

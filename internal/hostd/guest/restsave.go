@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -45,6 +46,11 @@ func (m *Manager) restPause(ctx context.Context, g *state.Guest, sock string) er
 		return err
 	}
 	if m.d.RestBySave == nil || !m.d.RestBySave(ctx, g.GuestID) {
+		return nil
+	}
+	if m.d.RestSaveAfter > 0 && (m.d.MemoryTight == nil || !m.d.MemoryTight()) {
+		// The first step of the rest: a pause. SaveRests saves it once
+		// it has rested RestSaveAfter, or at once when macOS is short.
 		return nil
 	}
 	m.saveRest(ctx, g, sock)
@@ -116,12 +122,20 @@ func (m *Manager) restResume(ctx context.Context, g *state.Guest, sock string) e
 // still stopped: afterwards it rests by pause, its memory held, and the
 // save is removed. It returns how long the restore took.
 func (m *Manager) restoreRest(ctx context.Context, g *state.Guest, sock string) (time.Duration, error) {
+	if !m.restoreRoom(g, 0) {
+		return 0, ErrNoRoomToRestore
+	}
 	t0 := m.d.Now()
 	dir := m.guestDir(g.GuestID)
 	for _, s := range []string{"ch.sock", "vsock.sock"} {
 		_ = os.Remove(filepath.Join(dir, s)) // the launcher makes them anew
 	}
 	props := GuestUnitProps(m.classOf(g.Class), m.cfg.GuestUser, m.cfg.GuestsDir, dir, m.d.LVM.DevPath(VolumeName(g.GuestID)), m.unitBundle(g))
+	// The save file is read ahead, in large sequential reads, beside the
+	// restore: VZ's own reads of a file macOS no longer caches took 44.8 s
+	// for 4.6 GB on the lab Mac, against 9.8-14.2 s with the read-ahead
+	// and 3.2-4.9 s when it was cached (DECISIONS I-1682).
+	readAhead(m.restDir(g.GuestID))
 	if err := m.d.Systemd.Run(ctx, GuestUnit(g.GuestID), props, ch.RestoreArgs(dir, m.restDir(g.GuestID))); err != nil {
 		return 0, err
 	}
@@ -172,12 +186,37 @@ func (m *Manager) UnsaveRests(ctx context.Context) int {
 	if err != nil {
 		return 0
 	}
-	var n atomic.Int32
-	var wg sync.WaitGroup
+	// Only while each fits with room for a new machine left (DECISIONS
+	// I-1712): a restore takes the VM's whole configured memory, so three
+	// machines that held 10.0 GB before their rest held 20.5 GB after
+	// the lock's restore, and three new machines were refused. Smallest
+	// first; the others stay saved and wait for the unlock.
+	var saved []*state.Guest
 	for _, g := range gs {
-		if !m.restSaved(g) {
+		if m.restSaved(g) {
+			saved = append(saved, g)
+		}
+	}
+	sort.Slice(saved, func(i, j int) bool { return m.guestMemMiB(saved[i]) < m.guestMemMiB(saved[j]) })
+	// Room for one more machine of the size a start gets here (on a Mac
+	// every class is the host's one size, ownedClass).
+	var spare uint64
+	if len(saved) > 0 {
+		spare = m.classOf(saved[0].Class).MemMiB
+	}
+	var take []*state.Guest
+	var planned uint64
+	for _, g := range saved {
+		if m.cfg.CommitMemMiB > 0 && m.committedMiB("")+planned+m.guestMemMiB(g)+spare > m.cfg.CommitMemMiB {
+			m.log(g).Info("rest save kept at the lock: no room to restore it and start another machine", "event", "guest_resting")
 			continue
 		}
+		planned += m.guestMemMiB(g)
+		take = append(take, g)
+	}
+	var n atomic.Int32
+	var wg sync.WaitGroup
+	for _, g := range take {
 		wg.Add(1)
 		go func(id string) {
 			defer wg.Done()
@@ -214,9 +253,13 @@ func (m *Manager) SaveRests(ctx context.Context) int {
 	if err != nil {
 		return 0
 	}
+	tight := m.d.MemoryTight != nil && m.d.MemoryTight()
 	n := 0
 	for _, g := range gs {
 		if g.Resting == nil || g.State != StateRunning || m.restSaved(g) || !m.d.RestBySave(ctx, g.GuestID) {
+			continue
+		}
+		if !tight && m.d.RestSaveAfter > 0 && m.d.Now().Sub(g.Resting.Since) < m.d.RestSaveAfter {
 			continue
 		}
 		id := g.GuestID
@@ -348,4 +391,32 @@ func (m *Manager) WakeTap(ctx context.Context, tap string) (*hostdv1.WakeResult,
 		}
 	}
 	return nil, errors.New("no guest on that port")
+}
+
+// readAhead reads every file in dir once, in the background, in 8 MiB
+// reads, so macOS caches a save file before VZ's own smaller reads need
+// it (I-1682). Best effort: an error stops the read and nothing else.
+func readAhead(dir string) {
+	des, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, de := range des {
+		if !de.Type().IsRegular() {
+			continue
+		}
+		go func(p string) {
+			f, err := os.Open(p)
+			if err != nil {
+				return
+			}
+			defer func() { _ = f.Close() }()
+			buf := make([]byte, 8<<20)
+			for {
+				if _, err := f.Read(buf); err != nil {
+					return
+				}
+			}
+		}(filepath.Join(dir, de.Name()))
+	}
 }

@@ -69,10 +69,12 @@ func TestDestroyThenRestoreByName(t *testing.T) {
 		t.Fatalf("restored project: %+v %v", back, err)
 	}
 
-	// `izma` now means the live project, which has no snapshot yet.
+	// `izma` again, now that a live project holds the name: the destroyed
+	// izma is still restorable, so the name is taken, as cli.md says
+	// (review-cli R4: it answered "no snapshot left to restore", exit 4).
 	err = RestoreCmd(ctx, e, "izma", "", "", nil)
-	if ee, ok := err.(*exitError); !ok || ee.code != ExitProjectNotFound || !strings.Contains(ee.msg, "izma has no snapshot left to restore") {
-		t.Fatalf("restore of a live project without snapshots: %v", err)
+	if ee, ok := err.(*exitError); !ok || ee.code != ExitUsage || !strings.Contains(ee.msg, "--as NEW-NAME") {
+		t.Fatalf("restore of a name a live project holds: %v", err)
 	}
 	// The destroyed one, by the id the old destroy message printed: the
 	// name is taken, so without a terminal the CLI says to pass --as,

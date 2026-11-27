@@ -197,13 +197,24 @@ type Fake struct {
 	// wakeFails makes POST /internal/wake answer an error, so a gateway
 	// test can see what a failed wake does to a dial (DECISIONS I-818).
 	wakeFails bool
+	// wakeDelay is how long POST /internal/wake takes, as a Mac's
+	// restore from a rest save does (I-1696).
+	wakeDelay time.Duration
+	// wakeWaits makes POST /internal/wake answer 409 with this sentence,
+	// as the api does for a machine resting as a save its locked Mac
+	// cannot read (I-1712).
+	wakeWaits string
 	// wakes counts POST /internal/wake, for the gateway's dedupe tests;
 	// userWakes counts POST /projects/:id/wake (I-1682).
 	userWakes int
-	wakes     int
-	sessions  []SessionReport
-	questions []*Question // newest last (DECISIONS I-245)
-	holds     []string    // question ids the dashboard held (I-1242)
+	// agentStarts counts agent windows opened and agentFails is the
+	// failure every agent op ends with, "" for none (I-1702).
+	agentStarts int
+	agentFails  string
+	wakes       int
+	sessions    []SessionReport
+	questions   []*Question // newest last (DECISIONS I-245)
+	holds       []string    // question ids the dashboard held (I-1242)
 	// says are the `repose say` messages the fake took, and sayAgents /
 	// sayState / sayReplaced what it answers with (DECISIONS I-1144).
 	says         []Say
@@ -773,6 +784,7 @@ func (f *Fake) register() {
 	f.handle("DELETE /v1/projects/{id}", f.destroyProject)
 	f.handle("POST /v1/projects/{id}/start", f.startProject)
 	f.handle("POST /v1/projects/{id}/wake", f.wakeProject)
+	f.handle("POST /v1/projects/{id}/agents", f.startAgent)
 	f.handle("POST /v1/projects/{id}/stop", f.stopProject)
 	f.handle(opPattern, f.getOp)
 	f.handle(logPattern, f.opLog)

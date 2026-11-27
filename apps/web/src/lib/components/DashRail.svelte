@@ -122,7 +122,9 @@
 			: parkedText(p)
 				? p.parked?.waits_for === 'unlock'
 					? 'parked, waiting for you to unlock'
-					: 'parked, waiting for your login'
+					: p.parked?.waits_for === 'restart'
+						? 'parked, its host restarting'
+						: 'parked, waiting for your login'
 				: notAnsweringSince(p)
 					? 'running, not answering'
 					: p.state;

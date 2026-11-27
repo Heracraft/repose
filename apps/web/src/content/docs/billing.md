@@ -5,7 +5,7 @@ section: Account
 order: 30
 ---
 
-Your plan buys memory for running machines, disk for what your projects hold, and egress for the month. The first week is free. If the machine is yours, [Own hardware](#own-hardware) is $10 a month instead.
+Your plan buys memory for running machines, disk for what your projects hold, and egress for the month. The first week is free. If the machine is yours, [Own hardware](#own-hardware) is $10 a month instead. Every plan lets you add [hosts of your own](#hosts-of-your-own-on-a-hosted-plan).
 
 <!-- plans: the page draws lib/plans.ts here; this table is for /docs/billing.md -->
 
@@ -32,6 +32,10 @@ The plan buys none of repose's compute, disk or egress, so you can't place machi
 The card at checkout, tax and what happens after a failed payment are the same as on any plan. Solo's founding price does not apply. Your snapshots stay on your own host's disk, and repose keeps no copy, so a dead disk loses them.
 
 You can't change between Own hardware and a hosted plan: they sell different things. Cancel the one you have, and choose the other when it ends.
+
+### Hosts of your own on a hosted plan
+
+Solo, Plus and Pro include any number of hosts of your own at no extra price. Add one as on Own hardware ([Your own hardware](/docs/own-hardware)). A machine on your host counts nothing against your plan: not its memory, not its disk, not its egress. Your plan's memory, disk and egress are for the machines on repose's servers. Once you have a host, new machines go to it; `repose run --host repose`, or **Runs on** in the dashboard's new machine form, puts one on repose's servers instead.
 
 ## What a plan means
 

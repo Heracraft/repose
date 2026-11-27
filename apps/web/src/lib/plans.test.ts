@@ -8,6 +8,7 @@ import {
 	PLANS,
 	UNLIMITED_HOSTS,
 	fromApi,
+	isOwnHardware,
 	memoryLine,
 	ordinal
 } from './plans';
@@ -66,6 +67,10 @@ describe('plans', () => {
 			expect(p.memoryGB, `${p.name} memory`).toBe(Number(go.MemoryGB));
 			expect(p.diskGB, `${p.name} disk`).toBe(Number(go.DiskGB));
 			expect(p.egressGB, `${p.name} egress`).toBe(Number(go.EgressGB));
+			// Every hosted plan includes hosts of the user's own (I-1704).
+			expect(goSource).toMatch(new RegExp(`${p.name}\\s*=\\s*Plan\\{[^}]*Hosts: UnlimitedHosts[,}]`));
+			expect(p.hosts, `${p.name} hosts`).toBe(UNLIMITED_HOSTS);
+			expect(isOwnHardware(p), `${p.name} is hosted`).toBe(false);
 			if (go.IntroCents && Number(go.IntroCents) > 0) {
 				expect(p.intro, `${p.name} intro`).toEqual({
 					priceCents: Number(go.IntroCents),
@@ -155,6 +160,7 @@ describe('plans', () => {
 			memory_gb: 8,
 			disk_gb: 100,
 			egress_gb: 250,
+			hosts: UNLIMITED_HOSTS,
 			available: true,
 			intro_price_cents: 3900,
 			intro_months: 12,
@@ -171,6 +177,7 @@ describe('plans', () => {
 			memory_gb: 32,
 			disk_gb: 500,
 			egress_gb: 1000,
+			hosts: UNLIMITED_HOSTS,
 			available: true,
 			intro_price_cents: 0,
 			intro_months: 0,

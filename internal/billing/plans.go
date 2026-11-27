@@ -30,16 +30,19 @@ type Plan struct {
 	DiskGB     int // may be allocated; 0 on an own-hardware plan
 	EgressGB   int // a period; 0 on an own-hardware plan
 	// Hosts is how many hosts of their own the plan lets the account add
-	// (DECISIONS I-1364, I-1366): UnlimitedHosts on Own hardware since
-	// I-1594, none on the plans that sell memory on repose's own fleet.
-	// `POST /hosts` and /me's `limits.hosts` read this and nothing else
-	// holds the figure, so a plan's host count is one number here.
+	// (DECISIONS I-1364, I-1366): UnlimitedHosts on every plan since
+	// I-1704, which included hardware of the user's own in the hosted
+	// plans (it was Own hardware's alone from I-1594, and 0 on the hosted
+	// plans). `POST /hosts` and /me's `limits.hosts` read this and nothing
+	// else holds the figure, so a plan's host count is one number here.
 	//
-	// A plan with Hosts > 0 sells no fleet memory, disk or egress at all:
-	// the host the user owns is the only limit, so MemoryGB, DiskGB and
-	// EgressGB are 0 and none of the gate's three resource checks runs
-	// (Gate.check). What keeps such an account off a host repose bought
-	// is placement, through Gate.FleetAllowed, not the gate's refusals.
+	// A machine on a host the account owns counts nothing against any
+	// plan: not its memory, its disk or its egress (Request.OwnHost,
+	// RunningMemory, HeldFleetDisk, the rollup's egress). On Own hardware,
+	// which sells none of those, MemoryGB, DiskGB and EgressGB are 0 and
+	// none of the gate's three resource checks runs (Gate.check); what
+	// keeps such an account off a host repose bought is placement,
+	// through Gate.FleetAllowed, not the gate's refusals.
 	Hosts int
 	// BurstCoreHours is the CPU time above a machine's base cores that
 	// the plan includes in a period (DECISIONS I-1128). Past it, with
@@ -65,11 +68,13 @@ type Plan struct {
 
 // The three hosted plans (DECISIONS I-362) at ladder C's prices, Solo's
 // founding price for the first 30 subscribers (DECISIONS I-672), and the
-// plan for a host the user owns (DECISIONS I-1364).
+// plan for a host the user owns (DECISIONS I-1364). The hosted plans
+// include any number of hosts of the user's own at no extra price
+// (DECISIONS I-1704).
 var (
-	Solo = Plan{ID: "solo", Name: "Solo", PriceCents: 4900, Currency: "USD", TrialDays: 7, Seats: 1, MemoryGB: 8, DiskGB: 100, EgressGB: 250, BurstCoreHours: 20, IntroCents: 3900, IntroMonths: 12, IntroLimit: 30}
-	Plus = Plan{ID: "plus", Name: "Plus", PriceCents: 8900, Currency: "USD", TrialDays: 7, Seats: 2, MemoryGB: 16, DiskGB: 250, EgressGB: 500, BurstCoreHours: 50}
-	Pro  = Plan{ID: "pro", Name: "Pro", PriceCents: 16900, Currency: "USD", TrialDays: 7, Seats: 4, MemoryGB: 32, DiskGB: 500, EgressGB: 1000, BurstCoreHours: 120}
+	Solo = Plan{ID: "solo", Name: "Solo", PriceCents: 4900, Currency: "USD", TrialDays: 7, Seats: 1, MemoryGB: 8, DiskGB: 100, EgressGB: 250, Hosts: UnlimitedHosts, BurstCoreHours: 20, IntroCents: 3900, IntroMonths: 12, IntroLimit: 30}
+	Plus = Plan{ID: "plus", Name: "Plus", PriceCents: 8900, Currency: "USD", TrialDays: 7, Seats: 2, MemoryGB: 16, DiskGB: 250, EgressGB: 500, Hosts: UnlimitedHosts, BurstCoreHours: 50}
+	Pro  = Plan{ID: "pro", Name: "Pro", PriceCents: 16900, Currency: "USD", TrialDays: 7, Seats: 4, MemoryGB: 32, DiskGB: 500, EgressGB: 1000, Hosts: UnlimitedHosts, BurstCoreHours: 120}
 	// Own is the Mac minis or x86 boxes the user owns: as many hosts as
 	// they add (DECISIONS I-1594), no seat on the fleet, and no memory,
 	// disk or egress of ours to sell, because the machines are theirs.
@@ -118,15 +123,18 @@ func HostedPlans() []Plan {
 	return out
 }
 
-// OwnHardware reports whether the plan sells a host the user owns
-// (DECISIONS I-1364). It answers "which product is this", and nothing
+// OwnHardware reports whether the plan is the own-hardware product
+// (DECISIONS I-1364): it sells hosts the user owns and no memory on
+// repose's fleet. A hosted plan includes hosts too since I-1704, so the
+// host count alone no longer tells the two kinds apart; the fleet memory
+// does. It answers "which product is this", and nothing
 // else: the Polar product and its description, the proration kind
 // (SameKind), and which plan the three cards leave out. It is the wrong
 // question for "does this plan sell repose's compute", which is
 // SellsFleetMemory, and keying a resource gate off it is what let a
 // plan with a host and fleet memory skip the gate while placement let
 // it onto the fleet.
-func (p Plan) OwnHardware() bool { return p.Hosts > 0 }
+func (p Plan) OwnHardware() bool { return p.Hosts > 0 && !p.SellsFleetMemory() }
 
 // SellsFleetMemory reports whether the plan sells memory on the hosts
 // repose runs. It is the one predicate for the fleet, asked twice: the

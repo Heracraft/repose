@@ -208,7 +208,17 @@ export const createProject = (body: {
 	/** One host the account owns, by id (I-1584): that host or a refusal
 	 * that names it. Absent lets the api pick among the account's hosts. */
 	host?: string;
+	/** The agent the machine starts with (I-241). */
+	agent_default?: string;
+	/** Start agent_default once the machine is up, with Claude Code's
+	 * Remote Control on when asked (I-1702). */
+	start_agent?: boolean;
+	remote_control?: boolean;
 }) => request<Project>('/projects', { method: 'POST', body });
+/** Starts an agent on a running machine (I-1702): the project's default
+ * unless one is named. The op's result says whether it was already open. */
+export const startAgent = (id: string, body: { agent?: string; remote_control?: boolean } = {}) =>
+	request<{ op_id: string; agent: string }>(`/projects/${id}/agents`, { method: 'POST', body });
 export const patchProject = (
 	id: string,
 	body: {

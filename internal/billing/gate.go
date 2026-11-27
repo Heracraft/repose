@@ -59,6 +59,14 @@ func (r *Refusal) Error() string { return "payment_required: " + r.Message }
 // I-645): it was running when the host went down, and a past_due account's
 // machines keep running (billing.md, day 0), so past_due lets it through.
 // Every other refusal still applies.
+//
+// OwnHost is the action happening on a host the account owns (DECISIONS
+// I-1704): a new machine placement will put on one, or a copy of a
+// machine that lives on one. Such a machine counts nothing against any
+// plan, so no memory, disk or egress refusal applies to it; the account's
+// standing (no plan, past due, suspended) still does. For an existing
+// Project the gate reads where it lives itself (OnOwnHost), so a caller
+// sets OwnHost only for a machine that has no row yet.
 type Request struct {
 	Class        string
 	Disk         bool
@@ -66,6 +74,19 @@ type Request struct {
 	VolumeBytes  int64
 	Project      uuid.UUID
 	Resume       bool
+	OwnHost      bool
+}
+
+// OnOwnHost reports whether the project lives on a host its account owns
+// (DECISIONS I-1704), the same term RunningMemory excludes by.
+func OnOwnHost(ctx context.Context, q store.Querier, projectID uuid.UUID) (bool, error) {
+	if projectID == uuid.Nil {
+		return false, nil
+	}
+	var own bool
+	err := q.QueryRow(ctx, `select exists (select 1 from projects p join hosts h on h.id = p.host_id
+		where p.id = $1 and h.owner_account_id = p.user_id)`, projectID).Scan(&own)
+	return own, err
 }
 
 // Gate decides.
@@ -156,6 +177,20 @@ func (g *Gate) check(ctx context.Context, q store.Querier, u *store.User, req Re
 	if (sub.Status == StatusPastDue || u.BillingStatus == "past_due") && !req.Resume {
 		return &Refusal{Reason: ReasonPastDue, Message: fmt.Sprintf("Your last payment failed. Update your card at %s to start machines again.", url), Detail: map[string]any{"reason": ReasonPastDue, "plan": plan.ID}}, nil
 	}
+	own := req.OwnHost
+	if !own {
+		if own, err = OnOwnHost(ctx, q, req.Project); err != nil {
+			return nil, err
+		}
+	}
+	if own {
+		// A machine on a host the account owns counts nothing against the
+		// plan, on every plan (DECISIONS I-1704): the host's memory and
+		// disk are its limits and its traffic leaves the user's own
+		// network. A hosted plan's memory, disk and egress are for
+		// repose's servers. The refusals above still apply.
+		return nil, nil
+	}
 	if !plan.SellsFleetMemory() {
 		// A plan that sells no memory on repose's hosts refuses nothing
 		// by memory, disk or egress: the machine runs on the user's own
@@ -212,7 +247,7 @@ func (g *Gate) check(ctx context.Context, q store.Querier, u *store.User, req Re
 				Message: fmt.Sprintf("Your %s plan has %d GB of disk, so one project's disk can be at most %d GB. Upgrade at %s.", plan.Name, plan.DiskGB, plan.DiskGB, url),
 				Detail:  map[string]any{"reason": ReasonDiskLimit, "plan": plan.ID, "limit_gb": plan.DiskGB, "volume_gb": GBCeil(req.VolumeBytes)}}, nil
 		}
-		held, _, err := HeldDisk(ctx, q, u.ID)
+		held, _, err := HeldFleetDisk(ctx, q, u.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -279,8 +314,8 @@ type Limits struct {
 	DiskGB   int
 	EgressGB int
 	// Hosts is how many hosts of their own the account may register: the
-	// plan's (DECISIONS I-1364), 0 on the hosted plans and without a
-	// plan. POST /hosts refuses past it (item 19a).
+	// plan's (DECISIONS I-1364), any number on every plan since I-1704,
+	// and 0 without a plan. POST /hosts refuses past it (item 19a).
 	Hosts int
 	Plan  *Plan
 }

@@ -20,7 +20,13 @@ async function project(name: string, agents: Parameters<typeof setAgents>[1]) {
 	return p;
 }
 
-const desktop = { agent: 'claude', window: '', state: 'working', agent_id: 'a3e81b07c4d29f560', terminal: '' };
+const desktop = {
+	agent: 'claude',
+	window: '',
+	state: 'working',
+	agent_id: 'a3e81b07c4d29f560',
+	terminal: ''
+};
 
 async function shoot(page: Page, name: string) {
 	const dir = process.env.AR_SHOTS;
@@ -70,7 +76,13 @@ test('beside a tmux agent, the box goes to the tmux one and the card lists both'
 	page
 }) => {
 	const p = await project('nt-mixed', [
-		{ agent: 'claude', window: 'claude', state: 'idle', agent_id: 'a5f0c2e19b7d4a630', terminal: 'tmux:claude' },
+		{
+			agent: 'claude',
+			window: 'claude',
+			state: 'idle',
+			agent_id: 'a5f0c2e19b7d4a630',
+			terminal: 'tmux:claude'
+		},
 		{ ...desktop, state: 'idle' }
 	]);
 	await page.goto(`/projects/${p.id}`);

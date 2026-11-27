@@ -25,6 +25,12 @@ All five get new versions with platform updates.
 
 To change the default for projects you create from now on, set `default_agent = "codex"` in `~/.config/repose/config.toml`. `repose run --agent codex`, without `-p`, changes it for this project. An agent gets the checkout's [dev environment](/docs/machine#the-projects-dev-environment) however it was started.
 
+## Start one from the dashboard
+
+A running machine's page has **Start agent** under **Agents**: pick the agent and press it. The agent opens in a window of its own in the machine's tmux session, in the checkout, or in `/home/dev` on a machine with none, as `repose run` starts one from your laptop, and shows under **Agents** once it reports. A window of that agent already open is left as it is, and the page says the agent is already running. For Claude Code, **Remote Control** turns on [Remote Control](#drive-it-from-the-claude-app) for the machine first, and it stays on for that machine; Claude Code's own `disableRemoteControl` setting turns it off, as below. A machine whose terminals are herdr's starts agents with `repose run` only. The [API](/docs/api) route is `POST /projects/:id/agents`, with `agent` and `remote_control`.
+
+Claude Code needs a login on the machine the first time ([Log in](#log-in)); until then its window waits on the login, and **Open in Claude** or `repose attach` gets you to it.
+
 ## Permissions
 
 Claude Code starts in `bypassPermissions` mode on every machine: it runs commands and edits files without asking. Your deny rules still apply, and removing a critical path such as a home directory still asks.

@@ -87,6 +87,7 @@ func TestLockRestoresRestSavesAndUnlockSavesThemAgain(t *testing.T) {
 	if fh.unitActive(gid1) {
 		t.Fatal("not saved")
 	}
+	before := len(fh.chCalls())
 	if n := fh.m.UnsaveRests(context.Background()); n != 1 {
 		t.Fatalf("UnsaveRests %d, want 1", n)
 	}
@@ -94,7 +95,7 @@ func TestLockRestoresRestSavesAndUnlockSavesThemAgain(t *testing.T) {
 	if !fh.unitActive(gid1) || g.Resting == nil || fh.m.restSaved(g) {
 		t.Fatalf("after the lock: active %v resting %v saved %v", fh.unitActive(gid1), g.Resting, fh.m.restSaved(g))
 	}
-	if strings.Contains(fh.chCalls(), "resume ") {
+	if strings.Contains(fh.chCalls()[before:], "resume ") {
 		t.Fatal("resumed at the lock; it must stay paused")
 	}
 	if n := fh.m.SaveRests(context.Background()); n != 1 || fh.unitActive(gid1) || !fh.m.restSaved(fh.guest(gid1)) {
@@ -172,5 +173,135 @@ func TestRestSavePastTheAgeLimit(t *testing.T) {
 		if !canRestore && (g.State != StateStopped || g.Reason != ReasonRestTooLong) {
 			t.Fatalf("locked: state %s reason %q", g.State, g.Reason)
 		}
+	}
+}
+
+// DECISIONS I-1682, the two-step rest: an idle machine rests by pause
+// first (its wake a resume, under a second) and is saved, giving its
+// memory back, only after RestSaveAfter, or at once when macOS is short.
+func TestRestPausesFirstAndSavesLater(t *testing.T) {
+	fh := newParkHarness(t, nil)
+	fh.m.d.CH = saveCH{parkCH{Fake: fh.chc, h: fh.harness}}
+	fh.m.d.RestBySave = func(context.Context, string) bool { return true }
+	fh.m.d.RestSaveAfter = 30 * time.Minute
+	tight := false
+	fh.m.d.MemoryTight = func() bool { return tight }
+	fh.create(gid1)
+	fh.pauseOK(gid1)
+	if !fh.unitActive(gid1) || fh.m.restSaved(fh.guest(gid1)) {
+		t.Fatal("saved at the pause; the first step is a pause")
+	}
+	if n := fh.m.SaveRests(context.Background()); n != 0 {
+		t.Fatalf("saved %d before RestSaveAfter", n)
+	}
+	g := fh.guest(gid1)
+	g.Resting.Since = fh.m.d.Now().Add(-31 * time.Minute)
+	if err := fh.st.PutGuest(g); err != nil {
+		t.Fatal(err)
+	}
+	if n := fh.m.SaveRests(context.Background()); n != 1 || fh.unitActive(gid1) || !fh.m.restSaved(fh.guest(gid1)) {
+		t.Fatalf("after RestSaveAfter: saved %d, active %v", n, fh.unitActive(gid1))
+	}
+	if res := fh.mustOK(cmd(&hostdv1.WakeGuest{GuestId: gid1, Reason: "ssh"})); !res.GetWake().GetWasResting() {
+		t.Fatalf("wake %+v", res)
+	}
+	// Short of memory, the pause saves at once.
+	tight = true
+	fh.pauseOK(gid1)
+	if fh.unitActive(gid1) || !fh.m.restSaved(fh.guest(gid1)) {
+		t.Fatal("not saved at the pause with macOS short of memory")
+	}
+}
+
+// DECISIONS I-1712: at the lock a machine resting as a save is read back
+// only while it fits in the memory commit with room for a new machine
+// left; a restore takes its whole configured size (three machines that
+// held 10.0 GB before their rest held 20.5 GB after the lock's restore,
+// and three new machines were refused, review-mac 12:22Z). A machine at
+// rest as a save holds no commit, and a wake of one the locked Mac
+// cannot read answers at once with what it waits for.
+func TestLockRestoresOnlyWhatFits(t *testing.T) {
+	fh := newParkHarness(t, nil)
+	fh.cfg.CommitMemMiB = 20480
+	fh.m.cfg.CommitMemMiB = 20480
+	fh.m.d.CH = saveCH{parkCH{Fake: fh.chc, h: fh.harness}}
+	fh.m.d.RestBySave = func(context.Context, string) bool { return true }
+	for _, id := range []string{gid1, gid2, gidC3} {
+		fh.create(id)
+	}
+	for _, id := range []string{gid1, gid2, gidC3} {
+		fh.pauseOK(id)
+		if !fh.m.restSaved(fh.guest(id)) {
+			t.Fatalf("%s not saved", id)
+		}
+	}
+	if n := fh.m.committedMiB(""); n != 0 {
+		t.Fatalf("machines resting as saves hold %d MiB of the commit, want 0", n)
+	}
+	if n := fh.m.UnsaveRests(context.Background()); n != 2 {
+		t.Fatalf("restored %d at the lock, want 2 (4096 and one 8192, leaving 8192 for a new machine)", n)
+	}
+	if fh.m.restSaved(fh.guest(gidC3)) {
+		t.Fatal("the smallest machine was left saved")
+	}
+	var left string
+	for _, id := range []string{gid1, gid2} {
+		if fh.m.restSaved(fh.guest(id)) {
+			left = id
+		}
+	}
+	if left == "" {
+		t.Fatal("every machine was restored; no room is left for a new one")
+	}
+	fh.create(gidC4)
+	if got := fh.guest(gidC4).MemMiB; got != 8192 {
+		t.Fatalf("a new machine after the lock got %d MiB, want 8192", got)
+	}
+	// Locked: the one still saved answers its wake at once.
+	fh.m.d.Park.CanRestore = func(context.Context) bool { return false }
+	fh.m.d.SessionState = func(context.Context) string { return SessionLocked }
+	res := fh.mustOK(cmd(&hostdv1.WakeGuest{GuestId: left, Reason: "connect"}))
+	if w := res.GetWake(); w.GetWaitsFor() != WaitsForUnlock || fh.unitActive(left) {
+		t.Fatalf("locked wake: %+v, active %v", w, fh.unitActive(left))
+	}
+}
+
+// A machine resting as a save holds none of the Mac's memory, so its
+// sample carries no memory in use; paused, it repeats its last figure
+// (review-dash P2 #4).
+func TestRestSaveSampleHoldsNoMemory(t *testing.T) {
+	fh := newParkHarness(t, nil)
+	fh.m.d.CH = saveCH{parkCH{Fake: fh.chc, h: fh.harness}}
+	fh.m.d.RestBySave = func(context.Context, string) bool { return true }
+	fh.m.d.RestSaveAfter = 30 * time.Minute
+	fh.m.d.MemoryTight = func() bool { return false }
+	fh.create(gid1)
+	fh.m.curMu.Lock()
+	f := fh.m.lastGuest[gid1]
+	f.memUsed, f.signals = 355<<20, &hostdv1.GuestSignals{}
+	fh.m.lastGuest[gid1] = f
+	fh.m.curMu.Unlock()
+	fh.pauseOK(gid1)
+	mem := func() uint64 {
+		for _, gs := range fh.m.CollectSamples(context.Background()).Guests {
+			if gs.GuestId == gid1 {
+				return gs.GuestMemUsedBytes
+			}
+		}
+		return 1
+	}
+	if m := mem(); m != 355<<20 {
+		t.Fatalf("paused: %d, want the last figure", m)
+	}
+	g := fh.guest(gid1)
+	g.Resting.Since = fh.m.d.Now().Add(-31 * time.Minute)
+	if err := fh.st.PutGuest(g); err != nil {
+		t.Fatal(err)
+	}
+	if n := fh.m.SaveRests(context.Background()); n != 1 {
+		t.Fatalf("saved %d", n)
+	}
+	if m := mem(); m != 0 {
+		t.Fatalf("saved: %d, want 0", m)
 	}
 }

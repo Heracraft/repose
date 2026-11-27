@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"log/slog"
+	"time"
 
 	"github.com/heracraft/repose/internal/hostd/guest"
 	"github.com/heracraft/repose/internal/hostd/lvm"
@@ -67,4 +68,7 @@ type MacOptions struct {
 	// (the owner's ruling, ENG-273): the save is encrypted by VZ, removed
 	// once read and after 6 hours, as the restart image is.
 	RestBySave bool
+	// RestSaveAfter is how long a machine rests by pause before it is
+	// saved (DECISIONS I-1682); 0 saves at the pause.
+	RestSaveAfter time.Duration
 }

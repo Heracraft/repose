@@ -179,10 +179,10 @@ export interface Plan {
 	memory_gb: number;
 	disk_gb: number;
 	egress_gb: number;
-	/** How many hosts of their own the plan allows: 1 on Own hardware, 0 on
-	 *  the hosted plans (I-1364). A plan with hosts > 0 sells none of
-	 *  repose's memory, disk or egress, so those three read 0 and mean
-	 *  "the plan caps nothing"; the host's own memory and disk do. */
+	/** How many hosts of their own the plan allows: any number on every plan
+	 *  since I-1704 (2147483647; I-1364, I-1594). On Own hardware, the one
+	 *  plan with memory_gb 0, memory, disk and egress read 0 and mean "the
+	 *  plan caps nothing"; the host's own memory and disk do. */
 	hosts?: number;
 	/** Whether this plan's seats are free for this user right now. */
 	available: boolean;
@@ -391,6 +391,9 @@ export interface OwnedHost {
 	/** A Mac that parks its machines before a restart, so Restart keeps
 	 * their memory (I-1690). */
 	can_restart?: boolean;
+	/** Set between a restart through repose and the return of its
+	 * machines (I-1690 amendment). */
+	restarting_since?: string;
 	last_heartbeat_at?: string;
 	registered_at?: string;
 	created_at: string;
@@ -471,6 +474,10 @@ export interface OpStatus {
 	state: 'pending' | 'running' | 'done' | 'error';
 	error?: string;
 	log_url?: string;
+	/** What the op left: an agent op's (and a create's that started one)
+	 * `agent`, `window` and `existed`, or `agent_error` when the create's
+	 * agent did not start (I-1702). */
+	result?: { agent?: string; window?: string; existed?: boolean; agent_error?: string };
 }
 
 /** One menu item (docs/interfaces/api.md "MenuSelection"): a catalog entry

@@ -64,16 +64,16 @@ func SnapshotsListCmd(ctx context.Context, e *Env, projectArg string) error {
 	// The id's random end (I-619); -q and --json give the whole id.
 	_, _ = fmt.Fprintln(tw, "ID\tTAKEN\tSTORED\tREASON")
 	for _, s := range snaps {
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", shortID(s.ID), s.CreatedAt.Local().Format("2006-01-02 15:04"), humanBytes(s.Bytes), snapshotReasonCell(s))
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", shortID(s.ID), s.CreatedAt.Local().Format("2006-01-02 15:04:05"), humanBytes(s.Bytes), snapshotReasonCell(s))
 	}
 	return tw.Flush()
 }
 
-// snapshotReasonCell is the REASON cell, with "gone with host NAME" for
+// snapshotReasonCell is the REASON cell, with "gone with removed host NAME" for
 // a snapshot its host's removal deleted (DECISIONS I-1544).
 func snapshotReasonCell(s Snapshot) string {
 	if s.GoneWithHost != nil {
-		return s.Reason + ", gone with host " + *s.GoneWithHost
+		return s.Reason + ", gone with removed host " + *s.GoneWithHost
 	}
 	return s.Reason
 }
@@ -119,7 +119,7 @@ func snapshotsListAll(ctx context.Context, e *Env) error {
 		if s.ProjectDestroyed {
 			name += " (destroyed)"
 		}
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", name, shortID(s.ID), s.CreatedAt.Local().Format("2006-01-02 15:04"), humanBytes(s.Bytes), snapshotReasonCell(s))
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", name, shortID(s.ID), s.CreatedAt.Local().Format("2006-01-02 15:04:05"), humanBytes(s.Bytes), snapshotReasonCell(s))
 	}
 	return tw.Flush()
 }
@@ -306,7 +306,7 @@ func SnapshotsRestoreCmd(ctx context.Context, e *Env, projectArg, snapshotID, as
 		p = q
 	}
 	if p.State == "running" {
-		_, _ = fmt.Fprintf(e.Out, "Restored %s; it is running%s.\n", p.Slug, classNote(p))
+		_, _ = fmt.Fprintf(e.Out, "Restored %s; it is %s%s.\n", p.Slug, restoredState(ctx, e, p), classNote(p))
 		return nil
 	}
 	_, _ = fmt.Fprintf(e.Out, "Restored %s; it is %s.\n", p.Slug, stateWords(p.State))
@@ -328,7 +328,7 @@ func restoredAsLine(ctx context.Context, e *Env, src *Project, newID, newSlug, s
 	}
 	line := fmt.Sprintf("Restored %s from %s in %s", newSlug, from, fmtElapsed(took))
 	if p, err := e.Client.GetProject(ctx, newID); err == nil {
-		return fmt.Sprintf("%s; it is %s (%s).", line, stateWords(p.State), p.Class)
+		return fmt.Sprintf("%s; it is %s%s.", line, restoredState(ctx, e, p), classNote(p))
 	}
 	return line + "."
 }

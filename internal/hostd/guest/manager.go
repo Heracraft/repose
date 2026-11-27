@@ -587,6 +587,22 @@ type Deps struct {
 	// (restsave.go, DECISIONS I-1666). Nil only pauses: every host but a
 	// Mac.
 	RestBySave func(ctx context.Context, id string) bool
+	// RestSaveAfter is how long a guest rests by pause before it is
+	// saved (SaveRests), so a short idle wakes in a resume and only a
+	// long one pays a restore (DECISIONS I-1682, the conductor's two-step
+	// rest); 0 saves at the pause. MemoryTight, when it says true, saves
+	// at once whatever the time.
+	RestSaveAfter time.Duration
+	// OnDestroyed runs after a guest is destroyed, in the background: a
+	// Mac sweeps the destroyed machine's kept snapshot clones then
+	// (DECISIONS I-1712). Nil does nothing.
+	OnDestroyed func()
+	// HeldBytes is what the host gives up for a guest's VM, where the
+	// hypervisor unit's own memory is not it (a Mac: the VZ process's
+	// footprint, DECISIONS I-1712); samples report it as mem_rss_bytes,
+	// 0 for a guest resting as a save. Nil keeps the unit's memory.
+	HeldBytes   func(ctx context.Context, id string) (uint64, bool)
+	MemoryTight func() bool
 	// SessionState is the Mac user's session: SessionUnlocked,
 	// SessionLocked or SessionNone, for what a guest resting as a save or
 	// a held park waits for (waitsFor, DECISIONS I-1682). Nil on every
@@ -705,6 +721,13 @@ type Manager struct {
 	// (I-1682).
 	wakeAtUnlock sync.Map // guest id -> true
 	rebindDue    sync.Map // guest id -> true
+	// commitMu makes one boot's sizing at a time; reserved holds each
+	// boot's share until its record counts it (commit.go, I-1712).
+	commitMu sync.Mutex
+	resMu    sync.Mutex
+	reserved map[string]reservation
+	// onDestroyed is SetOnDestroyed's hook (Deps.OnDestroyed wins).
+	onDestroyed atomic.Pointer[func()]
 
 	// restMu guards the two maps below. It is deliberately not mu: the
 	// monitor goroutine reads the resting mark on every dial retry, and
@@ -1372,6 +1395,8 @@ func Kind(cmd *hostdv1.Command) string {
 		return "DeleteSnapshot"
 	case *hostdv1.Command_RestartHost:
 		return "RestartHost"
+	case *hostdv1.Command_StartAgent:
+		return "StartAgent"
 	}
 	return ""
 }
@@ -1405,6 +1430,8 @@ func Target(cmd *hostdv1.Command) string {
 		return c.AnswerQuestion.GuestId
 	case *hostdv1.Command_SayToAgent:
 		return c.SayToAgent.GuestId
+	case *hostdv1.Command_StartAgent:
+		return c.StartAgent.GuestId
 	case *hostdv1.Command_SetTriggers:
 		return c.SetTriggers.GuestId
 	case *hostdv1.Command_RunTrigger:
@@ -1650,8 +1677,13 @@ func (m *Manager) run(ctx context.Context, cmd *hostdv1.Command) *hostdv1.Result
 	kind := Kind(cmd)
 	m.d.Log.Info("command start", "event", "command_start", "command_id", cmd.CommandId, "kind", kind, "guest_id", Target(cmd))
 	res := m.execute(ctx, cmd)
-	if wasInterrupted(res) && m.hostDown.Load() {
+	if wasInterrupted(res) && (m.hostDown.Load() || m.shuttingDown.Load() && (kind == "StopGuest" || kind == "DestroyGuest")) {
 		// Not stored: a resend after the restart runs the command again.
+		// A stop or destroy cut off by a plain hostd restart is resent
+		// too: run again, it finds the guest as the cut left it and
+		// finishes, where a stored failure left the machine in error
+		// (review-cli R2). A boot cut off that way is still answered
+		// (I-650): nothing else would settle its half-started units.
 		m.d.Log.Warn("command interrupted by the shutdown", "event", "command_result", "command_id", cmd.CommandId, "kind", kind, "result", "interrupted", "guest_id", Target(cmd))
 		return nil
 	}
@@ -1729,6 +1761,9 @@ func (m *Manager) execute(ctx context.Context, cmd *hostdv1.Command) *hostdv1.Re
 	case *hostdv1.Command_SayToAgent:
 		r, err := m.sayToAgent(ctx, c.SayToAgent)
 		return payloadOrErr(id, err, func(res *hostdv1.Result) { res.Payload = &hostdv1.Result_Say{Say: r} })
+	case *hostdv1.Command_StartAgent:
+		r, err := m.startAgent(ctx, c.StartAgent)
+		return payloadOrErr(id, err, func(res *hostdv1.Result) { res.Payload = &hostdv1.Result_StartAgent{StartAgent: r} })
 	case *hostdv1.Command_PauseGuest:
 		r, err := m.pause(ctx, id, c.PauseGuest)
 		return payloadOrErr(id, err, func(res *hostdv1.Result) { res.Payload = &hostdv1.Result_Pause{Pause: r} })

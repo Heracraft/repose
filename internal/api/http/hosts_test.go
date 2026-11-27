@@ -18,12 +18,12 @@ import (
 
 // The three routes of api.md "Hosts you own" (DECISIONS I-1366).
 //
-// Every test runs as a billing-exempt account, because the three hosted
-// plans sell no host (`billing.Plan.Hosts` is the zero value on Solo,
-// Plus and Pro): an exempt account is allowed billing.ExemptHosts
-// whatever the plans say, which is also how the owner adds their own
-// Mac, and test hosts beside it, without selling themselves a plan
-// (I-1582). TestHostLimit holds the limit on both kinds of account.
+// Most tests run as a billing-exempt account, which is allowed
+// billing.ExemptHosts whatever the plans say: that is how the owner adds
+// their own Mac, and test hosts beside it, without selling themselves a
+// plan (I-1582). Every plan includes hosts since I-1704
+// (TestEveryPlanIncludesHosts). TestHostLimit holds the limit on both
+// kinds of account.
 
 // detailOf is the error envelope's detail object.
 func detailOf(t *testing.T, r resp) map[string]any {
@@ -450,34 +450,61 @@ func TestHostWithMachinesIsNotRemoved(t *testing.T) {
 	}
 }
 
-// TestHostNeedsAPlanThatSellsOne: the three hosted plans sell no host,
-// so a subscriber on one of them is refused, and the figure comes from
-// the plan rather than from this route (DECISIONS I-1366).
-func TestHostNeedsAPlanThatSellsOne(t *testing.T) {
+// TestEveryPlanIncludesHosts: since I-1704 the hosted plans include
+// hosts of the user's own at no extra price, so a Plus subscriber adds
+// one, and only an account with no plan is refused. The refusal names
+// the price from the plan table, because it is one of the few places
+// the product tells a buyer what a host costs (ENG-39); a literal here
+// would be a second price.
+func TestEveryPlanIncludesHosts(t *testing.T) {
 	e := newEnv(t)
 	tok := e.signIn(t, "sub-plus", "plus") // signIn subscribes to Plus
-	r := e.do(t, tok, "POST", "/hosts", nil)
-	if r.status != 402 || detailOf(t, r)["reason"] != "own_hardware_plan_required" {
-		t.Fatalf("a Plus subscriber: %d %s, want payment_required own_hardware_plan_required", r.status, r.raw)
+	if r := e.do(t, tok, "POST", "/hosts", nil); r.status != 201 {
+		t.Fatalf("a Plus subscriber: %d %s, want a host", r.status, r.raw)
 	}
-	if detailOf(t, r)["limit"] != float64(0) {
-		t.Fatalf("the refusal's limit is %v, want 0", detailOf(t, r)["limit"])
-	}
-	// An account with no plan at all is refused the same way: there is
-	// nothing to read a host count off.
 	e.subscribe(t, "sub-plus", "")
-	r = e.do(t, tok, "POST", "/hosts", nil)
-	if r.status != 402 || detailOf(t, r)["reason"] != "own_hardware_plan_required" {
-		t.Fatalf("no plan: %d %s", r.status, r.raw)
+	r := e.do(t, tok, "POST", "/hosts", nil)
+	if r.status != 402 || detailOf(t, r)["reason"] != "own_hardware_plan_required" || detailOf(t, r)["limit"] != float64(0) {
+		t.Fatalf("no plan: %d %s, want payment_required own_hardware_plan_required, limit 0", r.status, r.raw)
 	}
-	// The sentence names the price, from the plan table. Until the
-	// public copy is unheld this refusal is the only place the product
-	// tells a buyer what a host costs, and the customer review found one
-	// who committed hardware without ever being told (ENG-39). The
-	// figure is billing.Own's; a literal here would be a second price.
 	msg, _ := r.body["error"].(map[string]any)["message"].(string)
-	if want := billing.Dollars(billing.Own.PriceCents) + " a month for any number of hosts"; !strings.Contains(msg, want) {
+	if want := billing.Dollars(billing.Own.PriceCents) + " a month for any number of hosts, and Solo, Plus and Pro include them"; !strings.Contains(msg, want) {
 		t.Fatalf("the refusal %q does not say %q", msg, want)
+	}
+}
+
+// TestHostedPlanCreatesOnOwnHostPastItsMemory: a machine placement puts
+// on a host the account owns counts nothing against a hosted plan
+// (I-1704). With Plus's 16 GB used on repose's servers, a create that
+// goes to the user's own host is made there, and one that asks for
+// repose's servers is still refused by the plan.
+func TestHostedPlanCreatesOnOwnHostPastItsMemory(t *testing.T) {
+	e := newEnv(t)
+	ctx := e.h.Ctx
+	tok := e.signIn(t, "sub-both", "both") // Plus: 16 GB
+	var uid string
+	if err := e.h.Pool.QueryRow(ctx, "select id from users where logto_sub = 'sub-both'").Scan(&uid); err != nil {
+		t.Fatal(err)
+	}
+	for _, slug := range []string{"fleet-a", "fleet-b"} {
+		if _, err := e.h.Pool.Exec(ctx, `insert into projects (id, user_id, name, slug, class, state, volume_bytes)
+			values ($1, $2, $3, $3, 'large', 'running', 1)`, store.NewID(), uid, slug); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if r := e.do(t, tok, "POST", "/projects", map[string]any{"name": "before", "class": "large"}); r.status != 402 || detailOf(t, r)["reason"] != "plan_limit" {
+		t.Fatalf("no host of its own yet: %d %s, want plan_limit", r.status, r.raw)
+	}
+	if _, err := e.h.Pool.Exec(ctx, "update hosts set owner_account_id = $1 where id = $2", uid, e.h.HostID); err != nil {
+		t.Fatal(err)
+	}
+	r := e.do(t, tok, "POST", "/projects", map[string]any{"name": "on-mine", "class": "large"})
+	if r.status != 201 || r.body["host_id"] != e.h.HostID.String() {
+		t.Fatalf("a create on the account's own host with the plan's memory used: %d %s, want 201 there", r.status, r.raw)
+	}
+	r = e.do(t, tok, "POST", "/projects", map[string]any{"name": "on-fleet", "class": "large", "placement": "hosted"})
+	if r.status != 402 || detailOf(t, r)["reason"] != "plan_limit" {
+		t.Fatalf("a create on repose's servers with the plan's memory used: %d %s, want plan_limit", r.status, r.raw)
 	}
 }
 

@@ -213,7 +213,13 @@ func (s *Server) projectJSON(ctx context.Context, p *store.Project, u *store.Use
 			out["root_used_bytes"] = x.latest.RootUsed
 			out["root_size_bytes"] = x.latest.RootSize
 		}
-		if p.State == "running" && x.latest.MemUsed > 0 && !sampleBeforeStart(p, x.latest) {
+		if p.State == "running" && p.VMSize != nil && !sampleBeforeStart(p, x.latest) {
+			// On a Mac (its hostd sizes each start, I-1680) the figure is
+			// what macOS gives up for the machine, its VM's footprint, 0
+			// while it rests as a save (DECISIONS I-1712): that, not what
+			// the guest uses, decides whether the next machine starts.
+			out["mem_used_bytes"] = x.latest.MemRss
+		} else if p.State == "running" && x.latest.MemUsed > 0 && !sampleBeforeStart(p, x.latest) {
 			// What the machine uses now, as the guest sees it (I-1632):
 			// on a host the user owns it is what the clients show in
 			// place of a size.
@@ -239,6 +245,18 @@ func (s *Server) projectJSON(ctx context.Context, p *store.Project, u *store.Use
 			r["waits_for"] = x.latest.WaitsFor
 		}
 		parked := p.State == "running" && x.latest.ParkedWaitingSince != nil && !sampleBeforeStart(p, x.latest)
+		if !parked && p.State == "running" && onShared && p.HostID != nil {
+			// Parked by a restart through repose while the Mac reboots
+			// (I-1690 amendment): its last sample predates the restart.
+			since, err := s.hostRestartingSince(ctx, *p.HostID)
+			if err != nil {
+				return nil, err
+			}
+			if since != nil && !x.latest.TS.After(*since) {
+				parked = true
+				out["parked"] = map[string]any{"since": since.UTC(), "waits_for": "restart"}
+			}
+		}
 		if parked {
 			// Parked on a Mac, waiting for its user to log in (I-1672):
 			// its memory is kept and it runs again at the login. Silent
@@ -249,7 +267,9 @@ func (s *Server) projectJSON(ctx context.Context, p *store.Project, u *store.Use
 			if x.latest.WaitsFor == "unlock" {
 				waits = "unlock"
 			}
-			out["parked"] = map[string]any{"since": x.latest.ParkedWaitingSince.UTC(), "waits_for": waits}
+			if _, set := out["parked"]; !set {
+				out["parked"] = map[string]any{"since": x.latest.ParkedWaitingSince.UTC(), "waits_for": waits}
+			}
 		}
 		if !parked && !x.latest.GuestdOK && !x.latest.Resting && !sampleBeforeStart(p, x.latest) {
 			// Its guestd has not answered for about three minutes
@@ -301,6 +321,35 @@ func (s *Server) createsUnsized(ctx context.Context, userID uuid.UUID, placement
 		 where owner_account_id = $1 and state not in ('retired', 'lost') and $2 = any(features)
 		   and ($3::uuid is null or id = $3))`, userID, scheduler.SharedFeature, nullUUID(pin)).Scan(&shares)
 	return shares, err
+}
+
+// createsOnOwnHost reports whether a create with this placement and pin
+// lands on a host the account owns (DECISIONS I-1704): `own` placement
+// takes such a host whenever the account has one that is not retired or
+// lost (scheduler.ownedSQL), and a pin names one. The billing gate asks
+// it, because such a machine counts nothing against the plan.
+func (s *Server) createsOnOwnHost(ctx context.Context, userID uuid.UUID, placement string, pin uuid.UUID) (bool, error) {
+	if store.NormalizePlacement(placement) == store.PlacementHosted {
+		return false, nil
+	}
+	if pin != uuid.Nil {
+		return true, nil
+	}
+	var owns bool
+	err := s.d.Pool.QueryRow(ctx, `select exists (select 1 from hosts
+		 where owner_account_id = $1 and state not in ('retired', 'lost'))`, userID).Scan(&owns)
+	return owns, err
+}
+
+// hostOwnedBy reports whether host is one the account owns; nil is a
+// host of repose's or none.
+func (s *Server) hostOwnedBy(ctx context.Context, host *uuid.UUID, userID uuid.UUID) (bool, error) {
+	if host == nil {
+		return false, nil
+	}
+	var own bool
+	err := s.d.Pool.QueryRow(ctx, "select exists (select 1 from hosts where id = $1 and owner_account_id = $2)", *host, userID).Scan(&own)
+	return own, err
 }
 
 // nullUUID is id, or nil for uuid.Nil, as a query argument.
@@ -443,6 +492,11 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 		// GuestRuntime is nix or erofs (DECISIONS I-1462); absent is the
 		// environment's default.
 		GuestRuntime *string `json:"guest_runtime"`
+		// StartAgent starts agent_default once the machine is up, and
+		// RemoteControl turns Claude Code's Remote Control on first
+		// (DECISIONS I-1702): the dashboard's New project.
+		StartAgent    bool `json:"start_agent"`
+		RemoteControl bool `json:"remote_control"`
 	}
 	if err := decode(r, &body); err != nil {
 		return err
@@ -515,6 +569,17 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 	if body.Agent != nil {
 		agent = *body.Agent
 	}
+	if body.StartAgent {
+		// Only an agent the machine can start is started.
+		if agent, err = agentChoice(&agent, "claude", body.RemoteControl); err != nil {
+			return err
+		}
+		if mux == multiplexer.Herdr {
+			return withDetail(errf("invalid", "start_agent starts an agent in tmux; a herdr machine starts one with `repose run`"), map[string]any{"reason": "start_agent"})
+		}
+	} else if body.RemoteControl {
+		return withDetail(errf("invalid", "remote_control goes with start_agent"), map[string]any{"reason": "remote_control"})
+	}
 	if mux == multiplexer.Herdr && runtime == store.RuntimeNix {
 		// The new machine's first build takes the newest base. An erofs
 		// base ships herdr (I-1462), so the gate is the Nix bases'.
@@ -525,7 +590,11 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 	// The compute gate (I-289): a plan, its memory for this class and its
 	// disk for the new volume. No waitlist gate here since I-290: checkout
 	// is where the seats question is answered.
-	if err := s.gate(r, u, billing.Request{Class: body.Class, Disk: true, AddHeldBytes: billing.NewProjectHeldBytes, VolumeBytes: volume}); err != nil {
+	onOwn, err := s.createsOnOwnHost(ctx, u.ID, placement, pin)
+	if err != nil {
+		return err
+	}
+	if err := s.gate(r, u, billing.Request{Class: body.Class, Disk: true, AddHeldBytes: billing.NewProjectHeldBytes, VolumeBytes: volume, OwnHost: onOwn}); err != nil {
 		return err
 	}
 	// A plan that sells no memory on repose's own hosts cannot ask for
@@ -608,7 +677,19 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 		if _, err := tx.Exec(ctx, "insert into config_revisions (id, project_id, fragment, status, personal, personal_revision_id, personal_opt_out) values ($1, $2, $3, 'building', $4, $5, $6)", rid, pid, fragment, layer.Text, layer.RevisionID, layer.OptOut); err != nil {
 			return err
 		}
-		if opID, err = s.d.Engine.Enqueue(ctx, tx, ops.NewOp{Kind: ops.KindCreate, ProjectID: &pid, Phases: ops.PlanCreateFor(runtime), Params: opParams}, false); err != nil {
+		create := ops.NewOp{Kind: ops.KindCreate, ProjectID: &pid, Phases: ops.PlanCreateFor(runtime)}
+		if body.StartAgent {
+			create.Phases = ops.PlanCreateWithAgent(runtime)
+			create.Params = map[string]any{"agent": agent, "remote_control": body.RemoteControl}
+		}
+		for k, v := range opParams {
+			// The host the create waits for (I-1700).
+			if create.Params == nil {
+				create.Params = map[string]any{}
+			}
+			create.Params[k] = v
+		}
+		if opID, err = s.d.Engine.Enqueue(ctx, tx, create, false); err != nil {
 			return err
 		}
 		// Read the row inside the transaction: once it commits and the
@@ -1010,6 +1091,9 @@ func (s *Server) wakeProject(w http.ResponseWriter, r *http.Request) error {
 	res, err := waker.Wake(r.Context(), p.ID, "cli")
 	if err != nil {
 		return wakeFailed(p.Slug, err)
+	}
+	if wf := res.GetWaitsFor(); wf != "" {
+		return withDetail(errf("conflict", "%s", waitsSentence(r.Context(), s, p, wf)), map[string]any{"reason": "waits_for_" + wf})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"was_resting": res.GetWasResting(), "wake_ms": res.GetWakeMs()})
 	return nil

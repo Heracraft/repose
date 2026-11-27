@@ -145,7 +145,7 @@
 								{#if d.sized !== false}<span class="hk-mono">{d.class}</span> ·
 								{/if}destroyed {relativeTime(d.destroyed_at)}
 								{#if d.gone_with_host}
-									<span class="block">gone with host {d.gone_with_host}</span>
+									<span class="block">gone with removed host {d.gone_with_host}</span>
 								{:else if until}
 									<span class="block whitespace-nowrap"
 										>until {until} · {timeLeft(d.restorable_until)}</span
@@ -172,7 +172,7 @@
 							{#if d.gone_with_host}
 								<!-- Kept on a host of the account's own that was removed,
 								     which deleted it (I-1546): nothing to restore. -->
-								<span class="muted">gone with host {d.gone_with_host}</span>
+								<span class="muted">gone with removed host {d.gone_with_host}</span>
 							{:else if until}
 								<span title={timeLeft(d.restorable_until)}>{until}</span>
 							{/if}

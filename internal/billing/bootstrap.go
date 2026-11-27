@@ -162,7 +162,7 @@ func Bootstrap(ctx context.Context, p *Polar, o BootstrapOptions) (*BootstrapRes
 			id = pr.ID
 			note := fmt.Sprintf(" (%d %s a month, %d-day trial, egress overage %d cents a GB)", plan.PriceCents, plan.Currency, plan.TrialDays, OveragePerGBCents)
 			if !plan.EgressMetered() {
-				note = fmt.Sprintf(" (%d %s a month, %d-day trial, %d host, no metered price)", plan.PriceCents, plan.Currency, plan.TrialDays, plan.Hosts)
+				note = fmt.Sprintf(" (%d %s a month, %d-day trial, %s, no metered price)", plan.PriceCents, plan.Currency, plan.TrialDays, HostsPhrase(plan.Hosts))
 			}
 			created("product "+plan.ID, id, note)
 		}

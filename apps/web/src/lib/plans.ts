@@ -43,8 +43,8 @@ export interface PlanFigures {
 	/** Egress a month, after any introductory offer. */
 	egressGB: number;
 	/**
-	 * Hosts of their own the plan allows: 1 on Own hardware, 0 on the
-	 * hosted plans (I-1364). On an own-hardware plan the three figures
+	 * Hosts of their own the plan allows: any number on every plan since
+	 * I-1704 (I-1364, I-1594). On an own-hardware plan the three figures
 	 * above are 0 and mean "the plan caps nothing" — the host's own
 	 * memory and disk do — so a page draws its own words for them rather
 	 * than a meter against zero.
@@ -58,7 +58,16 @@ export interface PlanFigures {
 	intro?: { priceCents: number; months: number; egressGB: number; limit?: number };
 }
 
-/** internal/billing/plans.go's Solo, Plus and Pro, in that order. */
+/**
+ * billing.UnlimitedHosts: the hosts figure of a plan that sells any number
+ * (I-1594). A finite number rather than 0 or -1, so `hosts > 0` still
+ * reads "allows hosts" and 0 still means none; a page that prints a figure
+ * says "any number" for it (hostsPhrase). plans.test.ts holds it to Go's.
+ */
+export const UNLIMITED_HOSTS = 2147483647;
+
+/** internal/billing/plans.go's Solo, Plus and Pro, in that order. Each
+ *  includes any number of hosts of the user's own (I-1704). */
 export const PLANS: PlanFigures[] = [
 	{
 		id: 'solo',
@@ -69,6 +78,7 @@ export const PLANS: PlanFigures[] = [
 		memoryGB: 8,
 		diskGB: 100,
 		egressGB: 250,
+		hosts: UNLIMITED_HOSTS,
 		// The founding price, for the first 30 Solo subscribers (I-672).
 		intro: { priceCents: 3900, months: 12, egressGB: 250, limit: 30 }
 	},
@@ -80,7 +90,8 @@ export const PLANS: PlanFigures[] = [
 		seats: 2,
 		memoryGB: 16,
 		diskGB: 250,
-		egressGB: 500
+		egressGB: 500,
+		hosts: UNLIMITED_HOSTS
 	},
 	{
 		id: 'pro',
@@ -90,17 +101,10 @@ export const PLANS: PlanFigures[] = [
 		seats: 4,
 		memoryGB: 32,
 		diskGB: 500,
-		egressGB: 1000
+		egressGB: 1000,
+		hosts: UNLIMITED_HOSTS
 	}
 ];
-
-/**
- * billing.UnlimitedHosts: the hosts figure of a plan that sells any number
- * (I-1594). A finite number rather than 0 or -1, so `hosts > 0` still
- * reads "sells hosts" and 0 still means none; a page that prints a figure
- * says "any number" for it (hostsPhrase). plans.test.ts holds it to Go's.
- */
-export const UNLIMITED_HOSTS = 2147483647;
 
 /**
  * The Own hardware plan (internal/billing/plans.go's Own, I-1364): $10 a
@@ -125,13 +129,17 @@ export const OWN_HARDWARE: PlanFigures = {
 export const hostsPhrase = (n: number) =>
 	n >= UNLIMITED_HOSTS ? 'Any number of hosts' : n === 1 ? 'One host' : `${n} hosts`;
 
-/** Whether a plan sells a host the user owns rather than memory on the
- *  fleet (billing.Plan.OwnHardware). The three cards, the seat count and
- *  every meter are the hosted plans'. */
-export const isOwnHardware = (p: { hosts?: number }) => (p.hosts ?? 0) > 0;
+/** Whether a plan is the Own hardware product: hosts the user owns and no
+ *  memory on the fleet (billing.Plan.OwnHardware). Every plan allows hosts
+ *  since I-1704, so the memory is what tells the two kinds apart. The
+ *  three cards, the seat count and every meter are the hosted plans'. */
+export const isOwnHardware = (p: { hosts?: number; memory_gb?: number; memoryGB?: number }) =>
+	(p.hosts ?? 0) > 0 && (p.memory_gb ?? p.memoryGB ?? 0) === 0;
 
 /** The hosted plans of a list: the ones the cards and the meters are for. */
-export const hostedPlans = <T extends { hosts?: number }>(plans: T[]) =>
+export const hostedPlans = <T extends { hosts?: number; memory_gb?: number; memoryGB?: number }>(
+	plans: T[]
+) =>
 	plans.filter((p) => !isOwnHardware(p));
 
 /** One of GET /billing's plans in the shape the cells draw. */

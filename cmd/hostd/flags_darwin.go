@@ -1,6 +1,8 @@
 package main
 
 import (
+	"time"
+
 	"flag"
 
 	"github.com/heracraft/repose/internal/hostd/app"
@@ -21,5 +23,6 @@ func platformFlags(fs *flag.FlagSet, o *app.Options) {
 	fs.UintVar(&o.Mac.MemoryCommitPct, "mac-memory-commit-pct", 100, "how much of the Mac's memory, less what macOS keeps, the machines may be started with together, in percent: a start gets its size or what is left, and is refused below 2048 MiB; 0 is no bound (DECISIONS I-1666)")
 	fs.UintVar(&o.Mac.VCPUCommit, "mac-vcpu-commit", 0, "the vCPUs the machines may be started with together: a start gets its vCPUs or what is left, at least 2; 0 is the Mac's cores plus two (DECISIONS I-1666)")
 	fs.BoolVar(&o.Mac.RestBySave, "mac-rest-by-save", true, "an idle machine rests as a save file, giving all its memory back, while the Mac is unlocked; restored at the lock and after 6 hours (DECISIONS I-1682, the owner's ruling ENG-273); false: it rests by pause, its memory held")
+	fs.DurationVar(&o.Mac.RestSaveAfter, "mac-rest-save-after", 30*time.Minute, "how long an idle machine rests by pause (a wake under a second, its memory held) before it is saved and gives its memory back; at once when macOS has under a quarter of its memory free; 0 saves at the pause (DECISIONS I-1682)")
 	fs.StringVar(&o.Mac.E2fsck, "mac-e2fsck", "", "e2fsck, which checks a restored snapshot's volume")
 }

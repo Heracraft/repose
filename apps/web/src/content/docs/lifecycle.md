@@ -13,9 +13,9 @@ To act on a project from elsewhere, name it: `repose attach todo-app`, `repose s
 
 **New project** on the dashboard's **Projects** page, or the `n` key there, offers a name with the text selected. Press Enter or **Create** to make the machine as `repose run` would: `large`, kept until you destroy it. Type over the name to choose your own. An account with no machine opens on this form. When your plan's memory is partly in use, the form starts on the largest size that fits beside your running machines, up to `large`, and the line under the name says how much of the plan is free. When nothing fits, it says so before you press Enter and offers **Stop** for each running machine.
 
-The line under the name shows the size and how long the machine is kept. Click it for **Options**: the [size](/docs/machine), **Keep it** for a [temporary](#temporary-machines) machine, **Runs on** if you [own a host](/docs/own-hardware), and **Repository**. A link to `/projects?new` opens the form, and `size` and `name` fill it in: `/projects?new&size=small&name=spike`.
+The line under the name shows the size, the agent the machine starts and how long the machine is kept. Click it for **Options**: the [size](/docs/machine), **Agent**, **Remote Control** for Claude Code, **Keep it** for a [temporary](#temporary-machines) machine, **Runs on** if you [own a host](/docs/own-hardware), and **Repository**. A link to `/projects?new` opens the form, and `size` and `name` fill it in: `/projects?new&size=small&name=spike`.
 
-The machine comes up with no checkout, so you work in `/home/dev` until a [`repose sync`](/docs/sync) makes one, and its page says how to reach it.
+The machine comes up with no checkout, so you work in `/home/dev` until a [`repose sync`](/docs/sync) makes one, and its page says how to reach it. It starts its agent there once it's up: the agent your other machines use, or, on an account with no machine, the one you pick in **Agent** beside the name. **No agent** starts none. To start one later, see [Start one from the dashboard](/docs/agents#start-one-from-the-dashboard).
 
 **Repository** is optional and nothing is cloned: it records the git remote the project is the machine for, so `repose run` in that checkout later finds this machine instead of making a second one for the same repository. Write it as `github.com/you/todo-app` or paste the URL you clone with. While the name is the one offered, the machine takes the repository's name. A temporary machine takes no repository.
 
@@ -123,7 +123,7 @@ A running machine nobody is using has its cores paused after about 15 minutes of
 
 Its state is still `running`, and nothing is ended: every process, open file and socket stays as it was, and its memory is untouched, so [what it holds against your plan](#unused-machines) doesn't change. On [your own Mac](/docs/own-hardware#what-fits-on-a-mac) a frozen machine's memory is saved to an encrypted file instead, so the Mac gets that memory back, and the wake reads it back.
 
-Anything that reaches the machine wakes it first, and that first connection takes a second or two: `attach`, `run`, `ssh`, `code`, your editor, a forwarded port, the dashboard's **Browser** tab, a [secret](/docs/secrets) you set, a configuration change, a [webhook delivery](/docs/webhooks), a [scheduled job](/docs/machine#scheduled-jobs) on the machine coming due.
+Anything that reaches the machine wakes it first, and that first connection takes a second or two (on [your own Mac](/docs/own-hardware#what-fits-on-a-mac), under a second for the first half hour of rest, then longer, because the machine's memory is read back from disk): `attach`, `run`, `ssh`, `code`, your editor, a forwarded port, the dashboard's **Browser** tab, a [secret](/docs/secrets) you set, a configuration change, a [webhook delivery](/docs/webhooks), a [scheduled job](/docs/machine#scheduled-jobs) on the machine coming due.
 
 The machine's clock keeps time while it's frozen, so nothing of yours sees it jump. What a program does see is that time passed with none of its own code running: anything whose deadline fell inside the frozen stretch runs at the wake instead, late by the time the machine was away. A [scheduled job](/docs/machine#scheduled-jobs) is the exception, because a job coming due wakes the machine for it.
 
@@ -177,7 +177,7 @@ Destroying todo-app.
 
 `repose rm` deletes the machine and its disk. The command returns once the destroy is under way; the project reads `destroying` until it's gone.
 
-A machine whose host is gone (your own host removed, or a server repose has marked lost) is destroyed at once, without the host, and a `repose rm` that failed while the host was not answering finishes on its own once the host is marked gone. No final snapshot is taken. A snapshot your own host kept goes with that host, and `repose ls --destroyed` shows it as `gone with host NAME`. A snapshot repose stored is kept, as for any destroy.
+A machine whose host is gone (your own host removed, or a server repose has marked lost) is destroyed at once, without the host, and a `repose rm` that failed while the host was not answering finishes on its own once the host is marked gone. No final snapshot is taken. A snapshot your own host kept goes with that host, and `repose ls --destroyed` shows it as `gone with removed host NAME`. A snapshot repose stored is kept, as for any destroy.
 
 Within 30 days, bring it back, running, with its size, its configuration and its git remote, so your checkout finds it again:
 

@@ -174,6 +174,15 @@ func (s *Server) listHosts(w http.ResponseWriter, r *http.Request) error {
 			return err
 		} else if restarts {
 			row["can_restart"] = true
+			// Between a restart through repose and the machines' return
+			// (I-1690 amendment).
+			since, err := s.hostRestartingSince(r.Context(), hosts[i].ID)
+			if err != nil {
+				return err
+			}
+			if since != nil {
+				row["restarting_since"] = since.UTC()
+			}
 		}
 		if err := s.hostRoom(r, &hosts[i], row); err != nil {
 			return err

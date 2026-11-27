@@ -67,6 +67,11 @@ func parkedLine(p *Project) string {
 	if p.HostName != "" {
 		where = p.HostName
 	}
+	if p.Parked.WaitsFor == "restart" {
+		// Parked by a restart through repose, while the Mac reboots
+		// (I-1690 amendment).
+		return fmt.Sprintf("parked; %s is restarting, and its memory is kept.", where)
+	}
 	if p.Parked.WaitsFor == "unlock" {
 		// Logged in with the screen locked (I-1682): a login is not what
 		// it waits for.

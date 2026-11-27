@@ -190,7 +190,9 @@ test('Never freeze this machine patches the project and sticks', async ({ page }
 		await shots(page, 'keep-awake-config');
 
 		await page.getByRole('checkbox', { name: 'Never freeze this machine' }).uncheck();
-		await expect(page.getByRole('checkbox', { name: 'Never freeze this machine' })).not.toBeChecked();
+		await expect(
+			page.getByRole('checkbox', { name: 'Never freeze this machine' })
+		).not.toBeChecked();
 		expect(patched).toEqual([true, false]);
 	} finally {
 		await destroyProject(api, p.id);

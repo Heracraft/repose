@@ -148,6 +148,9 @@ type Fake struct {
 	// poolDown is the host's thin pool unavailable (DECISIONS I-644):
 	// Hello and Heartbeat carry the flag and zero pool bytes, as hostd does.
 	poolDown bool
+	// wakeWaits makes a wake of a resting guest answer waits_for (a Mac
+	// whose locked session cannot read its save, DECISIONS I-1712).
+	wakeWaits string
 	// vmSize is what a create or start reports its VM got (DECISIONS
 	// I-1680), as a Mac's hostd does; nil, every other host, reports none.
 	vmSize *hostdv1.VmSize
@@ -160,12 +163,15 @@ type Fake struct {
 	bootAt time.Time
 	// says are the SayToAgent commands the guests took, and the rest
 	// what the fake answers with (DECISIONS I-1144).
-	says        []*hostdv1.SayToAgent
-	sayState    string
-	sayWindow   string
-	sayReplaced bool
-	sayFailCode string
-	sayFailMsg  string
+	says         []*hostdv1.SayToAgent
+	startAgents  []*hostdv1.StartAgent
+	agentFail    string
+	agentFailMsg string
+	sayState     string
+	sayWindow    string
+	sayReplaced  bool
+	sayFailCode  string
+	sayFailMsg   string
 	// menuFailCode and menuFailMsg fail every menu (SetMenuFail).
 	menuFailCode string
 	menuFailMsg  string
@@ -440,6 +446,15 @@ func (f *Fake) SetPoolUnavailable(down bool) {
 	f.mu.Unlock()
 }
 
+// SetWakeWaits makes every wake of a resting guest answer that it waits
+// for waits ("unlock" or "login") and wake nothing, as hostd on a locked
+// Mac does (DECISIONS I-1712); "" wakes as before.
+func (f *Fake) SetWakeWaits(waits string) {
+	f.mu.Lock()
+	f.wakeWaits = waits
+	f.mu.Unlock()
+}
+
 // SetVMSize makes every create and start from now on report vm as the
 // size its VM got, as hostd on a Mac does when it sizes a start to what
 // the running machines leave (DECISIONS I-1680); nil reports none, as
@@ -681,6 +696,8 @@ func kind(cmd *hostdv1.Command) string {
 		return "AnswerQuestion"
 	case *hostdv1.Command_SayToAgent:
 		return "SayToAgent"
+	case *hostdv1.Command_StartAgent:
+		return "StartAgent"
 	case *hostdv1.Command_PauseGuest:
 		return "PauseGuest"
 	case *hostdv1.Command_WakeGuest:
@@ -1144,6 +1161,14 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 				r.Payload = &hostdv1.Result_Wake{Wake: &hostdv1.WakeResult{WasResting: false}}
 			})
 		}
+		if f.wakeWaits != "" {
+			// Resting as a save its locked Mac cannot read (I-1712):
+			// nothing wakes, and the answer says what it waits for.
+			w := f.wakeWaits
+			return ok(func(r *hostdv1.Result) {
+				r.Payload = &hostdv1.Result_Wake{Wake: &hostdv1.WakeResult{WasResting: true, WaitsFor: w}}
+			})
+		}
 		g.Resting, g.RestingAt = false, time.Time{}
 		gid := g.GuestID
 		go f.event(&hostdv1.Event{Ev: &hostdv1.Event_GuestResting{GuestResting: &hostdv1.GuestResting{GuestId: gid, Resting: false, Reason: c.WakeGuest.Reason}}})
@@ -1260,8 +1285,55 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 		return ok(func(r *hostdv1.Result) {
 			r.Payload = &hostdv1.Result_Say{Say: &hostdv1.SayResult{State: state, Window: window, Replaced: replaced}}
 		})
+	case *hostdv1.Command_StartAgent:
+		// The fake guest's session has one window, `claude` (as for a
+		// say), so a claude is answered existed and any other agent is
+		// opened, once (DECISIONS I-1702). SetStartAgentFailure steers a
+		// refusal, e.g. no_terminal for a herdr machine.
+		m := c.StartAgent
+		f.mu.Lock()
+		g, e := get(m.GuestId)
+		if e == nil && g.State != "running" {
+			e = errResult(id, "invalid_argument", "guest is "+g.State)
+		}
+		fail, failMsg := f.agentFail, f.agentFailMsg
+		existed := m.Agent == "claude"
+		if e == nil && fail == "" {
+			for _, p := range f.startAgents {
+				if p.GuestId == m.GuestId && p.Agent == m.Agent {
+					existed = true
+				}
+			}
+			f.startAgents = append(f.startAgents, m)
+		}
+		f.mu.Unlock()
+		if e != nil {
+			return e
+		}
+		if fail != "" {
+			return errResult(id, fail, failMsg)
+		}
+		return ok(func(r *hostdv1.Result) {
+			r.Payload = &hostdv1.Result_StartAgent{StartAgent: &hostdv1.StartAgentResult{Window: m.Agent, Existed: existed}}
+		})
 	}
 	return errResult(id, "invalid_argument", "unknown command")
+}
+
+// StartAgents is every StartAgent the fake took, in order.
+func (f *Fake) StartAgents() []*hostdv1.StartAgent {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]*hostdv1.StartAgent(nil), f.startAgents...)
+}
+
+// SetStartAgentFailure makes every StartAgent fail with code and msg (""
+// puts success back); invalid_argument "unknown command" is a hostd from
+// before StartAgent.
+func (f *Fake) SetStartAgentFailure(code, msg string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.agentFail, f.agentFailMsg = code, msg
 }
 
 // Says are the SayToAgent commands the fake's guests took (I-1144).
