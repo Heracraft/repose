@@ -373,7 +373,7 @@ func HostRmCmd(ctx context.Context, e *Env, name string, yes bool, confirm func(
 			return err
 		}
 	}
-	if err := e.Client.DeleteHost(ctx, h.ID); err != nil {
+	if err := deleteHostAfterDestroys(ctx, e, h); err != nil {
 		return hostErr(err, name)
 	}
 	// The Mac this runs on, when it is the one that runs h: repose goes
@@ -602,6 +602,65 @@ func hostSnapshotsSentence(h *Host) string {
 		return " This deletes the 1 snapshot kept on it; repose has no copy."
 	}
 	return fmt.Sprintf(" This deletes the %d snapshots kept on it; repose has no copy.", h.Snapshots)
+}
+
+// hostDestroyWait is how long `repose host rm` waits for machines that
+// are being destroyed to go; a var so a test can shorten it.
+var hostDestroyWait = 3 * time.Minute
+
+// deleteHostAfterDestroys removes h, waiting for any machine the api
+// names as still on it while every one of them is being destroyed: a
+// `repose rm` returns as soon as the destroy is accepted, and the api
+// refuses the host until it has finished, about 8 s on a Mac (d2-lab,
+// 2026-11-27). A machine that is not being destroyed is in the way, and
+// the api's refusal stands.
+func deleteHostAfterDestroys(ctx context.Context, e *Env, h *Host) error {
+	err := e.Client.DeleteHost(ctx, h.ID)
+	deadline := time.Now().Add(hostDestroyWait)
+	said := false
+	for err != nil {
+		var apiErr *APIError
+		if !errors.As(err, &apiErr) {
+			return err
+		}
+		if reason, _ := apiErr.Detail["reason"].(string); reason != "host_has_projects" {
+			return err
+		}
+		on := detailStrings(apiErr.Detail["projects"])
+		if len(on) == 0 || !allDestroying(ctx, e, on) || time.Now().After(deadline) {
+			return err
+		}
+		if !said {
+			_, _ = fmt.Fprintf(e.ErrOut, "Waiting for %s to be destroyed.\n", joinNames(on))
+			said = true
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Second):
+		}
+		err = e.Client.DeleteHost(ctx, h.ID)
+	}
+	return nil
+}
+
+// allDestroying is whether every slug is a machine of the user's being
+// destroyed now.
+func allDestroying(ctx context.Context, e *Env, slugs []string) bool {
+	ps, err := e.Client.ListProjects(ctx)
+	if err != nil {
+		return false
+	}
+	state := map[string]string{}
+	for _, p := range ps {
+		state[p.Slug] = p.State
+	}
+	for _, s := range slugs {
+		if state[s] != "destroying" {
+			return false
+		}
+	}
+	return true
 }
 
 // hostErr turns the api's answers on the host routes into the line the
