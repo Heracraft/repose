@@ -521,22 +521,6 @@ export interface Revision {
 	error?: string;
 }
 
-export interface CatalogOption {
-	id: string;
-	type: string;
-	values: string[];
-	default: string;
-}
-
-export interface CatalogItem {
-	id: string;
-	label: string;
-	group: string;
-	kind: 'service' | 'package' | 'agent' | 'runtime';
-	description: string;
-	options?: CatalogOption[];
-}
-
 /** One delivery a provider made to a webhook route (DECISIONS I-1110). */
 export interface WebhookDelivery {
 	at: string;

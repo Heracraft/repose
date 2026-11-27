@@ -1,6 +1,7 @@
 // The Ubuntu base on the dashboard (DECISIONS I-1462, I-1490): an erofs
-// project's Config page is the menu, the base and, only while one waits,
-// the next base with Restart; the Nix shape is unchanged; the settings
+// project's Config page is the base, an earlier menu's entries read-only
+// (the menu is gone, I-1698) and, only while one waits, the next base
+// with Restart; the Nix shape is unchanged; the settings
 // nav lists machine.nix only for an account with a Nix project; the add
 // host dialog shows the x86 installer beside the Mac's step.
 import { test, expect, type Page, type Locator } from '@playwright/test';
@@ -59,25 +60,46 @@ test.afterAll(async () => {
 	await pruneProjects(apiURLFromEnv());
 });
 
-test('an erofs project shows the menu and its base, and no Nix editor', async ({ page }) => {
+test('an erofs project shows its base and no menu, editor or revisions', async ({ page }) => {
 	const p = await makeProject('ubuntu-app', 'erofs');
 	await page.goto(`/projects/${p.id}/config`);
 	const facts = page.getByTestId('config-facts');
 	await expect(facts).toContainText('Base');
-	await expect(page.getByText('PostgreSQL', { exact: true })).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'Secrets', exact: true })).toBeVisible();
+	await expect(page.getByRole('searchbox')).toHaveCount(0);
+	await expect(page.getByRole('checkbox', { name: /PostgreSQL/ })).toHaveCount(0);
 	await expect(page.getByRole('tablist', { name: 'Config editor' })).toHaveCount(0);
 	await expect(page.getByText('Use your machine.nix on this machine')).toHaveCount(0);
 	await expect(page.locator('.cm-content')).toHaveCount(0);
+	await expect(page.getByRole('heading', { name: 'Revisions' })).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'Apply', exact: true })).toHaveCount(0);
+	await expect(page.getByTestId('old-menu')).toHaveCount(0);
 	await expect(page.getByTestId('pending-base')).toHaveCount(0);
 	await shots(page, 'config-erofs');
-
-	await page.getByText('Zig', { exact: true }).click();
-	await page.getByRole('button', { name: 'Apply', exact: true }).click();
-	await expect(page.getByRole('heading', { name: 'Install log' })).toBeVisible();
-	await expect(page.getByText('Applied.')).toBeVisible({ timeout: 10_000 });
-	await expect(page.locator('.build-log')).toContainText('zig ready');
 });
 
+// A project whose menu has entries from before I-1698 keeps them, and the
+// page lists them in one read-only line.
+test("an erofs project lists an earlier menu's entries, read-only", async ({ page }) => {
+	const p = await makeProject('ubuntu-oldmenu', 'erofs');
+	const put = await fetch(`${apiURLFromEnv()}/projects/${p.id}/config`, {
+		method: 'PUT',
+		headers: auth,
+		body: JSON.stringify({
+			menu: [{ id: 'postgresql', options: { version: '16' } }, { id: 'redis' }, { package: 'ffmpeg' }]
+		})
+	});
+	expect(put.status).toBe(202);
+	await page.goto(`/projects/${p.id}/config`);
+	const line = page.getByTestId('old-menu');
+	await expect(line).toHaveText(
+		'Installed again after every base update, from the menu: postgresql 16, redis, ffmpeg',
+		{ timeout: 10_000 }
+	);
+	await expect(page.getByRole('button', { name: 'Apply', exact: true })).toHaveCount(0);
+	await expect(page.getByRole('checkbox', { name: /PostgreSQL/ })).toHaveCount(0);
+	await shots(page, 'config-erofs-oldmenu');
+});
 test('a waiting base shows one line and Restart, and only then', async ({ page }) => {
 	const p = await makeProject('ubuntu-pending', 'erofs');
 	await withPendingBase(page, p.id, '2026.11.30');
@@ -108,19 +130,19 @@ test('a waiting base shows one line and Restart, and only then', async ({ page }
 	await start;
 });
 
-test('a Nix project keeps its tabs and machine.nix, and never shows the base line', async ({
+test('a Nix project keeps its editor and machine.nix, and never shows the base line', async ({
 	page
 }) => {
 	const p = await makeProject('nix-app', 'nix');
 	// The api never sets it on a Nix project; even if it did, nothing shows.
 	await withPendingBase(page, p.id, '2026.11.30');
 	await page.goto(`/projects/${p.id}/config`);
-	await expect(page.getByRole('tablist', { name: 'Config editor' })).toBeVisible();
+	await expect(page.locator('.cm-content')).toBeVisible();
+	await expect(page.getByRole('tablist', { name: 'Config editor' })).toHaveCount(0);
 	await expect(page.getByText('Use your machine.nix on this machine')).toBeVisible();
 	await expect(page.getByTestId('pending-base')).toHaveCount(0);
 	await shots(page, 'config-nix');
 });
-
 test('settings lists machine.nix only for an account with a Nix project', async ({ page }) => {
 	await pruneProjects(apiURLFromEnv());
 	await makeProject('only-ubuntu', 'erofs');
@@ -218,59 +240,11 @@ test('removing an x86 host shows the uninstall line', async ({ page }) => {
 	}
 });
 
-// Council finding 1 (D1): a package name the menu lacks is added from the
-// search, as `repose config add NAME` does (I-1508).
-test('the Packages search adds an apt package by name on an Ubuntu project', async ({ page }) => {
-	const p = await makeProject('ubuntu-apt', 'erofs');
-	await page.goto(`/projects/${p.id}/config`);
-	await page.getByPlaceholder('Search packages and services…').fill('ffmpeg');
-	await shots(page, 'config-add-apt', page.locator('.cadd'));
-	await page.getByRole('button', { name: 'Add package ffmpeg' }).click();
-	await expect(page.locator('.extras')).toContainText('ffmpeg');
-	await page.getByRole('button', { name: 'Apply', exact: true }).click();
-	await expect(page.getByText('Applied.')).toBeVisible({ timeout: 10_000 });
-	const cfg = await (
-		await fetch(`${apiURLFromEnv()}/projects/${p.id}/config`, { headers: auth })
-	).json();
-	expect(JSON.stringify(cfg.menu)).toContain('"package":"ffmpeg"');
-	// A name apt would refuse, or a menu id, offers no Add.
-	await page.getByPlaceholder('Search packages and services…').fill('FFmpeg');
-	await expect(page.getByRole('button', { name: /^Add package/ })).toHaveCount(0);
-	await page.getByPlaceholder('Search packages and services…').fill('redis');
-	await expect(page.getByRole('button', { name: /^Add package/ })).toHaveCount(0);
-});
-
-// Council finding 4 (D2, I-1514): the outcome of an install is in view at
-// the Apply bar, failure and success both, at 1440 and 390.
-test('a failed install is said at the Apply bar, in view', async ({ page }) => {
-	const p = await makeProject('ubuntu-fail', 'erofs');
-	for (const width of [1440, 390]) {
-		await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
-		await page.goto(`/projects/${p.id}/config`);
-		const search = page.getByPlaceholder('Search packages and services…');
-		await search.fill('repose-fake-missing');
-		await page.getByRole('button', { name: 'Add package repose-fake-missing' }).click();
-		await page.getByRole('button', { name: 'Apply', exact: true }).click();
-		const status = page.locator('.cbar-status');
-		await expect(status).toContainText(
-			'Not installed: repose-fake-missing failed: E: Unable to locate package repose-fake-missing (apt-get exited 100)',
-			{ timeout: 10_000 }
-		);
-		await expect(status).toBeInViewport();
-		await expect(status).not.toContainText('menu_failed');
-		if (width === 1440) await shots(page, 'config-install-failed', status);
-	}
-	await page.setViewportSize({ width: 1280, height: 720 });
-	await page.getByText('Zig', { exact: true }).click();
-	await page.getByRole('button', { name: 'Apply', exact: true }).click();
-	await expect(page.locator('.cbar-status')).toContainText('Applied', { timeout: 10_000 });
-	await expect(page.locator('.cbar-status')).toBeInViewport();
-});
-
-// Council finding 5 (D3): a reload, or back then forward, during an
-// install shows the running install again, not an idle page with Apply.
-test('a reload or back and forward during an install shows it again', async ({ page }) => {
-	const p = await makeProject('ubuntu-reload', 'erofs');
+// Council finding 5 (D3): a reload, or back then forward, during a build
+// shows the running build again, not an idle page with Apply. On a Nix
+// project since the menu left (I-1698).
+test('a reload or back and forward during a build shows it again', async ({ page }) => {
+	const p = await makeProject('nix-reload', 'nix');
 	let hold = true;
 	const released: (() => void)[] = [];
 	// The op reads as running, and its log stays open, until released.
@@ -294,27 +268,28 @@ test('a reload or back and forward during an install shows it again', async ({ p
 		}
 	);
 	await page.goto(`/projects/${p.id}/config`);
-	await page.getByText('Memcached', { exact: true }).click();
+	await page.locator('.cm-content').click();
+	await page.keyboard.press('End');
+	await page.keyboard.type(' ');
 	await page.getByRole('button', { name: 'Apply', exact: true }).click();
 	const status = page.locator('.cbar-status');
-	await expect(status).toContainText('Installing…');
+	await expect(status).toContainText('Building…');
 
 	await page.reload();
-	await expect(status).toContainText('Installing…');
+	await expect(status).toContainText('Building…');
 	await expect(page.getByRole('button', { name: /Apply/ })).toBeDisabled();
-	await shots(page, 'config-install-resumed', status);
 
 	await page.goto(`/projects/${p.id}`);
 	await page.goBack();
-	await expect(status).toContainText('Installing…');
+	await expect(status).toContainText('Building…');
 	await page.goForward();
 	await page.goBack();
-	await expect(status).toContainText('Installing…');
+	await expect(status).toContainText('Building…');
 
 	hold = false;
 	for (const r of released.splice(0)) r();
 	await page.reload();
-	await expect(status).not.toContainText('Installing…', { timeout: 10_000 });
+	await expect(status).not.toContainText('Building…', { timeout: 10_000 });
 	await expect(page.getByRole('button', { name: 'Apply', exact: true })).toBeVisible();
 });
 
@@ -368,29 +343,3 @@ test('a waiting base shows on the Overview and the project list', async ({ page 
 	await expect(row).toContainText('new base at next restart');
 });
 
-// Council finding 6 (D4, I-1524): a stale tab's Apply is refused with
-// menu_stale instead of dropping what another tab installed; the page
-// says so in one line and reloads the menu.
-test('a stale tab cannot drop what another tab installed', async ({ page, context }) => {
-	const p = await makeProject('ubuntu-tabs', 'erofs');
-	await page.goto(`/projects/${p.id}/config`);
-	const other = await context.newPage();
-	await other.goto(`/projects/${p.id}/config`);
-	await other.getByText('RabbitMQ', { exact: true }).click();
-	await other.getByRole('button', { name: 'Apply', exact: true }).click();
-	await expect(other.getByText('Applied.')).toBeVisible({ timeout: 10_000 });
-	await other.close();
-
-	await page.getByText('Ruby', { exact: true }).click();
-	await page.getByRole('button', { name: 'Apply', exact: true }).click();
-	const status = page.locator('.cbar-status');
-	await expect(status).toContainText('changed elsewhere', { timeout: 10_000 });
-	await shots(page, 'config-menu-stale', status);
-	const cfg = await (
-		await fetch(`${apiURLFromEnv()}/projects/${p.id}/config`, { headers: auth })
-	).json();
-	expect(JSON.stringify(cfg.menu)).toContain('"rabbitmq"');
-	// Reloaded: RabbitMQ is ticked now, Ruby is not.
-	await expect(page.getByRole('checkbox', { name: /RabbitMQ/ })).toBeChecked();
-	await expect(page.getByRole('checkbox', { name: /^Ruby/ })).not.toBeChecked();
-});

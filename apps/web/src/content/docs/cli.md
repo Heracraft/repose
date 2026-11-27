@@ -20,7 +20,7 @@ Words other CLIs use lead to the repose command: `up`, `create`, `new` and `init
 
 Commands that act on a project take it from the `PROJECT` argument, `--project NAME`, then `REPOSE_PROJECT`; an argument and a `--project` that disagree exit 2. Otherwise it's the folder you're in: the project with this checkout's git remote, or the machine [last made there](/docs/lifecycle#a-second-machine-for-the-same-repository) in a folder with no remote. [A home folder belongs to no project](/docs/lifecycle#from-your-home-folder), so a command there has to name one.
 
-A command whose usage names the project takes it there or as `--project`. A few take other words in that place, so the project is `--project` alone: `open`, `secrets set`, `secrets rm`, `secrets import`, `secrets choose`, `config add`, `config remove`, `config apply`, `mcp forward` and `mcp rm`; `cp` names it in `PROJECT:PATH` or `--project`. `ls`, `login`, `logout`, `notify`, `version` and `completion` act on no project and exit 2 when given `--project`.
+A command whose usage names the project takes it there or as `--project`. A few take other words in that place, so the project is `--project` alone: `open`, `secrets set`, `secrets rm`, `secrets import`, `secrets choose`, `config apply`, `mcp forward` and `mcp rm`; `cp` names it in `PROJECT:PATH` or `--project`. `ls`, `login`, `logout`, `notify`, `version` and `completion` act on no project and exit 2 when given `--project`.
 
 `PROJECT:CHECKOUT` names [another checkout](/docs/run-and-attach#several-repositories-on-one-machine) `run --on` added to the machine. `run`, `attach`, `sync`, `exec`, `ssh`, `code`, `rm`, `mcp list`, `mcp forward` and `browser bridge` take it; every other command refuses it with exit 2.
 
@@ -518,16 +518,14 @@ A machine that runs [herdr](/docs/run-and-attach#herdr-instead-of-tmux) instead 
 
 | Command                             | What it does |
 | ----------------------------------- | ------------ |
-| `repose config add PACKAGE...`      | Add [menu entries](/docs/config#the-menu) or apt packages and install them on the machine. With no names, list the menu's entries by group. |
-| `repose config remove PACKAGE...`   | Remove them again. Alias `rm`. |
-| `repose config show [PROJECT]`      | Print the project's menu, one entry or package a line, and nothing when it is empty. `repose config` alone does the same. |
+| `repose config show [PROJECT]`      | Print the project's [earlier menu entries](/docs/config#earlier-menu-entries), one a line, and nothing when it has none. `repose config` alone does the same. |
 | `repose config revisions [PROJECT]` | Its revisions, newest first, with the last 8 characters of each id and whether each applied. `--json` for JSON, `-q`/`--quiet` for whole ids. |
 | `repose config apply [PATH]`        | With no PATH, apply the newest revision again, on a running machine. `--revision ID` applies an earlier revision to the running machine instead; ID is a whole id or 4 or more characters of either end. |
 | `repose config edit [PROJECT]`      | For an [older machine](/docs/machine#older-machines): edit its configuration file in `$VISUAL` or `$EDITOR`, apply on save. |
 | `repose config on [PROJECT]`        | For an older machine: give it your account's file again. |
 | `repose config off [PROJECT]`       | For an older machine: keep your account's file off it. [`repose run --no-personal`](#repose-run-project) does it at a run. |
 
-`repose config apply PATH`, `edit`, `on` and `off` for any other machine exit 1 with the one sentence [Configuration files](/docs/config#configuration-files) shows. `--global` acts on the account's file for older machines instead: it takes no project, and `on` and `off` take one, with or without it; `add` and `remove` edit its package list and push it, `edit` opens the laptop's copy and pushes it on save, `show` prints the account's copy, `revisions` lists its saves, and `apply [PATH]` pushes a file over the account's copy, by default the one in `~/.config/repose/`; an empty file removes it. `repose config show --revisions` is the old form of `revisions`.
+`repose config apply PATH`, `edit`, `on` and `off` for any other machine exit 1 with the one sentence [Configuration files](/docs/config#configuration-files) shows. `--global` acts on the account's file for older machines instead: it takes no project, and `on` and `off` take one, with or without it; `edit` opens the laptop's copy and pushes it on save, `show` prints the account's copy, `revisions` lists its saves, and `apply [PATH]` pushes a file over the account's copy, by default the one in `~/.config/repose/`; an empty file removes it. `repose config show --revisions` is the old form of `revisions`.
 
 The CLI's own settings are keys in [config.toml](#config-toml); `repose config set` exits 2 and names the file.
 

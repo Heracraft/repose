@@ -140,14 +140,12 @@ test.describe('signed in', () => {
 		expect(fill).toBe(edge);
 	});
 
-	test('forced colours mark the current config tab and no other', async ({ page }) => {
-		const p = await project({
-			name: 'forced-tabs-app',
-			remote_url: 'github.com/heracraft/forced-tabs-app'
-		});
+	// The Config page's Menu and Nix tabs left with the menu (I-1698); the
+	// landing's setup tabs are the hk-tablist a visitor still meets.
+	test('forced colours mark the current tab and no other', async ({ page }) => {
 		await page.emulateMedia({ forcedColors: 'active' });
-		await page.goto(`/projects/${p.id}/config`);
-		const tabs = page.getByRole('tab');
+		await page.goto('/');
+		const tabs = page.getByRole('tablist', { name: 'Setup path' }).getByRole('tab');
 		await expect(tabs).toHaveCount(2);
 		const edges = await tabs.evaluateAll((els) =>
 			els.map((el) => {
@@ -270,18 +268,6 @@ test.describe('signed in', () => {
 		await page.unroute('**/v1/projects');
 
 		await page.goto(`/projects/${p.id}/config`);
-		// The tablist is one tab stop, on the selected tab (a project the
-		// earlier specs applied Nix to opens on Nix).
-		const current = page.getByRole('tab', { selected: true });
-		await expect(current).toBeVisible();
-		expect(await ringOnTab(page, current), 'config tab').toBe(true);
-		const nixTab = page.getByRole('tab', { name: 'Nix' });
-		if ((await nixTab.getAttribute('aria-selected')) !== 'true') {
-			await page.keyboard.press('ArrowRight');
-			await expect(nixTab).toBeFocused();
-			await page.keyboard.press('Enter');
-		}
-		await expect(nixTab).toHaveAttribute('aria-selected', 'true');
 		const frame = page.locator('.nix-frame');
 		const rest = await frame.evaluate((el) => getComputedStyle(el).boxShadow);
 		await tabTo(page, page.getByRole('textbox', { name: 'Nix fragment' }));

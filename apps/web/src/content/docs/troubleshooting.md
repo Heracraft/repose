@@ -153,9 +153,9 @@ For more detail on any command, add `-v`; its request IDs are what support looks
 
 **A command isn't found.** Ubuntu names the package that has it, and `sudo apt-get install` adds it ([Installing more](/docs/machine#installing-more)). `air is still being installed; try again in a moment` means it's one of your laptop's tools, still arriving in the background.
 
-**A tool from the project's `.envrc` is missing.** The [dev environment](/docs/machine#the-projects-dev-environment) didn't load. An `.envrc` loads only once it's allowed: repose allows it for agents and `repose exec`, and in your own shell you run `direnv allow` once. A `use flake` line in it fails on the machine; set the tools up with mise or `repose config add` instead.
+**A tool from the project's `.envrc` is missing.** The [dev environment](/docs/machine#the-projects-dev-environment) didn't load. An `.envrc` loads only once it's allowed: repose allows it for agents and `repose exec`, and in your own shell you run `direnv allow` once. A `use flake` line in it fails on the machine; set the tools up with mise instead.
 
-**A package is missing after a base update.** The machine installs again what you added with `repose config add` and what you installed with `apt-get`, in the background after its first start on the new base, so give it a minute. What lived outside `/home/dev`, Docker's data and the services' data, such as files under `/usr/local` or `/opt`, starts clean ([Base updates](/docs/machine#base-updates)): install it again, or keep it with `repose config add NAME`. A package Ubuntu no longer has can't come back; install what replaced it.
+**A package is missing after a base update.** The machine installs again what you installed with `apt-get`, in the background after its first start on the new base, so give it a minute. What lived outside `/home/dev`, Docker's data and the services' data, such as files under `/usr/local` or `/opt`, starts clean ([Base updates](/docs/machine#base-updates)): install it again, or keep it in `/home/dev`. So does a database's data under `/var/lib` ([Databases](/docs/config#databases)). A package Ubuntu no longer has can't come back; install what replaced it.
 
 **Your plan counts more disk than `df` on the machine shows.** A deleted file counts until the daily `fstrim` gives its blocks back. `sudo fstrim /home/dev` on the machine does it now.
 
@@ -168,10 +168,6 @@ For more detail on any command, add `-v`; its request IDs are what support looks
 **Processes get killed, or the machine is slow under load.** It ran out of memory. `sudo dmesg | grep -i killed` names what the kernel stopped, and `repose status` lists what's still listening. Stop what you don't need, or [give the machine more memory](/docs/machine#changing-the-size).
 
 **A secret isn't in a program's environment.** Programs read their environment when they start. Restart the program or the agent, or open a new tmux window.
-
-**`error: NAME failed: ...` or exit code 10 from `repose config add`.** An item didn't install, and the rest of the line is the machine's reason, `E: Unable to locate package` for a name Ubuntu doesn't have. The items before it stay installed. Check the name with `apt-cache search` on the machine, then `repose config add` the right one.
-
-**`the machine stopped answering while it applied the menu: nothing from it for 2 minutes`.** The machine itself stopped answering during a `repose config add` or `remove`; a slow install never ends this way. `repose start` restarts it, then run the command again.
 
 ## Agents
 

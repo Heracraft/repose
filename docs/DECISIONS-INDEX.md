@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1170 entries.
+1171 entries.
 
 ## Scope
 
@@ -1113,7 +1113,7 @@ pointer, not a summary.
 - **I-1476** `ApplyMenu` installs from `internal/guestd/config/recipes.yaml`, one recipe per catalog id; services are `repose-svc-<id>.service` on 127.0.0.1 with data under `/var/lib/repose/services/<id>`; `apt-manual.list` lives at `/run/repose/rw/apt-manual.list` and belongs to the base's dpkg hook (nonix-guestd, 2026-11-22) — amended by I-1536; L39086
 - **I-1500** The Nix-only alerts skip a host whose `repose_host_info` says `nix_mode="off"`; two base image alerts, a Base images row and `release-assets` checking `guest-<version>` and `hostd-stable` cover the erofs side (nonix-obs-cleanup, 2026-11-22) — amended by I-1494; L39095
 - **I-1486** Each menu catalog entry names its erofs recipe (`recipe:`, the same string as the id), and a menu's `package` items follow the project's runtime: apt names on erofs (`menu.ValidAptPackage`, `Catalog.ValidateFor`), nixpkgs attribute paths on nix (nonix-config-cli-web, 2026-11-22) — L39104
-- **I-1488** `repose config` on an erofs project: `add`, `remove`, `show` and `revisions` work with the same success lines, minus "Building revision"; the steps are guestd's ApplyMenu lines as written; every Nix file (`config apply FILE`, `config edit`, `config on|off`) is refused with the api's `nix_config_retired` sentence and exit 1 (nonix-config-cli-web, 2026-11-22) — partly amended by I-1514; L39111
+- **I-1488** `repose config` on an erofs project: `add`, `remove`, `show` and `revisions` work with the same success lines, minus "Building revision"; the steps are guestd's ApplyMenu lines as written; every Nix file (`config apply FILE`, `config edit`, `config on|off`) is refused with the api's `nix_config_retired` sentence and exit 1 (nonix-config-cli-web, 2026-11-22) — partly amended by I-1514; amended by I-1698; L39111
 - **I-1490** Dashboard for an erofs project: the Config page shows the menu and the base, a one-line banner with Restart only while `pending_base_version` is set, and no Nix editor or machine.nix switch; Settings lists machine.nix only for an account with a Nix project; Add a host shows the x86 installer beside the Mac step, with the Mac image's download size and free disk (nonix-config-cli-web, 2026-11-22) — L39121
 - **I-1492** The public docs describe the Ubuntu base: Nix appears in one paragraph (machine.md "Older machines"), in the one sentence an erofs machine answers a Nix file with, and in a laptop CLI message; the agent guide test reads `images/guest/agent-guide.md` (nonix-config-cli-web, 2026-11-22) — L39128
 - **I-1506** `images/guest/build.sh` writes a bundle file over 1900 MiB also as `<name>.part0..N`, and `guest-image.yml` publishes the parts in its place, as I-1504 says (nonix-guest-image, 2026-11-22) — L39134
@@ -1202,3 +1202,4 @@ pointer, not a summary.
 - **I-1692** The api reads a Mac without the appliance as what it is, not as D1's nested Mac: no `running_limit` for it, so the dashboard's New project form never holds Create at D1's count (d2-surface, design 2 build, 2026-11-27) — L39806
 - **I-1694** Design 2 is built for customers and replaces design 1 on the Mac, with no migration; idle machines on a Mac give their memory back by rest by save (conductor, design 2 build, 2026-11-27) — L39815
 - **I-1700** A create whose only destination is a host of the account's own that is still installing waits for it instead of being refused: the project is written `creating` with no host and `waiting_for_host`, the create op is placed on that host alone once it registers, and the wait ends, with the project not created, when the host is removed or its join token expires; `repose rm` takes a waiting project back (sweep-cli, board sweep, 2026-11-27) — L39823
+- **I-1698** `repose config add` and the dashboard's menu are removed: on an Ubuntu machine an agent's apt-get does what the menu did, and what apt-get installs comes back after every base update (sweep-cli, 2026-11-27) — L39834
