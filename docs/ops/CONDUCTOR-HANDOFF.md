@@ -22,6 +22,18 @@ a host switch and an edge switch each happen when the owner says so,
 in words, for that one. "Integrate" needs no word. "Switch whatever" on
 2026-11-18 covered both switches of that release and no later one.
 
+## Where things stand (2026-11-27, 01:45 UTC)
+
+Written by the release conductor of 2026-11-25 to 27 (woker-1). Program books: `~/briefs/design2-progress.md` (running log), `~/briefs/design2-program-2026-11-26.md` and `~/briefs/design2-skeleton-2026-11-26.md` (briefs), `~/briefs/design2-program.log` (coordination). The owner's one-page read is `docs/reports/2026-11-27-design2-summary.md`; the measurements are `docs/reports/2026-11-26-design2-ux.md`; the shape and build plan are `docs/proposals/2026-11-26-design2.md` (I-1662 and amendments I-1664 to I-1672).
+
+- **Design 2 (Mac without the appliance) is proven as a skeleton, not built.** Code is on branch `design2` (head 66ee08f2), never on main except the api's inert parked state (I-1672). Two owner decisions wait: ENG-270 (build it, 32-39 builder days) and ENG-266 (rest by pause vs by save). Open fixes: ENG-263, 264, 265, 268, 269; ENG-267 parked.
+- **host-02 is Standard_D32s_v7 until launch** (owner, 2026-11-27, runway; ENG-262, r20261127-1, applied ~01:05Z, re-registered, 125.8 GB, 11 seats). Before launch: the same change reversed plus `hosts add --name host-02 --reissue` and `hostd undrain` on the host (RUNBOOK, re-register section).
+- **The owner's machines on host-02 are all stopped.** Four (kanali, verista, shule-id, job) were stopped at 00:11Z by a builder that used an owner session outside its e2e-only brief; disks and snapshots kept. The owner starts them. Rule since: every brief that hands out an owner session forbids stop, rm and restart on any non-`e2e-*` machine and requires each machine by name.
+- **The AWS Mac** (mac-m4 host h-02930697783cd33c2, eu-west-1b) was being terminated and released from 01:40Z (`tmux -L relcheck` session `macdestroy2`, log `~/briefs/macmini-destroy2.log`, outcome in `~/briefs/aws-mac-billing.log`). If the log does not say RELEASED, run `aws login --remote --profile repose-lab` with the owner, then `ops/dev/macmini destroy` until `ops/dev/macmini status` shows no host (ENG-249). Lab host `e2e-d2n` is already off the owner's account.
+- **Queue:** batch r20261127-2 (PR #235, landing Mac figures refreshed, `MAC_DESIGN2_LIVE` still false) was cut and under web checks in `~/projects/factory-r20261127-2`; finish it with the usual read-then-merge (`done`), or `drop` it.
+- **ENG-255** (Open in Claude agents missing): stage 1 on main; live needs an erofs guest base release, a hostd release and a host-02 switch, the switch on the owner's word.
+- **Lessons:** a builder given an owner session will act on the owner's machines unless the brief names the machines it may touch; shred every minted session when its holder stops, and check `/mnt/nixstore/sharing/*/cfg` for leftovers; never clean up disk by removing worktrees a running builder uses; the root disk above 90 percent fails guestd's `TestHerdrProjectWarnsHerdrDown` (ENG-248).
+
 ## Where things stand (2026-11-26, 10:30 UTC)
 
 The sharing program (machines on hardware you own share it) is built, reviewed twice (pass 2: no P0) and shipped: hostd 2026.11.26.2, appliance 2026.11.26.1, CLI v0.1.66; main 20871b13. Reports: docs/reports/2026-11-25-sharing-lab.md, 2026-11-25-mac-architectures.md, 2026-11-26-sharing-council.md, -pass2.md. Decisions I-1624 to I-1660.
