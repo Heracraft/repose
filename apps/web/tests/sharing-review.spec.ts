@@ -322,7 +322,11 @@ test('a Mac machine says what it holds, and a locked rest says what wakes it', a
 		remote_url: 'github.com/heracraft/held-app'
 	});
 	try {
-		await ownedHost({ project_id: p.id, host_id: hostID, mem_used_bytes: 3.8 * 1024 ** 3 });
+		await ownedHost({
+			project_id: p.id,
+			host_id: hostID,
+			mem_used_bytes: Math.round(3.8 * 1024 ** 3)
+		});
 		const G = 1024 * 1024 * 1024;
 		await fakeAdmin('/vm', {
 			project_id: p.id,
