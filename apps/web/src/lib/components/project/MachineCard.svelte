@@ -18,7 +18,7 @@
 	import { bytes, classMemoryGB, gb, gbs, unsized } from '$lib/format';
 	import type { Project } from '$lib/api/types';
 	import { frozenSince } from '$lib/frozen';
-	import { notAnsweringSince, parkedText, sizedDownText } from '$lib/answering';
+	import { notAnsweringSince, parkedText, restingWaitText, sizedDownText } from '$lib/answering';
 
 	let {
 		project,
@@ -71,7 +71,17 @@
 	// "Memory in use" beside "2.4 GB of e2e-mac's 11.7 GB" wrapped at 1440
 	// (review-dash 9): on an owned machine the figure carries the host's
 	// name, so the label is the one word (I-1654).
-	let memLabel = $derived(unsized(project) ? 'Memory' : 'Memory in use');
+	let memLabel = $derived(
+		project.vm ? 'Memory held' : unsized(project) ? 'Memory' : 'Memory in use'
+	);
+	// On a Mac the figure is what macOS gives up for the machine, its VM's
+	// footprint (I-1712), against the size its VM got; the samples' figure
+	// is what the guest uses, which is not what decides the next start.
+	let held = $derived(
+		project.state === 'running' && project.vm && project.mem_used_bytes
+			? project.mem_used_bytes
+			: undefined
+	);
 </script>
 
 <section class="hk-section machine" data-testid="machine-card" aria-labelledby="machine-title">
@@ -86,7 +96,16 @@
 			     (review-dash P2 #4). -->
 			<div class="line" data-testid="memory-given-back">
 				<span class="line-label">{memLabel}</span>
-				<span class="line-value line-value--off">given back while it rests</span>
+				<span class="line-value line-value--off">0 B, given back while it rests</span>
+			</div>
+		{:else if held !== undefined && project.vm}
+			<div class:hk-meter-ice={!!frozen} data-testid="memory-held">
+				<Meter
+					label={memLabel}
+					used={held / GIB}
+					limit={project.vm.mem_bytes / GIB}
+					valueText="{bytes(held)} of {bytes(project.vm.mem_bytes)}"
+				/>
 			</div>
 		{:else if memUsed !== undefined}
 			<!-- A frozen machine's memory is what is frozen: the bar fills in
@@ -145,6 +164,12 @@
 				>
 			</div>
 		</div>
+
+		{#if restingWaitText(project)}
+			<!-- Resting as a save its locked Mac cannot read (I-1682, I-1712):
+			     a connection is answered with this sentence. -->
+			<p class="sized-down" data-testid="card-resting-waits">{restingWaitText(project)}</p>
+		{/if}
 
 		{#if sizedDownText(project)}
 			<p class="sized-down" data-testid="sized-down">{sizedDownText(project)}</p>

@@ -148,3 +148,18 @@ describe('review-dash fixes (I-1690 amendment)', () => {
 		).toBe('2 of 5 vCPUs · 4 GB of 8 GB');
 	});
 });
+
+describe('held on a Mac (I-1712)', () => {
+	it('says what a Mac holds for a machine, 0 B while it rests as a save', async () => {
+		const { heldText, sizeText } = await import('./format');
+		expect(heldText(3.8 * 1024 ** 3)).toBe('3.8 GB held');
+		expect(heldText(0)).toBe('0 B held');
+		const vm = { vcpus: 5 };
+		expect(
+			sizeText({ class: 'large', sized: false, state: 'running', mem_used_bytes: 0, vm })
+		).toBe('0 B held');
+		expect(
+			sizeText({ class: 'large', sized: false, state: 'running', mem_used_bytes: 1 << 30 })
+		).toBe('1 GB used');
+	});
+});

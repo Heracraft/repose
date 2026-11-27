@@ -308,3 +308,60 @@ test('a Mac machine shows its smaller start in the header and row, and memory gi
 		await removeOwnedHosts(api).catch(() => {});
 	}
 });
+
+// I-1712: on a Mac the dashboard says what macOS holds for a machine,
+// "held", in the list, the card and the host row, as `repose ls` does,
+// and a machine resting as a save that waits for the unlock says so on
+// its card.
+test('a Mac machine says what it holds, and a locked rest says what wakes it', async ({ page }) => {
+	const api = apiURLFromEnv();
+	await removeOwnedHosts(api);
+	const hostID = await ownedHost({ name: 'mac-mini' });
+	const p = await createProject(api, {
+		name: 'held-app',
+		remote_url: 'github.com/heracraft/held-app'
+	});
+	try {
+		await ownedHost({
+			project_id: p.id,
+			host_id: hostID,
+			mem_used_bytes: Math.round(3.8 * 1024 ** 3)
+		});
+		const G = 1024 * 1024 * 1024;
+		await fakeAdmin('/vm', {
+			project_id: p.id,
+			vcpus: 5,
+			mem_bytes: 8 * G,
+			full_vcpus: 5,
+			full_mem_bytes: 8 * G
+		});
+		await page.goto('/projects');
+		const row = page
+			.locator('table.ptable tbody tr')
+			.filter({ has: page.getByRole('link', { name: p.name, exact: true }) });
+		await expect(row).toContainText('3.8 GB held');
+		await expect(row).not.toContainText('used');
+		await page.goto(`/projects/${p.id}`);
+		await expect(page.getByTestId('project-used')).toHaveText('3.8 GB held');
+		await expect(page.getByTestId('memory-held')).toContainText('Memory held');
+		await expect(page.getByTestId('memory-held')).toContainText('3.8 GB of 8 GB');
+		await shots(page, 'held-card');
+		await page.goto('/settings/hosts');
+		await expect(
+			page.getByTestId('own-hosts').getByRole('row').filter({ hasText: 'mac-mini' })
+		).toContainText('3.8 GB held');
+		await shots(page, 'held-host-row');
+		// Saved, on a locked Mac.
+		await fakeAdmin('/resting', { project_id: p.id, minutes: 40, saved: true });
+		await fakeAdmin('/waits-for', { project_id: p.id, waits: 'unlock' });
+		await page.goto(`/projects/${p.id}`);
+		await expect(page.getByTestId('project-used')).toHaveText('0 B held');
+		await expect(page.getByTestId('card-resting-waits')).toHaveText(
+			'Resting: wakes once you unlock mac-mini; its memory is kept'
+		);
+		await shots(page, 'held-resting-locked');
+	} finally {
+		await destroyProject(api, p.id).catch(() => {});
+		await removeOwnedHosts(api).catch(() => {});
+	}
+});

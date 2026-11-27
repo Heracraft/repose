@@ -248,6 +248,11 @@ export function unsized(p: { sized?: boolean }): boolean {
 	return p.sized === false;
 }
 
+/** "3.8 GB held", "0 B held": what a Mac gives up for a machine (I-1712). */
+export function heldText(n: number): string {
+	return n > 0 ? `${bytes(n)} held` : '0 B held';
+}
+
 /**
  * A project's size where a row or a head names one: its class and the
  * class's memory ("large · 8 GB"), or for a machine on a host of the
@@ -259,7 +264,13 @@ export function sizeText(p: {
 	sized?: boolean;
 	state: string;
 	mem_used_bytes?: number;
+	vm?: { vcpus: number } | null;
 }): string {
+	if (p.state === 'running' && p.vm) {
+		// A Mac (I-1712): what macOS gives up for the machine, 0 while it
+		// rests as a save, in the CLI's word.
+		return heldText(p.mem_used_bytes ?? 0);
+	}
 	if (unsized(p)) {
 		return p.state === 'running' && p.mem_used_bytes ? `${bytes(p.mem_used_bytes)} used` : '';
 	}
