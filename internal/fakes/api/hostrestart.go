@@ -12,12 +12,12 @@ import (
 // feature, DECISIONS I-1690), or one that does not. notParked, when set,
 // are the slugs its next restart cannot park: the restart is refused with
 // their names unless forced, as hostd refuses it.
-func (f *Fake) SetOwnedHostRestart(name string, on bool, notParked []string) {
+func (f *Fake) SetOwnedHostRestart(name string, on bool, notParked []string, locked bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for _, h := range f.ownedHosts {
 		if h.Name == name && h.State != "retired" && h.State != "lost" {
-			h.restarts, h.notParked = on, notParked
+			h.restarts, h.notParked, h.locked = on, notParked, locked
 		}
 	}
 }
@@ -72,6 +72,9 @@ func (f *Fake) restartHost(w http.ResponseWriter, r *http.Request) *apiError {
 			what = "1 machine could not be parked and would start fresh"
 		}
 		o.Error = fmt.Sprintf("%s (%s). Nothing restarted, and the parked machines run again.", what, strings.Join(named, "; "))
+		if h.locked && running == len(not) {
+			o.Error = "This Mac's screen is locked, and a locked Mac cannot save a machine's memory. Nothing restarted; unlock it and restart again."
+		}
 		o.errCode = "not_parked"
 	}
 	f.ops[o.id] = o

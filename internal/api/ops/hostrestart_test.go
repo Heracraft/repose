@@ -31,7 +31,7 @@ func TestHostRestartOpRefusedNamesTheMachine(t *testing.T) {
 	h := apitest.New(t, apitest.Options{FakeOpts: fakehostd.Options{Restart: true}})
 	u := h.NewUser("rex")
 	p := h.CreateRunning(u, "kept")
-	h.Fake.SetNotParked([]string{p.GuestID.String()})
+	h.Fake.SetNotParked([]string{p.GuestID.String()}, "")
 	hid := h.HostID
 	op := h.WaitOp(h.Enqueue(ops.NewOp{Kind: ops.KindHostRestart, HostID: &hid, Phases: ops.PlanHostRestart()}))
 	if op.State != "error" || op.Error["code"] != ops.CodeNotParked {
@@ -45,6 +45,13 @@ func TestHostRestartOpRefusedNamesTheMachine(t *testing.T) {
 	if !slices.Equal(names, []any{"kept"}) || op.Result["restarting"] != false {
 		t.Fatalf("result %v", op.Result)
 	}
+	// A locked Mac parks nothing: the sentence says to unlock it.
+	h.Fake.SetNotParked([]string{p.GuestID.String()}, ops.ReasonLocked)
+	op = h.WaitOp(h.Enqueue(ops.NewOp{Kind: ops.KindHostRestart, HostID: &hid, Phases: ops.PlanHostRestart()}))
+	if op.State != "error" || op.Error["message"] != "This Mac's screen is locked, and a locked Mac cannot save a machine's memory. Nothing restarted; unlock it and restart again." {
+		t.Fatalf("locked: %s %+v", op.State, op.Error)
+	}
+	h.Fake.SetNotParked([]string{p.GuestID.String()}, "")
 	// Forced: done, the machine named in the result.
 	op = h.WaitOp(h.Enqueue(ops.NewOp{Kind: ops.KindHostRestart, HostID: &hid, Params: map[string]any{"force": true}, Phases: ops.PlanHostRestart()}))
 	if op.State != "done" || op.Result["restarting"] != true {

@@ -118,6 +118,9 @@ type Options struct {
 	// names them, and without force it does not restart.
 	Restart   bool
 	NotParked []string
+	// NotParkedReason is the park's reason for each of NotParked;
+	// "" is "started with nobody logged in".
+	NotParkedReason string
 }
 
 // Fake is one fake host.
@@ -674,9 +677,9 @@ func kind(cmd *hostdv1.Command) string {
 
 // SetNotParked sets the guest ids the next RestartHost cannot park
 // (Options.NotParked).
-func (f *Fake) SetNotParked(ids []string) {
+func (f *Fake) SetNotParked(ids []string, reason string) {
 	f.mu.Lock()
-	f.opts.NotParked = ids
+	f.opts.NotParked, f.opts.NotParkedReason = ids, reason
 	f.mu.Unlock()
 }
 
@@ -1166,6 +1169,9 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 		why := make([]string, len(not))
 		for i := range why {
 			why[i] = "started with nobody logged in"
+			if f.opts.NotParkedReason != "" {
+				why[i] = f.opts.NotParkedReason
+			}
 		}
 		r := &hostdv1.RestartResult{Parked: uint32(max(running-len(not), 0)), NotParked: not, NotParkedReasons: why, Restarting: len(not) == 0 || c.RestartHost.Force, ParkMs: 900}
 		return ok(func(res *hostdv1.Result) { res.Payload = &hostdv1.Result_Restart{Restart: r} })

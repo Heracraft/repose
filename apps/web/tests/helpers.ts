@@ -457,6 +457,8 @@ export async function ownedHost(body: {
 	restart?: boolean;
 	/** With restart: the slugs its next restart cannot park. */
 	not_parked?: string[];
+	/** With restart: the Mac's screen is locked, so its restart parks nothing. */
+	locked?: boolean;
 }): Promise<string> {
 	const res = await fetch(`${adminURL()}/owned-host`, {
 		method: 'POST',

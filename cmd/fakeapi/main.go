@@ -227,6 +227,9 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 			// slugs its next restart cannot park.
 			Restart   *bool    `json:"restart"`
 			NotParked []string `json:"not_parked"`
+			// Locked: the Mac's screen is locked, so its restart parks
+			// nothing (I-1682).
+			Locked bool `json:"locked"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -251,7 +254,7 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 			f.SetOwnedHostOldHostd(body.StateHost, *body.OldHostd)
 		}
 		if body.StateHost != "" && body.Restart != nil {
-			f.SetOwnedHostRestart(body.StateHost, *body.Restart, body.NotParked)
+			f.SetOwnedHostRestart(body.StateHost, *body.Restart, body.NotParked, body.Locked)
 		}
 		if body.StateHost != "" && body.FreeBytes != nil {
 			f.SetOwnedHostFree(body.StateHost, *body.FreeBytes)

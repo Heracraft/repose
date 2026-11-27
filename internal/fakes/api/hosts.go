@@ -138,6 +138,7 @@ type ownedHostRec struct {
 	// notParked the slugs its next restart cannot park.
 	restarts  bool
 	notParked []string
+	locked    bool
 }
 
 // SetOwnedHostOldHostd makes the account's live host called name one

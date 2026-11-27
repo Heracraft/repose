@@ -460,6 +460,16 @@ test('a Mac that parks its machines restarts from the Hosts page', async ({ page
 		`Parked 0 machines; mac-mini is restarting. ${p.slug} starts fresh.`
 	);
 
+	// A locked Mac parks nothing, and the refusal says to unlock it.
+	await ownedHost({ state_host: 'mac-mini', restart: true, not_parked: [p.slug], locked: true });
+	await page.reload();
+	await row.getByRole('button', { name: 'Restart mac-mini…' }).click();
+	await confirm.getByRole('button', { name: 'Restart mac-mini now' }).click();
+	await expect(page.getByTestId('host-restart-refused')).toHaveText(
+		"This Mac's screen is locked, and a locked Mac cannot save a machine's memory. Nothing restarted; unlock it and restart again."
+	);
+	await confirm.getByRole('button', { name: 'Cancel' }).click();
+
 	// Offline: no Restart, since there is nothing to ask.
 	await ownedHost({ id: hostId, quiet_minutes: 14 });
 	await page.reload();

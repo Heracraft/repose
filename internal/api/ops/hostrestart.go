@@ -43,7 +43,28 @@ func (e *Engine) onRestartHost(ctx context.Context, op *store.Op, r *hostdv1.Res
 	if r.Restarting {
 		return nil
 	}
+	if r.Parked == 0 && allLocked(r.NotParkedReasons, len(names)) {
+		// Nothing was saved because the Mac is locked, so the way on is
+		// to unlock it, in the CLI's words (I-1682).
+		return &resultRefusal{code: CodeNotParked, msg: "This Mac's screen is locked, and a locked Mac cannot save a machine's memory. Nothing restarted; unlock it and restart again."}
+	}
 	return &resultRefusal{code: CodeNotParked, msg: notParkedSentence(withReasons(names, r.NotParkedReasons))}
+}
+
+// ReasonLocked is hostd's park reason on a Mac whose screen is locked
+// (guest.SkipLocked, I-1682); the api does not import hostd.
+const ReasonLocked = "this Mac's screen is locked"
+
+func allLocked(reasons []string, n int) bool {
+	if n == 0 || len(reasons) != n {
+		return false
+	}
+	for _, r := range reasons {
+		if r != ReasonLocked {
+			return false
+		}
+	}
+	return true
 }
 
 // withReasons is each name with hostd's reason after it ("api: the screen
