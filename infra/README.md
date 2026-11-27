@@ -889,6 +889,8 @@ same unit prices.
 | host-02 data disk throughput, 600 MB/s (125 free) | $0.000055/MBps/h | $19.07 |
 | **Total, both hosts and the control plane, before egress** | | **about $4,751** |
 
+**Since 2026-11-27 host-02 runs `Standard_D32s_v7`** ($2.116/h, $1,544.68 a month, half the `D64s_v7`), the owner's pre-launch runway (ENG-262): nobody is buying yet, so the halved VM saves about $51 a day. host-01 is retired, so host-02 at that size, its disks, the edge, the NAT gateway and the control plane come to about $2,267 a month before egress. It goes back to `D64s_v7` before launch, with the re-register in `docs/ops/RUNBOOK.md` "Add a host, or move to a larger SKU".
+
 **The 2026-09-19 table had the control plane $53 a month too cheap.** It
 listed the `D4s_v7` at $140.16 a month; the API returns $0.265 an hour, which
 is $193.45. The re-query above caught it; that is why this item is on the
