@@ -28,6 +28,21 @@ func blocked(t *testing.T, n *Net, guest, kind string) uint64 {
 	return m[guest][kind]
 }
 
+// blockedSoon is blocked once it is above zero, or after 10 s: a dropped
+// SYN is counted when the switch sees it, which under the race detector on
+// a slow runner can be after the guest's dial has given up (macOS CI,
+// TestSMTPIsDroppedAndCounted 1 of 5, d2-int 2026-11-27).
+func blockedSoon(t *testing.T, n *Net, guest, kind string) uint64 {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if v := blocked(t, n, guest, kind); v > 0 || time.Now().After(deadline) {
+			return v
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
 // mustNotConnect: the dial must fail by timing out, as a silent drop
 // does, and never reach the fake internet.
 func mustNotConnect(t *testing.T, g *testGuest, in *internet, to string) {
@@ -74,7 +89,7 @@ func TestSMTPIsDroppedAndCounted(t *testing.T) {
 	n := newTestNet(t, in, nil)
 	g := newTestGuest(t, n, "tap-aaaaaaaa", gA, ipA, macA, testGW)
 	mustNotConnect(t, g, in, "203.0.113.5:25")
-	if v := blocked(t, n, gA, hnet.BlockedSMTP); v == 0 {
+	if v := blockedSoon(t, n, gA, hnet.BlockedSMTP); v == 0 {
 		t.Fatalf("smtp counter %d; want > 0", v)
 	}
 	if v, _ := n.CounterBytes(context.Background(), gA); v != 0 {
@@ -232,7 +247,7 @@ func TestNewFlowsOverTheRateAreDroppedAndCounted(t *testing.T) {
 	if ok == 0 || failed == 0 {
 		t.Fatalf("ok %d failed %d; want some of each", ok, failed)
 	}
-	if v := blocked(t, n, gA, hnet.BlockedFlows); v == 0 {
+	if v := blockedSoon(t, n, gA, hnet.BlockedFlows); v == 0 {
 		t.Fatal("flows counter 0")
 	}
 }
@@ -254,7 +269,7 @@ func TestConnectionCap(t *testing.T) {
 		open = append(open, c)
 	}
 	mustNotConnect(t, g, nil, "203.0.113.5:443")
-	if v := blocked(t, n, gA, hnet.BlockedFlows); v == 0 {
+	if v := blockedSoon(t, n, gA, hnet.BlockedFlows); v == 0 {
 		t.Fatal("flows counter 0 at the cap")
 	}
 	for _, c := range open {

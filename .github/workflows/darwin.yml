@@ -53,6 +53,9 @@ jobs:
       # of each command on this host, which here is macOS (BSD touch and
       # stat, no ss): no customer's guest is, and ci.yml runs them on Linux
       # (48 of them fail here for that alone, run 45948757737).
+      # A few of them seed the stub machine's tmux session.
+      - run: brew install tmux
+        if: ${{ !cancelled() }}
       - name: go test internal/cli, the laptop side
         if: ${{ !cancelled() }}
         run: |
