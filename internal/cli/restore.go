@@ -271,6 +271,16 @@ func RestoreCmd(ctx context.Context, e *Env, name, as, snapshotID string, askNam
 			}
 			req.Name = strings.TrimSpace(newName)
 			continue
+		case apiErr.Code == "not_found" && apiErr.Detail["reason"] == "no_snapshot" && req.Slug != "" && req.ProjectID == "":
+			// The api took NAME for the live project that holds it, which
+			// has no snapshot; a destroyed project of that name is what
+			// the user means (review-cli R4). Restore that one by id, so
+			// the taken name is asked about, or refused naming --as.
+			if id := newestDestroyed(ctx, e, req.Slug); id != "" {
+				req.ProjectID, req.Slug = id, ""
+				continue
+			}
+			return exitf(ExitProjectNotFound, "%s. `repose ls --destroyed` lists what can be restored.", strings.TrimSuffix(humaneMessage(apiErr.Message), "."))
 		case apiErr.Code == "not_found":
 			return exitf(ExitProjectNotFound, "%s. `repose ls --destroyed` lists what can be restored.", strings.TrimSuffix(humaneMessage(apiErr.Message), "."))
 		}
@@ -304,9 +314,58 @@ func RestoreCmd(ctx context.Context, e *Env, name, as, snapshotID string, askNam
 	if res.SnapshotBytes > 0 {
 		from = "its " + humanBytes(res.SnapshotBytes) + " snapshot"
 	}
-	_, _ = fmt.Fprintf(e.Out, "Restored %s from %s of %s in %s; it is %s (%s).\n",
-		p.Slug, from, res.SnapshotCreatedAt.Local().Format("2006-01-02 15:04"), fmtElapsed(pr.Total()), stateWords(p.State), p.Class)
+	state := restoredState(ctx, e, p)
+	took := pr.Total()
+	_, _ = fmt.Fprintf(e.Out, "Restored %s from %s of %s in %s; it is %s%s.\n",
+		p.Slug, from, res.SnapshotCreatedAt.Local().Format("2006-01-02 15:04"), fmtElapsed(took), state, classNote(p))
 	return nil
+}
+
+// restoreAnswerWait is how long a restore waits for the machine it
+// restored to answer before it says so; a var so a test can shorten it.
+var restoreAnswerWait = 30 * time.Second
+
+// restoredState is the state a restore reports. The api says running
+// once hostd has booted the machine, and its network can take up to 8 s
+// more to answer (review-cli R3), so a running one is said to run once
+// it answers, and said not to have answered yet if it has not within
+// restoreAnswerWait.
+func restoredState(ctx context.Context, e *Env, p *Project) string {
+	if p.State != "running" {
+		return stateWords(p.State)
+	}
+	deadline := time.Now().Add(restoreAnswerWait)
+	for {
+		left := time.Until(deadline)
+		if left <= 0 {
+			return "running and has not answered yet"
+		}
+		g := e.readGuestFor(ctx, p.Slug, nil, min(left, 10*time.Second))
+		if g.probeErr == "" {
+			return "running"
+		}
+		if ctx.Err() != nil {
+			return "running and has not answered yet"
+		}
+		if err := sleepOrDone(ctx, 500*time.Millisecond); err != nil {
+			return "running and has not answered yet"
+		}
+	}
+}
+
+// newestDestroyed is the id of the newest destroyed project called slug
+// that can still be restored, "" when there is none.
+func newestDestroyed(ctx context.Context, e *Env, slug string) string {
+	list, err := e.Client.ListDestroyed(ctx)
+	if err != nil {
+		return ""
+	}
+	for _, d := range list { // newest destroy first
+		if d.Slug == slug {
+			return d.ID
+		}
+	}
+	return ""
 }
 
 // destroyedForCheckout finds the destroyed project `repose restore` with

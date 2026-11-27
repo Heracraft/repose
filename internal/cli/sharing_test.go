@@ -74,7 +74,7 @@ func TestSizeIsIgnoredOnAnOwnHost(t *testing.T) {
 	if err := ResizeClassCmd(ctx, e, "todo-app", "xl", nil); err != nil {
 		t.Fatalf("resize --size on an own host: %v", err)
 	}
-	if got, want := errOut.buf.String(), "--size is ignored: todo-app runs on your host mac-mini, where a machine has no size and uses the memory it needs.\n"; got != want {
+	if got, want := errOut.buf.String(), "--size is ignored: todo-app runs on your host mac-mini, where a machine has no size and the host gives it its memory and cores.\n"; got != want {
 		t.Fatalf("stderr %q, want %q", got, want)
 	}
 	if out.buf.Len() != 0 {

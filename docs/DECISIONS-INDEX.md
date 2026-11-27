@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1172 entries.
+1173 entries.
 
 ## Scope
 
@@ -711,7 +711,7 @@ pointer, not a summary.
 - **I-643** One unit activates the guest pool after boot; the initrd has no LVM (host-pool, 2026-10-11) — L19003
 - **I-644** `volume_unavailable` and the pool's health reach hostd, the api and the user (host-pool, 2026-10-11) — L19065
 - **I-649** Host hardening every Azure VM gets: `mana_ib`, NVMe timeout, ethtool, a 10 s boot menu (host-pool, 2026-10-11) — L19109
-- **I-650** A host shutdown powers its guests off cleanly, and hostd records nothing as failed while the host goes down (host-pool, 2026-10-11) — L19125
+- **I-650** A host shutdown powers its guests off cleanly, and hostd records nothing as failed while the host goes down (host-pool, 2026-10-11) — amended by I-1710; L19125
 - **I-654** The root password is for the serial console only, from a file placed by hand (host-pool, 2026-10-11) — L19173
 - **I-645** Running machines start again after a host reboot (host-resume, 2026-10-11) — L19192
 - **I-652** Guests are frozen across a host restart and restored where they were (guest-freeze, 2026-10-11) — amended by I-685; amended by I-686; amended by I-796; L19296
@@ -1204,3 +1204,4 @@ pointer, not a summary.
 - **I-1696** A wake waits as long as the machine takes to come back, up to two minutes, through the gateway, the api and the ops engine, so the first ssh to a machine resting as a save succeeds however long its restore takes; and a restore into a project with no host goes where the snapshot is kept (d2-core, after the design 2 release, 2026-11-27) — L39824
 - **I-1704** The hosted plans (Solo, Plus, Pro) include any number of hosts of the user's own at no extra price, and a machine on such a host counts nothing against the plan (sweep-dash, 2026-11-27) — L39830
 - **I-1702** The dashboard starts agents: a machine made there starts its agent, the form asks which when the account has none to go by, and a running machine's page has Start agent with Claude Code's Remote Control as an option (sweep-dash, 2026-11-27) — L39839
+- **I-1710** A stop or destroy cut off by a plain hostd restart is neither stored nor sent, as one cut off by a host shutdown is: the api's resend after Hello runs it again on the next hostd, which finishes it; a boot cut off that way is still answered (d2-install, 2026-11-27) — L39848

@@ -84,6 +84,14 @@ func HostRestartCmd(ctx context.Context, e *Env, force bool) error {
 		}
 		return exitf(ExitGeneric, "%d machines could not be parked and would start fresh (%s). Nothing restarted; --force restarts anyway.", len(lost), strings.Join(lost, ", "))
 	}
+	if e.JSON {
+		// Every machine's park, before the Mac goes down (review-cli).
+		if len(res) == 0 {
+			_, _ = fmt.Fprintln(e.Out, "[]")
+		} else if err := writeJSONOut(e.Out, res); err != nil {
+			return err
+		}
+	}
 	_, _ = fmt.Fprintf(e.ErrOut, "Parked %d machines in %.1fs; restarting this Mac.\n", parked, time.Since(t0).Seconds())
 	if err := macRestart(ctx); err != nil {
 		return exitf(ExitGeneric, "The machines are parked, but the Mac did not restart: %v. Restart it from the Apple menu; they come back at your login.", err)

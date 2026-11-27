@@ -1661,8 +1661,13 @@ func (m *Manager) run(ctx context.Context, cmd *hostdv1.Command) *hostdv1.Result
 	kind := Kind(cmd)
 	m.d.Log.Info("command start", "event", "command_start", "command_id", cmd.CommandId, "kind", kind, "guest_id", Target(cmd))
 	res := m.execute(ctx, cmd)
-	if wasInterrupted(res) && m.hostDown.Load() {
+	if wasInterrupted(res) && (m.hostDown.Load() || m.shuttingDown.Load() && (kind == "StopGuest" || kind == "DestroyGuest")) {
 		// Not stored: a resend after the restart runs the command again.
+		// A stop or destroy cut off by a plain hostd restart is resent
+		// too: run again, it finds the guest as the cut left it and
+		// finishes, where a stored failure left the machine in error
+		// (review-cli R2). A boot cut off that way is still answered
+		// (I-650): nothing else would settle its half-started units.
 		m.d.Log.Warn("command interrupted by the shutdown", "event", "command_result", "command_id", cmd.CommandId, "kind", kind, "result", "interrupted", "guest_id", Target(cmd))
 		return nil
 	}

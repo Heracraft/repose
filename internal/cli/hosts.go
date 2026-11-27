@@ -850,7 +850,7 @@ func sizeIgnored(w io.Writer, slug, host string) {
 	if host != "" {
 		where = "your host " + host
 	}
-	_, _ = fmt.Fprintf(w, "--size is ignored: %s runs on %s, where a machine has no size and uses the memory it needs.\n", slug, where)
+	_, _ = fmt.Fprintf(w, "--size is ignored: %s runs on %s, where a machine has no size and the host gives it its memory and cores.\n", slug, where)
 }
 
 func ownHostName(p *Project, own map[string]Host) string {
