@@ -199,7 +199,10 @@ func (s *Server) projectJSON(ctx context.Context, p *store.Project, u *store.Use
 		}
 		agents := []map[string]string{}
 		for _, a := range x.latest.Agents {
-			agents = append(agents, map[string]string{"agent": a["agent"], "window": a["window"], "state": a["state"]})
+			// agent_id and terminal (I-1676); a row from an older guestd
+			// gets them derived from its window.
+			a = meter.AgentRow(a)
+			agents = append(agents, map[string]string{"agent": a["agent"], "window": a["window"], "state": a["state"], "agent_id": a["agent_id"], "terminal": a["terminal"]})
 		}
 		var guestdOK any = x.latest.GuestdOK
 		if sampleBeforeStart(p, x.latest) {
@@ -207,7 +210,14 @@ func (s *Server) projectJSON(ctx context.Context, p *store.Project, u *store.Use
 		}
 		out["signals"] = map[string]any{"ssh_sessions": x.latest.SSHSessions, "tmux_clients": x.latest.TmuxClients, "agents": agents,
 			"docker_containers": x.latest.DockerContainers, "guestd_ok": guestdOK, "sampled_at": x.latest.TS, "gateway_sessions": s.sessions.Count(ctx, p.ID)}
-		if !x.latest.GuestdOK && !x.latest.Resting && !sampleBeforeStart(p, x.latest) {
+		parked := p.State == "running" && x.latest.ParkedWaitingSince != nil && !sampleBeforeStart(p, x.latest)
+		if parked {
+			// Parked on a Mac, waiting for its user to log in (I-1672):
+			// its memory is kept and it runs again at the login. Silent
+			// on purpose, so never not_answering.
+			out["parked"] = map[string]any{"since": x.latest.ParkedWaitingSince.UTC(), "waits_for": "login"}
+		}
+		if !parked && !x.latest.GuestdOK && !x.latest.Resting && !sampleBeforeStart(p, x.latest) {
 			// Its guestd has not answered for about three minutes
 			// (I-1652): read only when the newest sample already says
 			// so, so a list of answering machines costs nothing more.
@@ -985,6 +995,11 @@ func (s *Server) guestdDead(ctx context.Context, p *store.Project) (bool, error)
 		return false, err
 	}
 	if l.Resting {
+		return false, nil
+	}
+	if l.ParkedWaitingSince != nil {
+		// Parked on a Mac, waiting for its user's login (I-1672): a
+		// restart would throw away the memory it is parked to keep.
 		return false, nil
 	}
 	return l.State == "running" && !l.GuestdOK && time.Since(l.TS) < guestdStaleAfter && !sampleBeforeStart(p, l), nil

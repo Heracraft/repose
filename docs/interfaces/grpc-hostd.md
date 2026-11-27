@@ -456,12 +456,21 @@ GuestSample { string guest_id; string state; string class; uint64 cpu_ns_delta;
               bool resting;                                        // I-818
               optional uint64 net_egress_bytes_delta;              // I-1063
               optional uint64 burst_cpu_ns_delta;                  // I-1126
-              uint32 burst_cap_millicores; }                       // I-1126
+              uint32 burst_cap_millicores;                         // I-1126
+              int64 parked_waiting_since; }                        // I-1672
 GuestSignals { uint32 ssh_sessions; uint32 tmux_clients; repeated AgentProc agents;
                uint32 docker_containers; bool guestd_ok;
                uint64 last_input_unix; }                             // I-1272
-AgentProc { string agent; string tmux_window; string state; }   // state: working|idle|needs_input|running|unknown (running: I-694)
-// tmux_window: a tmux window name or a herdr agent key, at most 64 bytes (I-504)
+AgentProc { string agent; string tmux_window; string state;      // state: working|idle|needs_input|running|unknown (running: I-694)
+            string agent_id; string terminal; }                   // I-1676
+// tmux_window: a tmux window name or a herdr agent key, at most 64 bytes (I-504); empty
+// for an agent outside any terminal repose can see (Claude Desktop's session, I-1676)
+// agent_id (I-1676): opaque, "a" and 16 hex digits, guestd's keyed hash of the agent's
+// process (never a pid), or, where guestd knows no process (a herdr pane), the terminal;
+// terminal is "tmux:<window>", "herdr:<key>" or empty. hostd drops either in any other
+// form and keeps them as one line of at most 72 bytes. A guestd older than I-1676
+// sends neither, and the api reads such an agent as agent_id = terminal = "tmux:<window>"
+// for one release (a herdr key from such a guestd reads as a tmux window).
 // tmux_clients: tmux attach clients only; 0 on a herdr machine, whose clients count in ssh_sessions (I-511)
 // last_input_unix (I-1272): the newest `client_activity` of a tmux client of the project's
 // session, which tmux moves on when a client sends input: when somebody last typed in the
@@ -495,7 +504,11 @@ sender's name and never the message, I-1144), summary (capped 1 KB),
 tmux_window (the window guestd resolved for the hook, empty when unknown;
 I-121; a tmux window name or a herdr agent key since I-504), link_url and
 link_label (fields 6 and 7, I-931: a `repose-notify --link`, which hostd
-checks with internal/msglink and drops, keeping the event, when it fails)}`,
+checks with internal/msglink and drops, keeping the event, when it fails),
+agent_id (field 8, I-1676: AgentProc.agent_id of the agent the hook came
+from, set by a guestd with the agent registry for an agent outside any
+terminal; empty otherwise and from an older guestd; the api does not
+store it yet)}`,
 `agent_question {guest_id, question_id, agent, tmux_window, text (capped 1
 KB), options, timeout_s, state, reason}` (a guest's `Question` notify, relayed;
 DECISIONS I-244: the api stores it by question_id, so a re-announcement
@@ -622,6 +635,14 @@ the size, and the api applies the same check. The api stores them in
 the project's `root_used_bytes` and `root_size_bytes`. A hostd or guest
 older than I-567 sends 0 for both, which is the old shape and stays
 accepted.
+
+Parked and waiting (DECISIONS I-1672). `parked_waiting_since` is when a
+guest was parked, unix seconds, while it waits for its host's user to log
+in before it can be restored; 0 otherwise. Only hostd on a Mac without the
+appliance sets it (Virtualization.framework restores a save file only in
+the user's unlocked session, I-1662); its `guestd_ok` is false, since no
+guest runs, and the api reads the field before that. The api keeps it only
+from a host an account owns. 0 from every other hostd.
 
 Resting (DECISIONS I-818). A resting guest's sample keeps `guestd_ok`
 **true** and repeats the last guest-written figures (`signals`,

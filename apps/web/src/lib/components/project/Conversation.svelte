@@ -32,7 +32,7 @@
 		sayLine,
 		type ThreadItem
 	} from '$lib/thread';
-	import type { AgentSignal, Project, ProjectEvent, Say } from '$lib/api/types';
+	import { noTerminal, type AgentSignal, type Project, type ProjectEvent, type Say } from '$lib/api/types';
 
 	let {
 		project,
@@ -74,9 +74,12 @@
 
 	let running = $derived(project.state === 'running');
 	let agents = $derived<AgentSignal[]>(running ? (project.signals?.agents ?? []) : []);
+	// A message is typed into a terminal; an agent outside one (Claude
+	// Desktop's, I-1676) is listed above and cannot take it.
+	let typable = $derived(agents.filter((a) => !noTerminal(a)));
 	let chosen = $state<string | undefined>(undefined);
-	let target = $derived(pickWindow(agents, thread, chosen));
-	let targetAgent = $derived(agents.find((a) => (a.window || a.agent) === target));
+	let target = $derived(pickWindow(typable, thread, chosen));
+	let targetAgent = $derived(typable.find((a) => (a.window || a.agent) === target));
 
 	let draft = $state('');
 	let sending = $state(false);
@@ -182,7 +185,9 @@
 			? 'The machine is not running.'
 			: agents.length === 0
 				? 'No agent is running on this machine.'
-				: undefined
+				: typable.length === 0
+					? `${[...new Set(agents.map((a) => a.agent))].join(' and ')} runs outside a terminal repose can type into.`
+					: undefined
 	);
 
 	/** The agent named on an item, with its window when that differs. */
@@ -264,10 +269,10 @@
 			></textarea>
 			<div class="bar">
 				<div class="to">
-					{#if agents.length > 1}
+					{#if typable.length > 1}
 						<label for="convo-to" class="hk-sr">To</label>
 						<select id="convo-to" class="to-select" bind:value={() => target, (v) => (chosen = v)}>
-							{#each agents as a (a.window || a.agent)}
+							{#each typable as a (a.window || a.agent)}
 								<option value={a.window || a.agent}
 									>{a.window || a.agent}{agentStateLabel(a.state)
 										? ` · ${agentStateLabel(a.state)}`

@@ -271,3 +271,17 @@ func TestMapClaudeUserPromptSubmit(t *testing.T) {
 		t.Fatalf("task notification: %+v %v, want kind resume", p, err)
 	}
 }
+
+// TestMapClaudeSessionStartAndEnd (I-1676): the payloads captured from
+// Claude Code 2.1.331 map to the registry's two kinds, with no summary.
+func TestMapClaudeSessionStartAndEnd(t *testing.T) {
+	for file, kind := range map[string]string{"claude/session-start.json": KindSessionStart, "claude/session-end.json": KindSessionEnd} {
+		p, err := Map("claude", fixture(t, file))
+		if err != nil {
+			t.Fatalf("%s: %v", file, err)
+		}
+		if p.Agent != "claude" || p.Kind != kind || p.Summary != "" {
+			t.Errorf("%s: payload = %+v, want kind %s and no summary", file, p, kind)
+		}
+	}
+}

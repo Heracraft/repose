@@ -21,8 +21,16 @@ zone                = "1"
 # GB disk under four times the guests may want more; provisioned IOPS and
 # throughput are billed, so raising them is the owner's call. Raising mbps is
 # also the only lever on the guest park's budget (DECISIONS I-786).
-host_size           = "Standard_D64s_v7"
-host_class          = "azure-d64s-v7"
+#
+# 2026-11-27, owner: host-02 scaled down from Standard_D64s_v7 to
+# Standard_D32s_v7 for the pre-launch runway (ENG-262). Nobody is buying yet
+# and every machine was stopped, so the halved VM saves about $51 a day. It
+# still fits the owner's usual four running plus seven large. Move back to
+# D64s_v7 (and azure-d64s-v7) before launch; after either resize run
+# `repose-admin hosts add --name host-02 --reissue` and re-register so the
+# api's sku, mem_bytes and seats follow (RUNBOOK, I-1076).
+host_size           = "Standard_D32s_v7"
+host_class          = "azure-d32s-v7"
 host_data_disk_gb   = 2048
 host_os_disk_gb     = 512
 host_data_disk_iops = 16000

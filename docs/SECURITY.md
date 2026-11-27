@@ -402,7 +402,18 @@ Rules that hold regardless of convenience. Each names its failure.
   call that counts them; no pane is read, no key is read, and the number
   is a second-resolution timestamp whose only use is deciding whether
   the owner is at the machine. The privacy policy's metering paragraph
-  names it and says it is a time and not what was typed. guestd reads `/proc/<pid>/stat` and
+  names it and says it is a time and not what was typed.
+  `AgentProc` gained `agent_id` and `terminal` (I-1676), and they add
+  nothing about the tenant's processes, so the policy's metering
+  paragraph is unchanged. `agent_id` is opaque: `a` and 16 hex digits of
+  an HMAC-SHA256 of the agent's `pid:starttime` under a random key that
+  guestd keeps in `/run/repose/agent-id.key` and never sends, so the api
+  can tell two agents apart and follow one across samples but never
+  learns a process number; for a herdr pane it is the terminal.
+  `terminal` is `tmux:` or `herdr:` before the window name `tmux_window`
+  already carries. hostd drops an `agent_id` or `terminal` in any other
+  form. The pid, the start time, an agent's conversation id and its
+  inbox path stay in the guest (`/run/repose/agents.json`, root 0600). guestd reads `/proc/<pid>/stat` and
   `/proc/<pid>/status` and nothing else of a process: it never opens
   `/proc/<pid>/cmdline` and never opens `/proc/<pid>/environ`, with the single
   exception below. `TestStraceNeverOpensCmdlineOrEnviron` in

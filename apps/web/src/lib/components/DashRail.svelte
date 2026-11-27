@@ -31,7 +31,7 @@
 	import { planMemoryGB } from '$lib/format';
 	import { holdsMemory } from '$lib/plans';
 	import { frozenSince } from '$lib/frozen';
-	import { notAnsweringSince } from '$lib/answering';
+	import { notAnsweringSince, parkedText } from '$lib/answering';
 	import type { GuestState, Project } from '$lib/api/types';
 	import Snowflake from './Snowflake.svelte';
 	import { notFound } from '$lib/notFound.svelte';
@@ -119,7 +119,9 @@
 		const asks = pendingQuestions.waiting(p.id);
 		const state = frozenSince(p)
 			? 'frozen'
-			: notAnsweringSince(p)
+			: parkedText(p)
+				? 'parked, waiting for your login'
+				: notAnsweringSince(p)
 				? 'running, not answering'
 				: p.state;
 		return `${p.name}, ${state}${asks ? ', waiting on you' : ''}`;

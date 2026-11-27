@@ -38,10 +38,36 @@ func stateWithFrozen(p *Project) string {
 	if frozen(p) {
 		return p.State + " " + frozenWord
 	}
+	if parked(p) {
+		return p.State + " " + parkedWord
+	}
 	if notAnswering(p) {
 		return p.State + " " + notAnsweringWord
 	}
 	return p.State
+}
+
+// parkedWord is what a user reads for a machine parked on a Mac that
+// waits for the Mac's user to log in (DECISIONS I-1672).
+const parkedWord = "parked"
+
+// parked reports whether the api says the machine is parked and waiting:
+// its memory is kept, and it runs again at the login. Never also not
+// answering or frozen.
+func parked(p *Project) bool {
+	return p != nil && p.State == "running" && p.Parked != nil
+}
+
+// parkedLine is the line under `ls` and `status` for such a machine.
+func parkedLine(p *Project) string {
+	if !parked(p) {
+		return ""
+	}
+	where := "its Mac"
+	if p.HostName != "" {
+		where = p.HostName
+	}
+	return fmt.Sprintf("parked; it waits for you to log in to %s, and its memory is kept.", where)
 }
 
 // notAnsweringWord is what a user reads for a running machine whose
@@ -52,7 +78,7 @@ const notAnsweringWord = "not answering"
 // notAnswering reports whether the api says the machine has stopped
 // answering. A frozen machine never is: its guestd is paused on purpose.
 func notAnswering(p *Project) bool {
-	return p != nil && p.State == "running" && p.NotAnswering != nil && !frozen(p)
+	return p != nil && p.State == "running" && p.NotAnswering != nil && !frozen(p) && !parked(p)
 }
 
 // notAnsweringLine is the line under `ls` and `status` for such a

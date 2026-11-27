@@ -42,7 +42,7 @@ collaboration or a software factory.
 
 ## The page (I-1452, amending I-1446, I-1212, I-961, I-843, I-287)
 
-**Superseded by I-1552 (2026-11-22).** The page is now: the hero ("A sandbox per repo, with undo", `HeroVisual.svelte`, the install command and the price line), 01 a scroll-driven quarter wheel of three beats (`ScrollWheel.svelte`), 02 Safety (`Wreck.svelte` on a light stage), 03 Pricing, 04 Start (Cloud, or your machine with `repose login` before `repose host add`). The owner's rules behind it are in `docs/design/landing-council/direction.md` (Part A), which wins where it and this file disagree; the list below is the I-1452 page, kept for its reasons.
+**Superseded by I-1552 (2026-11-22).** The page is now: the hero ("A sandbox per repo, with undo", `HeroVisual.svelte`, the install command and the price line), 01 a scroll-driven quarter wheel of three beats (`ScrollWheel.svelte`), 02 Safety (`Wreck.svelte` on a light stage), 03 Your hardware (`YourHardware.svelte`, and `MacFigures.svelte` behind its switch; I-1674, below), 04 Pricing, 05 Start (Cloud, or your machine with `repose login` before `repose host add`). The owner's rules behind it are in `docs/design/landing-council/direction.md` (Part A), which wins where it and this file disagree; the list below is the I-1452 page, kept for its reasons.
 
 Guide B 13.1, on the 1200px frame every page shares (I-656), laid out as one
 ruled sheet on a 12-column grid with no full-bleed dark slabs interrupting the
@@ -110,6 +110,66 @@ the hero opens with the same head (`01` to `06`) and carries zero looping
    `CodeCopy` rows (`6.1 Install the CLI`, `6.2 Sign in`, `6.3 Run in any
    checkout`, wrapping below 640px), and a flush footer strip linking "Install
    and sign in" and "Run and attach".
+
+## 03 Your hardware (I-1674)
+
+The band says what ships today for a box the reader owns, an x86 box or a
+Mac, between Safety and Pricing, so it stands right before the price that
+carries "Your machine". The core is the hardware; a Mac is a plus (owner,
+2026-11-26: "Let's not lead with Mac please. That's a plus. The core is on
+your hardware."). It replaces no band.
+
+- **Head.** "03 Your hardware", the h2 "Run it on hardware you own", and
+  one docs link on the right, "What it needs" (`/docs/own-hardware`).
+- **Three cells on the thirds** (`YourHardware.svelte`), each its label,
+  a serif title, one paragraph and a small drawn figure, every sentence
+  true of an x86 box and a Mac alike (`own-hardware.md`,
+  `ssh-and-editors.md`): 3.1 "Add a box you already have" ("your new
+  sandboxes go there"; the figure: `repose host add` on the box, `repose
+  run` in any repo), 3.2 "Sandboxes share its memory" (no size; `repose ls` shows what
+  each uses; one bar of the box's memory shared by three sandboxes and the
+  free rest), 3.3 "Reach it from anywhere" (the box dials out; after
+  `repose login` on any laptop, `ssh your-project.repose` reaches it). Cut
+  because not true of both without a condition: "one command" (an x86 box
+  also runs the installer `repose host add` prints), "every new sandbox"
+  (`--host repose` places one on our servers), "starts while 1 GB is free"
+  (a Mac also limits by cores), memory "handed back" (an idle sandbox
+  returns part of it after five minutes). The figures are diagrams of
+  shipped rules and carry no number.
+- **The Mac part, behind one switch.** `MAC_DESIGN2_LIVE` in
+  `apps/web/src/lib/data/mac-figures.ts`. Off (today), the band ends on
+  the three cells. On, it adds `MacFigures.svelte` under an inner rule: an
+  h3 "And on a Mac, each sandbox is its own VM" with the legend (the accent
+  swatch "Each sandbox its own VM", the grey one "Every sandbox inside one
+  Linux VM (repose 0.1.66)") and where and when it was measured, then four
+  compact charts, 3.4 to 3.7: start, snapshots, memory once idle, a
+  restart through `repose host restart`. Four across from 1280px, two from
+  1024px, one below; the cells of a row share their rows (subgrid). Turn
+  it on the day design 2 ships and its public docs say what the charts
+  say; nothing else changes.
+- **One bar idiom** (the Mac charts). A bar is solid to the fastest run and
+  lighter to the slowest, and the Mac head says so; its value, in mono,
+  stands in one column to the right, with words that go with it ("memory
+  kept") under it; the axis is a hairline under the bars' column, labelled
+  at its ends only. Accent for design 2, `--hk-text-4` for the nested
+  layout; no other colour.
+- **Every Mac figure comes from the data file**: the bar's length, its
+  value, the screen reader's sentence (one `aria-label` per chart, the bars
+  hidden) and the notes. A figure there is a measured range with its n,
+  and its comment names who measured it, when and where the raw data is. A
+  comparison that is not like for like says what differs under its chart;
+  a condition (an unlocked Mac for the rest, a restart started by repose
+  for the memory) is said on the page, from the same file.
+- **When a number moves**, edit it in that file and its comment, and
+  nothing else; change an axis's `max` only when a bar would overrun it
+  (`mac-figures.test.ts` fails then, and when a title's claim, "under a
+  second", "in seconds", stops being true of the numbers). Drop a
+  condition the day the shipped design no longer has it.
+- **No motion.** Everything is drawn in its final state; nothing is added
+  to "Motion".
+- **Height.** With the switch on, the desktop page under reduced motion
+  stays under `landing-hero.spec.ts`'s 4,500px (4,348px measured); that is
+  why the Mac charts are compact and four across.
 
 ## Earlier page structure (I-837, I-843, I-1446 — superseded by I-1452)
 

@@ -1079,3 +1079,11 @@ main.landing #pricing .hw-what {
 		bottom: 0.75rem;
 	}
 }
+
+/* ---------- 03 Your hardware (I-1674): the docs link ends on the right text line ---------- */
+
+@media (min-width: 1024px) {
+	.landing #hardware .head > .links {
+		justify-content: flex-end;
+	}
+}

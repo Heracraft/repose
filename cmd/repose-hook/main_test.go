@@ -19,8 +19,9 @@ import (
 type hookSink struct {
 	path string
 
-	mu   sync.Mutex
-	rows []string
+	mu     sync.Mutex
+	rows   []string
+	bodies []map[string]string
 }
 
 func newHookSink(t *testing.T) *hookSink {
@@ -40,6 +41,7 @@ func newHookSink(t *testing.T) *hookSink {
 			}
 			s.mu.Lock()
 			s.rows = append(s.rows, body["agent"]+"|"+body["kind"]+"|"+body["summary"]+"|"+body["window"])
+			s.bodies = append(s.bodies, body)
 			s.mu.Unlock()
 			w.WriteHeader(http.StatusNoContent)
 		}),
@@ -255,5 +257,41 @@ func TestHookNamesAnAgentRunOutsideTheWrappers(t *testing.T) {
 	}
 	if len(sink.all()) != 2 {
 		t.Fatalf("posted = %v", sink.all())
+	}
+}
+
+// TestDesktopSessionHooksCarryTheSession (I-1676): Claude Desktop's own
+// Claude Code, outside the wrappers and outside tmux, posts its
+// SessionStart and SessionEnd with the conversation id and its inbox
+// socket's path, and never the inbox token.
+func TestDesktopSessionHooksCarryTheSession(t *testing.T) {
+	sink := newHookSink(t)
+	bin := buildHook(t)
+	env := []string{"REPOSE_HOOK_SOCKET=" + sink.path, "REPOSE_HOOK_AGENT=", "REPOSE_AGENT=",
+		"CLAUDE_CODE_MESSAGING_SOCKET=/tmp/claude-1000/cc/inbox.sock", "CLAUDE_CODE_MESSAGING_TOKEN=s3cret-token"}
+	for _, f := range []string{"session-start.json", "session-end.json"} {
+		payload, err := os.ReadFile(filepath.Join("..", "..", "internal", "guestd", "hooks", "testdata", "claude", f))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if code, out := runHook(t, bin, string(payload), env); code != 0 || out != "" {
+			t.Fatalf("%s: exit = %d; output: %s", f, code, out)
+		}
+	}
+	got := sink.all()
+	if len(got) != 2 || got[0] != "claude|session_start||" || got[1] != "claude|session_end||" {
+		t.Fatalf("posted = %v", got)
+	}
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+	for _, b := range sink.bodies {
+		if b["session_id"] != "08b87fc9-c37a-4bc4-b0af-a55bc5dfc98a" || b["inbox"] != "/tmp/claude-1000/cc/inbox.sock" {
+			t.Fatalf("body = %v", b)
+		}
+		for k, v := range b {
+			if strings.Contains(v, "s3cret") {
+				t.Fatalf("the inbox token went out in %q", k)
+			}
+		}
 	}
 }

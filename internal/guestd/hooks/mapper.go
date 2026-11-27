@@ -155,6 +155,13 @@ func mapClaude(payload []byte) (Payload, error) {
 			return Payload{}, ErrNoEvent
 		}
 		return Payload{Agent: "claude", Kind: "needs_input", Summary: truncate(h.Message, SummaryCap)}, nil
+	case "SessionStart":
+		// The agent registry's start and end (DECISIONS I-1676): an
+		// agent with no terminal is listed from its start, at its
+		// prompt, and leaves the list at its end.
+		return Payload{Agent: "claude", Kind: KindSessionStart}, nil
+	case "SessionEnd":
+		return Payload{Agent: "claude", Kind: KindSessionEnd}, nil
 	case "StopFailure":
 		summary := h.Error
 		if summary == "" {

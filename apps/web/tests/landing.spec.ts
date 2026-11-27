@@ -1,10 +1,22 @@
-// Landing page contract: 5-chapter layout (Hero + HeroVisual, 01 How it works
-// ScrollWheel, 02 Safety Wreck, 03 Pricing + the Mac mini or Linux server row, 04 Start
+// Landing page contract: 6-chapter layout (Hero + HeroVisual, 01 How it works
+// ScrollWheel, 02 Safety Wreck, 03 Your hardware (I-1674; its Mac figures behind
+// MAC_DESIGN2_LIVE), 04 Pricing +
+// the Mac mini or Linux server row, 05 Start
 // with a Cloud / Your machine toggle), live pricing from lib/plans.ts +
 // GET /public/seats, strict honesty rules, zero horizontal overflow, and
 // preserved `?hero=orbitv1` gallery contract.
 import { test, expect } from '@playwright/test';
 import { setBilling, resetBilling } from './helpers';
+import {
+	MAC_DESIGN2_LIVE,
+	MEASURED,
+	REST,
+	RESTART,
+	SNAPSHOT,
+	START,
+	figure,
+	seconds
+} from '../src/lib/data/mac-figures';
 
 test.afterAll(async () => {
 	await resetBilling();
@@ -204,8 +216,9 @@ test('one numbering: the chapters and start steps', async ({ page }) => {
 	await expect(page.locator('#agents .sw-desktop .num')).toHaveText('01 Setup');
 	await expect(page.locator('main .band > .head > .num')).toHaveText([
 		'02 Safety',
-		'03 Pricing',
-		'04 Start'
+		'03 Your hardware',
+		'04 Pricing',
+		'05 Start'
 	]);
 	// The steps are an ordered list; they carry no 4.n numbers of their own.
 	await expect(page.locator('.steps .step-title .label')).toHaveCount(0);
@@ -343,4 +356,87 @@ test('the Orbit keeps its contract as a gallery candidate', async ({ browser }) 
 	expect(await page.evaluate(() => document.getAnimations().length)).toBe(0);
 	await expect(page.locator('.orb-frame')).not.toHaveAttribute('data-motion', 'play');
 	await context.close();
+});
+
+test('03 Your hardware says what ships for a box you own, and the Mac figures only behind their switch', async ({
+	page
+}) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto('/');
+	const hw = page.locator('section#hardware');
+	await expect(hw.getByRole('heading', { level: 2 })).toHaveText('Run it on hardware you own');
+	await expect(hw.getByRole('link', { name: 'What it needs' })).toHaveAttribute(
+		'href',
+		'/docs/own-hardware'
+	);
+	await expect(hw.locator('.yh .item-title')).toHaveText([
+		'Add a box you already have',
+		'Sandboxes share its memory',
+		'Reach it from anywhere'
+	]);
+	await expect(hw.locator('.yh')).toContainText('your new sandboxes go there');
+	await expect(hw.locator('.yh')).toContainText('repose ls shows what each one uses');
+	// Checked against own-hardware.md for both an x86 box and a Mac (I-1674): none of
+	// these is true of both without a condition, so none is on the page.
+	for (const cut of [/one command/, /every new sandbox/, /1 GB is free/, /hands? back/])
+		expect((await hw.locator('.yh').textContent())!).not.toMatch(cut);
+	await expect(hw.locator('.yh')).toContainText('ssh your-project.repose');
+	// Design 2 is not shipped: with the switch off nothing of it is on the page.
+	await expect(hw.getByTestId('mac-figures')).toHaveCount(MAC_DESIGN2_LIVE ? 1 : 0);
+	if (!MAC_DESIGN2_LIVE) {
+		const text = (await hw.textContent())!;
+		for (const held of ['host restart', 'own VM', 'APFS', /\bseconds?\b/])
+			expect(text).not.toMatch(held);
+	}
+});
+
+test('the Mac part draws every figure from lib/data/mac-figures.ts and says where it was measured', async ({
+	page
+}) => {
+	test.skip(!MAC_DESIGN2_LIVE, 'design 2 is not shipped: MAC_DESIGN2_LIVE is off');
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto('/');
+	const mac = page.locator('section#hardware');
+	await expect(mac.getByRole('heading', { level: 3, name: /^And on a Mac/ })).toHaveText(
+		'And on a Mac, each sandbox is its own VM'
+	);
+	await expect(mac.locator('.mf-where')).toContainText(
+		`Measured on ${MEASURED.machine}, ${MEASURED.date}.`
+	);
+	await expect(mac.locator('ul.mf .item-title')).toHaveText([
+		'Start in seconds',
+		'Restore a snapshot in seconds',
+		'Stopped sandboxes give memory back',
+		'Restart and keep memory, when there is room'
+	]);
+	// Each value on the page is the data file's, formatted once.
+	const vals = (await mac.locator('.mf-val').allTextContents()).map((t) => t.trim());
+	for (const c of [START, SNAPSHOT, REST.chart, RESTART]) {
+		for (const r of c.rows) {
+			expect(vals).toContain(figure(r.own, c.unit) + (r.ownSays ?? ''));
+			expect(vals).toContain(figure(r.nested, c.unit) + (r.nestedSays ?? ''));
+		}
+	}
+	await expect(mac.locator('ul.mf .copy').nth(0)).toContainText(
+		`your next command wakes it in ${seconds(REST.wake)}`
+	);
+	// The conditions travel with the figures.
+	await expect(mac.locator('ul.mf .copy').nth(0)).toContainText('keeps its memory');
+	await expect(mac.locator('ul.mf .copy').nth(1)).toContainText('refuses when the disk');
+	await expect(mac.locator('.mf-note')).toHaveText([
+		START.note!,
+		SNAPSHOT.note!,
+		REST.chart.note!,
+		RESTART.note!
+	]);
+	// A bar's length is its figure on its chart's axis.
+	const startBar = mac.locator('.mf-chart').first().locator('.mf-own').first();
+	const w = await startBar.evaluate((e) => (e as HTMLElement).style.width);
+	expect(parseFloat(w)).toBeCloseTo((START.rows[0].own.lo / START.max) * 100, 3);
+	// Screen readers get one sentence per chart; the bars are hidden from them.
+	await expect(mac.locator('.mf-chart[role="img"]')).toHaveCount(4);
+	await expect(mac.locator('.mf-chart').first()).toHaveAttribute(
+		'aria-label',
+		new RegExp(`New sandbox from your repo: each sandbox its own VM ${seconds(START.rows[0].own)}`)
+	);
 });

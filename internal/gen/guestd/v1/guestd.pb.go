@@ -2466,6 +2466,9 @@ func (x *Ready) GetBootId() string {
 // link_url and link_label are the `--link URL --label TEXT` of a
 // repose-notify (DECISIONS I-931), checked by internal/msglink; empty on
 // every other event.
+// agent_id is AgentProc.agent_id (DECISIONS I-1676): the agent's process
+// as "pid:starttime", set for an agent with no terminal and for a tmux
+// agent whose process guestd found; empty from an older guestd.
 type AgentEvent struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Agent         string                 `protobuf:"bytes,1,opt,name=agent,proto3" json:"agent,omitempty"`
@@ -2474,6 +2477,7 @@ type AgentEvent struct {
 	Summary       string                 `protobuf:"bytes,4,opt,name=summary,proto3" json:"summary,omitempty"`
 	LinkUrl       string                 `protobuf:"bytes,5,opt,name=link_url,json=linkUrl,proto3" json:"link_url,omitempty"`
 	LinkLabel     string                 `protobuf:"bytes,6,opt,name=link_label,json=linkLabel,proto3" json:"link_label,omitempty"`
+	AgentId       string                 `protobuf:"bytes,7,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2550,11 +2554,19 @@ func (x *AgentEvent) GetLinkLabel() string {
 	return ""
 }
 
+func (x *AgentEvent) GetAgentId() string {
+	if x != nil {
+		return x.AgentId
+	}
+	return ""
+}
+
 type AgentState struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Agent         string                 `protobuf:"bytes,1,opt,name=agent,proto3" json:"agent,omitempty"`
 	TmuxWindow    string                 `protobuf:"bytes,2,opt,name=tmux_window,json=tmuxWindow,proto3" json:"tmux_window,omitempty"`
 	State         string                 `protobuf:"bytes,3,opt,name=state,proto3" json:"state,omitempty"`
+	AgentId       string                 `protobuf:"bytes,4,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2606,6 +2618,13 @@ func (x *AgentState) GetTmuxWindow() string {
 func (x *AgentState) GetState() string {
 	if x != nil {
 		return x.State
+	}
+	return ""
+}
+
+func (x *AgentState) GetAgentId() string {
+	if x != nil {
+		return x.AgentId
 	}
 	return ""
 }
@@ -3288,7 +3307,7 @@ const file_repose_guestd_v1_guestd_proto_rawDesc = "" +
 	"apply_menu\x18\x11 \x01(\v2#.repose.guestd.v1.ApplyMenuProgressH\x00R\tapplyMenuB\b\n" +
 	"\x06result\" \n" +
 	"\x05Ready\x12\x17\n" +
-	"\aboot_id\x18\x01 \x01(\tR\x06bootId\"\xab\x01\n" +
+	"\aboot_id\x18\x01 \x01(\tR\x06bootId\"\xc6\x01\n" +
 	"\n" +
 	"AgentEvent\x12\x14\n" +
 	"\x05agent\x18\x01 \x01(\tR\x05agent\x12\x1f\n" +
@@ -3298,13 +3317,15 @@ const file_repose_guestd_v1_guestd_proto_rawDesc = "" +
 	"\asummary\x18\x04 \x01(\tR\asummary\x12\x19\n" +
 	"\blink_url\x18\x05 \x01(\tR\alinkUrl\x12\x1d\n" +
 	"\n" +
-	"link_label\x18\x06 \x01(\tR\tlinkLabel\"Y\n" +
+	"link_label\x18\x06 \x01(\tR\tlinkLabel\x12\x19\n" +
+	"\bagent_id\x18\a \x01(\tR\aagentId\"t\n" +
 	"\n" +
 	"AgentState\x12\x14\n" +
 	"\x05agent\x18\x01 \x01(\tR\x05agent\x12\x1f\n" +
 	"\vtmux_window\x18\x02 \x01(\tR\n" +
 	"tmuxWindow\x12\x14\n" +
-	"\x05state\x18\x03 \x01(\tR\x05state\"5\n" +
+	"\x05state\x18\x03 \x01(\tR\x05state\x12\x19\n" +
+	"\bagent_id\x18\x04 \x01(\tR\aagentId\"5\n" +
 	"\aWarning\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x16\n" +
 	"\x06detail\x18\x02 \x01(\tR\x06detail\"\xad\x02\n" +

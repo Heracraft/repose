@@ -147,6 +147,11 @@ type Project struct {
 	// answered for about three minutes (DECISIONS I-1652): hung, its
 	// memory full or its kernel stuck. Absent from older apis.
 	NotAnswering *ProjectNotAnswering `json:"not_answering,omitempty"`
+	// Parked is set while a machine on a Mac without the appliance is
+	// parked and waits for the Mac's user to log in before it runs again,
+	// with its memory kept (DECISIONS I-1672). Absent from older apis and
+	// on every other host.
+	Parked *ProjectParked `json:"parked,omitempty"`
 	// KeepAwake is set while the project is held awake from its Config
 	// page: the api never freezes it (DECISIONS I-820). Set there, as
 	// hold_base_updates is, with no CLI flag.
@@ -181,6 +186,13 @@ type ProjectNotAnswering struct {
 	Since time.Time `json:"since"`
 }
 
+// ProjectParked is Project.parked: when the machine was parked, and what
+// it waits for (`login`).
+type ProjectParked struct {
+	Since    time.Time `json:"since"`
+	WaitsFor string    `json:"waits_for"`
+}
+
 // ProjectResting is Project.resting: when the machine was frozen.
 type ProjectResting struct {
 	Since time.Time `json:"since"`
@@ -207,7 +219,20 @@ type AgentSignal struct {
 	Agent  string `json:"agent"`
 	Window string `json:"window"`
 	State  string `json:"state"`
+	// AgentID is an opaque id for the agent, or its terminal (DECISIONS
+	// I-1676); Terminal is "tmux:<window>", "herdr:<key>", or "" for an
+	// agent that runs outside any terminal repose can see (Claude
+	// Desktop's). An older api sends neither.
+	AgentID  string `json:"agent_id,omitempty"`
+	Terminal string `json:"terminal,omitempty"`
 }
+
+// noTerminal reports whether an agent runs outside any terminal repose
+// can see: an api with I-1676 says so with an id and no window.
+func (a AgentSignal) noTerminal() bool { return a.Window == "" && a.AgentID != "" }
+
+// noTerminalWords is what the lists say where a window name goes.
+const noTerminalWords = "no terminal"
 
 type Op struct {
 	State  string  `json:"state"`

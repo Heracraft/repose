@@ -117,13 +117,19 @@ func (w *Watcher) strayQuiet(sshSessions uint32) bool {
 	return true
 }
 
-// agentWorking reports whether any agent window is in a state the freeze
-// counts as work: anything but idle and needs_input.
+// agentWorking reports whether any agent, in a window or outside one
+// (the registry, DECISIONS I-1676), is in a state the freeze counts as
+// work: anything but idle and needs_input.
 func (w *Watcher) agentWorking() bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	for _, ws := range w.windows {
 		if ws.state != StateIdle && ws.state != StateNeedsInput {
+			return true
+		}
+	}
+	for _, r := range w.agents {
+		if r.state != StateIdle && r.state != StateNeedsInput {
 			return true
 		}
 	}

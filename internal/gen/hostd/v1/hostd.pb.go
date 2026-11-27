@@ -4938,11 +4938,19 @@ func (x *BuildLog) GetLine() string {
 
 // tmux_window: a tmux window name or a herdr agent key, at most 64 bytes
 // (DECISIONS I-504).
+// AgentProc is one running agent (DECISIONS I-1676). agent_id is the
+// agent's process as "pid:starttime", or, where guestd knows no process
+// (a herdr pane), the terminal; an older guestd sends none and the api
+// derives "tmux:<tmux_window>". tmux_window is the tmux window name or
+// herdr agent key, empty for an agent with no terminal. terminal is
+// "tmux:<window>", "herdr:<key>" or empty.
 type AgentProc struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Agent         string                 `protobuf:"bytes,1,opt,name=agent,proto3" json:"agent,omitempty"`
 	TmuxWindow    string                 `protobuf:"bytes,2,opt,name=tmux_window,json=tmuxWindow,proto3" json:"tmux_window,omitempty"`
 	State         string                 `protobuf:"bytes,3,opt,name=state,proto3" json:"state,omitempty"`
+	AgentId       string                 `protobuf:"bytes,4,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	Terminal      string                 `protobuf:"bytes,5,opt,name=terminal,proto3" json:"terminal,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4994,6 +5002,20 @@ func (x *AgentProc) GetTmuxWindow() string {
 func (x *AgentProc) GetState() string {
 	if x != nil {
 		return x.State
+	}
+	return ""
+}
+
+func (x *AgentProc) GetAgentId() string {
+	if x != nil {
+		return x.AgentId
+	}
+	return ""
+}
+
+func (x *AgentProc) GetTerminal() string {
+	if x != nil {
+		return x.Terminal
 	}
 	return ""
 }
@@ -5598,8 +5620,11 @@ type AgentEvent struct {
 	TmuxWindow string `protobuf:"bytes,5,opt,name=tmux_window,json=tmuxWindow,proto3" json:"tmux_window,omitempty"`
 	// The link a `repose-notify --link URL --label TEXT` attached
 	// (DECISIONS I-931), as internal/msglink checked it; tenant content.
-	LinkUrl       string `protobuf:"bytes,6,opt,name=link_url,json=linkUrl,proto3" json:"link_url,omitempty"`
-	LinkLabel     string `protobuf:"bytes,7,opt,name=link_label,json=linkLabel,proto3" json:"link_label,omitempty"`
+	LinkUrl   string `protobuf:"bytes,6,opt,name=link_url,json=linkUrl,proto3" json:"link_url,omitempty"`
+	LinkLabel string `protobuf:"bytes,7,opt,name=link_label,json=linkLabel,proto3" json:"link_label,omitempty"`
+	// The agent the hook came from, as AgentProc.agent_id (I-1676); empty
+	// from an older guestd.
+	AgentId       string `protobuf:"bytes,8,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5679,6 +5704,13 @@ func (x *AgentEvent) GetLinkUrl() string {
 func (x *AgentEvent) GetLinkLabel() string {
 	if x != nil {
 		return x.LinkLabel
+	}
+	return ""
+}
+
+func (x *AgentEvent) GetAgentId() string {
+	if x != nil {
+		return x.AgentId
 	}
 	return ""
 }
@@ -6964,12 +6996,14 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\x12\x10\n" +
 	"\x03seq\x18\x02 \x01(\x04R\x03seq\x12\x12\n" +
-	"\x04line\x18\x03 \x01(\tR\x04line\"X\n" +
+	"\x04line\x18\x03 \x01(\tR\x04line\"\x8f\x01\n" +
 	"\tAgentProc\x12\x14\n" +
 	"\x05agent\x18\x01 \x01(\tR\x05agent\x12\x1f\n" +
 	"\vtmux_window\x18\x02 \x01(\tR\n" +
 	"tmuxWindow\x12\x14\n" +
-	"\x05state\x18\x03 \x01(\tR\x05state\"_\n" +
+	"\x05state\x18\x03 \x01(\tR\x05state\x12\x19\n" +
+	"\bagent_id\x18\x04 \x01(\tR\aagentId\x12\x1a\n" +
+	"\bterminal\x18\x05 \x01(\tR\bterminal\"_\n" +
 	"\n" +
 	"ProcSample\x12\x12\n" +
 	"\x04comm\x18\x01 \x01(\tR\x04comm\x12 \n" +
@@ -7022,7 +7056,7 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"\x11GuestStateChanged\x12\x19\n" +
 	"\bguest_id\x18\x01 \x01(\tR\aguestId\x12\x14\n" +
 	"\x05state\x18\x02 \x01(\tR\x05state\x12\x16\n" +
-	"\x06reason\x18\x03 \x01(\tR\x06reason\"\xc6\x01\n" +
+	"\x06reason\x18\x03 \x01(\tR\x06reason\"\xe1\x01\n" +
 	"\n" +
 	"AgentEvent\x12\x19\n" +
 	"\bguest_id\x18\x01 \x01(\tR\aguestId\x12\x14\n" +
@@ -7033,7 +7067,8 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"tmuxWindow\x12\x19\n" +
 	"\blink_url\x18\x06 \x01(\tR\alinkUrl\x12\x1d\n" +
 	"\n" +
-	"link_label\x18\a \x01(\tR\tlinkLabel\"\xcd\x02\n" +
+	"link_label\x18\a \x01(\tR\tlinkLabel\x12\x19\n" +
+	"\bagent_id\x18\b \x01(\tR\aagentId\"\xcd\x02\n" +
 	"\rAgentQuestion\x12\x19\n" +
 	"\bguest_id\x18\x01 \x01(\tR\aguestId\x12\x1f\n" +
 	"\vquestion_id\x18\x02 \x01(\tR\n" +

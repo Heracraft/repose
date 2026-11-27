@@ -427,7 +427,19 @@ deciding otherwise.
    numerator of the seat ceiling and of placement, so the fleet keeps
    selling the old host's seats and `hosts list` keeps reporting the old
    memory. `hosts add --name <name> --reissue` and a re-register are what
-   update them (I-1076). New projects go
+   update them (I-1076). On a host that is already registered,
+   `repose-register` is skipped while `host.json` exists, so the
+   re-register is: write the token to `/run/repose/join-token` (0600),
+   copy `host.json`, `cert.pem` and `key.pem` out of
+   `/var/lib/repose/hostd`, then in one detached unit (the session can
+   drop when `repose-host-net` restarts) `systemctl stop hostd`, move
+   `host.json` aside, `systemctl start repose-register`, `systemctl start
+   hostd`. A `systemd-run` unit needs
+   `-p Environment=PATH=/run/current-system/sw/bin`, or `mv` is not
+   found and hostd comes back on the old certificate. The host keeps its
+   id, guest range and WireGuard address. A drain survives it: after
+   `hosts undrain` also run `hostd undrain` on the host (2026-11-27,
+   ENG-262). New projects go
    to the new host, but a project is pinned to its host for life, so this
    one only cools as its own guests stop. `repose-admin hosts drain
    host-NN` stops placements on it immediately if the apply has to wait.

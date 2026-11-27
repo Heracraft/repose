@@ -317,7 +317,9 @@
 				<h3>Your agent, on a machine of its own</h3>
 				<div class="win">
 					<div class="head">
-						<span class="ag">{@render markSvg(claude, 18)}<span class="bd">{claude.name}</span></span>
+						<span class="ag"
+							>{@render markSvg(claude, 18)}<span class="bd">{claude.name}</span></span
+						>
 						<span class="state"
 							><i class="run"></i><span class="sw"
 								><span class="s-run">running</span><span class="s-frz">frozen</span></span

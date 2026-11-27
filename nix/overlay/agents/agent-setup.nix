@@ -3,7 +3,8 @@
 # pre-existing hook survives), exits 0 on every path so a wrapper can `|| true`.
 #
 # claude   ~/.claude/settings.json  hooks.Notification / hooks.Stop /
-#          hooks.UserPromptSubmit entries (each event the platform file
+#          hooks.UserPromptSubmit / hooks.SessionStart / hooks.SessionEnd
+#          (I-1676) entries (each event the platform file
 #          has) running `repose-hook` are added unless an entry whose command
 #          contains "repose-hook" already exists under that event;
 #          permissions.defaultMode and skipDangerousModePermissionPrompt

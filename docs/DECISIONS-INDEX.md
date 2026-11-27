@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1157 entries.
+1161 entries.
 
 ## Scope
 
@@ -283,7 +283,7 @@ pointer, not a summary.
 - **I-197** Gitignored `.env` files travel over SSH at `run` — amended by I-422; L4394
 - **I-198** The guest's timezone follows the laptop on every `run` and `attach`, — L4408
 - **I-199** Ports are auto-forwarded while a CLI session is attached — amended by I-1106; L4413
-- **I-200** Agents outlive dev servers under memory pressure; nothing is killed on a timer — amended by I-505; amended by I-576; amended by I-1124; L4426
+- **I-200** Agents outlive dev servers under memory pressure; nothing is killed on a timer — amended by I-505; amended by I-576; amended by I-1124; amended by I-1676; L4426
 - **I-201** `repose cp` — amended by I-1234; L4438
 - **I-202** Each host runs a pull-through cache for the npm registry and for Docker Hub — L4443
 - **I-203** The first sync of a large GitHub repository clones in the guest — amended by I-713; amended by I-714; L4451
@@ -589,7 +589,7 @@ pointer, not a summary.
 - **I-503** guestd starts the session unit `project.json` names, and the path unit goes — 2026-10-05; amended by I-551; L14282
 - **I-504** guestd reads herdr's agents from its socket, on every machine, by polling `agent.list` — 2026-10-05; amended by I-561; amended by I-688; amended by I-694; L14298
 - **I-505** The herdr server and its agents get I-200's memory protection and run at nice -5 — 2026-10-05; amended by I-535; amended by I-576; L14328
-- **I-506** A hook's window may be `herdr:<pane_id>`, sent by repose-hook; a window that resolves to no pane changes no agent's state — 2026-10-05; amended by I-561; L14347
+- **I-506** A hook's window may be `herdr:<pane_id>`, sent by repose-hook; a window that resolves to no pane changes no agent's state — 2026-10-05; amended by I-561; amended by I-1676; L14347
 - **I-507** `herdr_down` joins the guest warning kinds — 2026-10-05; amended by I-562; L14362
 - **I-508** Under herdr, secrets, TZ and PATH reach panes through the login shell, `BASH_ENV` and the wrappers — 2026-10-05; amended by I-563; L14373
 - **I-509** On a herdr project, `run "prompt"`, attach, `ps`, `paste`, messages and the temporary session end go through herdr, and `run` in a laptop herdr pane opens no client — 2026-10-05; amended by I-542; amended by I-596; amended by I-597; amended by I-598; amended by I-606; L14392
@@ -664,7 +664,7 @@ pointer, not a summary.
 - **I-618** `sync`'s remote flags stash and say where; the no-op line counts commits and files apart; carry lines print when they change; `run`'s not-synced line reaches the attached screen; `PROJECT:CHECKOUT` is refused where it is ignored, and `rm PROJECT:CHECKOUT` removes the checkout — 2026-10-08; amended by I-629; amended by I-633; amended by I-1100; L16983
 - **I-616** `repose status` is labelled rows with the checkout's git state; `ls` and `status` drop the running hours, show the plan, and mark the project this folder acts on — 2026-10-08; amended by I-633; amended by I-634; amended by I-638; amended by I-1106; partly reversed by I-1390; amended by I-1392; L17068
 - **I-617** One vocabulary for agents and machines: agents are `working`, `idle` or `needs input`; a machine nobody used for a day is unused — 2026-10-08; amended by I-629; amended by I-634; L17157
-- **I-606** Agents are addressed by window: `ps` shows each one's state and tree and prints its last lines, and `attach` opens a named window — 2026-10-08; amended by I-629; amended by I-631; amended by I-634; amended by I-636; amended by I-639; L17183
+- **I-606** Agents are addressed by window: `ps` shows each one's state and tree and prints its last lines, and `attach` opens a named window — 2026-10-08; amended by I-629; amended by I-631; amended by I-634; amended by I-636; amended by I-639; amended by I-1676; L17183
 - **I-607** The first `run -p` without a Claude Code login types the prompt after the login; `-d` is `--no-attach`, and it names the window — 2026-10-08; L17237
 - **I-608** `exec --workdir DIR`, and `reply` takes any project's name as PROJECT — 2026-10-08; L17279
 - **I-609** Streams and script output: `--since` is parsed and checked, `logs --kind ops` prints the api's fields, `events` reads as a table and covers every project outside a checkout, streams' `--json` is one object per line, and the commands that change a project take `--json` — 2026-10-08; amended by I-629; amended by I-631; L17297
@@ -750,7 +750,7 @@ pointer, not a summary.
 - **I-691** Notification delivery repairs: the hourly cap counts sends, one slow endpoint no longer holds every user, and a failure never stores a URL (notify-revamp, 2026-10-12). Amends I-445 and workstream 13 §5.6 — L21085
 - **I-692** Google Chat is a third channel (notify-revamp, 2026-10-12). Amends I-444 — amended by I-731; L21099
 - **I-693** Questions on the dashboard: one row, answered where you see it (notify-revamp, 2026-10-12). Amends I-664, I-680 — amended by I-837; amended by I-841; L21112
-- **I-694** The agent column reports only what a hook proves (notify-revamp, 2026-10-12). Amends I-49, I-504, I-614 — L21123
+- **I-694** The agent column reports only what a hook proves (notify-revamp, 2026-10-12). Amends I-49, I-504, I-614 — amended by I-1676; L21123
 - **I-695** What the notify-revamp branch leaves for later (notify-revamp, 2026-10-12) — L21132
 - **I-710** `repose stop` returns once the stop is under way; `--wait` waits; a stop that fails notifies (stop-background, 2026-10-13). Amends I-570, I-614, I-634 — amended by I-730; amended by I-740; L21138
 - **I-711** New machines stay `large` by default on every plan, Solo included (stop-background, 2026-10-13) — L21154
@@ -1139,7 +1139,7 @@ pointer, not a summary.
 - **I-1542** A snapshot kept on the account's own host is marked `gone_with_host` (the host's name) when that host is removed, and the api lists it as gone, never restorable, and refuses a restore of it before writing anything (nonix-config-cli-web-5, 2026-11-22) — L39250
 - **I-1544** The CLI says where an own-host machine's snapshot is and what removing the host does: `repose rm` "Its final snapshot is kept on your host NAME; removing the host deletes it." (one line, also in the question), `host rm` "This deletes the N snapshot(s) kept on it; repose has no copy.", `ls --destroyed` and `snapshots list` "gone with host NAME" (nonix-config-cli-web-5, 2026-11-22) — L39257
 - **I-1546** The dashboard says the same: Settings > Hosts' Remove question counts the snapshots it deletes; Recently destroyed and the Snapshots tab show "gone with host NAME" with no Restore; the Overview's Destroy card and its toast say where an own-host machine's snapshot is kept (nonix-config-cli-web-5, 2026-11-22) — L39261
-- **I-1552** The landing page is redrawn to show rather than tell: a figure hero ("A sandbox per repo, with undo"), a three-beat scroll-driven quarter wheel (where it runs, accounts, your tools), the wreck-and-restore picture on a light stage, pricing with memory bars, and a Start that signs in before `repose host add`; brand colours only, no gradients, never "own hardware" (landing-redesign, 2026-11-22) — L39263
+- **I-1552** The landing page is redrawn to show rather than tell: a figure hero ("A sandbox per repo, with undo"), a three-beat scroll-driven quarter wheel (where it runs, accounts, your tools), the wreck-and-restore picture on a light stage, pricing with memory bars, and a Start that signs in before `repose host add`; brand colours only, no gradients, never "own hardware" (landing-redesign, 2026-11-22) — partly amended by I-1674; L39263
 - **I-1550** Every guest@ unit on a host without Nix stops before the image cache volume goes: its drop-in orders it After= `repose-images-volume.service` and `blk-availability.service` and RequiresMountsFor=/var/lib/repose/images, and build.sh refuses an appliance without it (nonix-appliances-6, 2026-11-22) — L39270
 - **I-1548** A destroy on a host that is lost or retired finishes without the host: a destroy command waiting on such a host is dropped and the plan goes on, a destroy that failed `host_unreachable` is run again by the engine, and a snapshot the account's own host kept is marked `gone_with_host` (nonix-contracts-4, 2026-11-22) — L39275
 - **I-1554** The erofs guest's `/usr/local/bin` scripts are source and tracked in git, and the image build fails when a systemd unit names a `/usr/local` path the root does not have, or one that is not executable (guest-bin-fix, 2026-11-22) — L39282
@@ -1161,7 +1161,7 @@ pointer, not a summary.
 - **I-1600** The x86 installer checks the kernel's CVE-2026-99999 fix after its apt-get update, by version first and by changelog after, and says "does not carry" or "could not check" rather than one sentence for both; its Ubuntu remedy installs the newest kernel of the series the box runs instead of a full upgrade (installer-kernel, 2026-11-24) — L39415
 - **I-1598** A host's guest range and hub address come from the lowest free slot, not the next value of `host_seq`, and one account may have ten hosts that have not joined yet (host-names, 2026-11-24) — L39424
 - **I-1606** Open in Claude: the project page's Connect card and `repose code --editor claude` open the machine in Claude Desktop through Desktop's own documented link, `claude://code/new?ssh_host=<slug>.repose&ssh_folder=<folder>`; a stopped machine starts first, a frozen one needs nothing (open-in-claude, 2026-11-24) — L39434
-- **I-1608** `repose-hook` names the agent from the hook payload when no `--agent` and no `REPOSE_HOOK_AGENT` does, so an agent that an app runs over SSH outside repose's wrappers, Claude Desktop's own Claude Code, reports its turns (open-in-claude, 2026-11-24) — L39444
+- **I-1608** `repose-hook` names the agent from the hook payload when no `--agent` and no `REPOSE_HOOK_AGENT` does, so an agent that an app runs over SSH outside repose's wrappers, Claude Desktop's own Claude Code, reports its turns (open-in-claude, 2026-11-24) — amended by I-1676; partly amended by I-1678; L39444
 - **I-1610** The api stores the name of a project's checkout under `/home/dev` as the CLI last found it, `projects.checkout` (migration 0053), served as `Project.checkout` and set by `PATCH /projects/:id {checkout}` (open-in-claude, 2026-11-24) — L39452
 - **I-1602** New project on the dashboard is one field and one action: the name is offered and selected, Enter makes the machine with the defaults `repose run` gets, and the other choices sit behind a line that shows them (dashboard-create, 2026-11-24) — amended by I-1612; L39458
 - **I-1604** Say on the dashboard is a conversation: the project's Overview shows what the owner sent and what the agents said back as one thread, with the box for the next message under it; `GET /projects/:id/says` is the owner's half (dashboard-create, 2026-11-24) — L39466
@@ -1189,3 +1189,7 @@ pointer, not a summary.
 - **I-1666** On a Mac the guest park is VZ's save file: hostd's existing park code drives it through repose-vm's `vm.snapshot` and `--restore`, the image is a plain directory, the key the park records protects nothing, and hostd waits for the user's unlocked session before it restores a parked machine (d2-runtime, design 2 program, 2026-11-26) — L39665
 - **I-1668** On macOS hostd's guest network is a gVisor netstack in hostd's own process, one NIC per guest fed by the VM's file-handle attachment, with today's egress rules as checks on every frame a guest sends, its policer and shaper as token buckets and its counters under today's names; it implements `hnet.Net`, so the guest manager is unchanged (d2-net, design 2 program, 2026-11-26) — L39702
 - **I-1670** On macOS the edge tunnel is wireguard-go on a NIC of the same netstack: the gateway's SSH to a guest's port 22 is spliced to the guest from the edge's own address, a guest's hook-ingest connection leaves the tunnel with the guest's own address, and hostd's api connections, registration included, are dials on that NIC (d2-net, design 2 program, 2026-11-26) — L39715
+- **I-1674** The landing gets a band "03 Your hardware" between 02 Safety and Pricing (amended the same day, below; first drafted as "03 Your Mac"): four measured comparisons, on one M4 Mac mini, of each sandbox as its own Virtualization.framework VM against every sandbox inside one Linux VM (start, snapshots, idle memory, a restart through repose), every figure read from `apps/web/src/lib/data/mac-figures.ts`; held on branch `landing-d2` until design 2 ships (landing-d2, design 2 program, 2026-11-26) — L39722
+- **I-1672** A machine parked on a Mac that waits for the Mac's user to log in has a state of its own on the api, `parked: {since, waits_for: "login"}`, and is never called not answering, never offered a restart and never restarted by a start (d2-runtime, design 2 program, 2026-11-26) — L39731
+- **I-1676** An agent is one running agent process, keyed `pid:starttime`; guestd keeps an agent registry for the agents with no terminal repose can see, fed by their hooks, so Claude Desktop's "Open in Claude" session is listed with its state (agent-registry, stage 1 of docs/proposals/2026-11-26-agent-model.md, 2026-11-26) — L39738
+- **I-1678** The lists say `no terminal` where a window name goes for an agent outside any terminal, and the two commands that need a terminal say where it runs instead of failing as if it were gone (agent-registry, 2026-11-26) — L39750

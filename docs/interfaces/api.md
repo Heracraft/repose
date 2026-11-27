@@ -185,8 +185,8 @@ Project { id, name, slug, remote_url, class, state, host_id?, host_name?, guest_
           agent_default, hold_base_updates, base_version, config_revision_id,
           volume_bytes, disk_used_bytes?, created_at, started_at?,
           root_used_bytes?, root_size_bytes?,          -- the guest's root filesystem (I-567)
-          signals?: {ssh_sessions, tmux_clients, agents: [{agent, window, state}],
-                     guestd_ok},
+          signals?: {ssh_sessions, tmux_clients, agents: [{agent, window, state, agent_id, terminal}],
+                     guestd_ok},                   -- agent_id, terminal: I-1676 (below)
           cost_today_cents, cost_month_cents,          -- 0 since I-289, kept one release
           running_seconds_today, running_seconds_month, -- what `repose status` shows (I-289)
           last_snapshot_at?, last_error?, host_unreachable, tz,
@@ -202,7 +202,8 @@ Project { id, name, slug, remote_url, class, state, host_id?, host_name?, guest_
           checkout,                                    -- the checkout's name under /home/dev, "" none, null unknown (I-1610)
           sized,                                       -- false on a host the account owns: class is no size there (I-1632)
           mem_used_bytes?,                             -- running only: memory in use, newest sample (I-1632)
-          not_answering?: {since} }                    -- running, guestd silent ~3 minutes (I-1652)
+          not_answering?: {since},                     -- running, guestd silent ~3 minutes (I-1652)
+          parked?: {since, waits_for} }                -- running, parked on a Mac until its user logs in (I-1672)
                                                        -- host_name: the owned host's name beside host_id,
                                                        -- absent on a host repose runs (I-1392)
 
@@ -294,6 +295,18 @@ first silent one). One `not_answering` event
 running project whose guestd is not answering. An api older than I-1652
 sends nothing.
 
+`parked` (I-1672) is set on a `running` project on a host an account
+owns whose newest sample says the machine is parked and waits for the
+Mac's user to log in (hostd's `parked_waiting_since`, sent only by hostd
+on a Mac without the appliance, where Virtualization.framework restores a
+save file only in the user's unlocked session, I-1662): `since` is when it
+was parked, `waits_for` is `login`. Its memory is kept and it runs again
+at the login, so it is never `not_answering` though its guestd is silent,
+the `not_answering` event is not raised, and `POST /projects/:id/start`
+answers `409 conflict` as for any running machine, never the restart a
+silent guestd gets. A sample from a fleet host never sets it. An api older
+than I-1672 sends nothing, and says `not_answering` instead.
+
 `guest_runtime` (DECISIONS I-1462) is `nix` (a NixOS machine built from
 its configuration, every project before I-1462) or `erofs` (a machine
 that boots the Ubuntu base image, configured with `{menu}` only). It is
@@ -364,6 +377,15 @@ counts tmux clients only and is 0 on herdr, whose clients are in
 that ignores the field in `Project` sees what it saw before. The api
 writes `multiplexer` into `project_json` on every create, start and
 restore (`grpc-hostd.md`, I-26).
+
+`signals.agents[].agent_id` and `terminal` (DECISIONS I-1676): an agent
+outside any terminal repose can see (Claude Desktop's session) has
+`window` and `terminal` empty and `agent_id` an opaque id (`a` and 16
+hex digits) that stays the same while the agent runs and is never a
+process number; a tmux agent has `terminal` `tmux:<window>`, a herdr one
+`herdr:<key>`. A machine on a base older than I-1676 sends neither, and
+the api fills both with `tmux:<window>` for one release, so a client can
+key every agent by `agent_id`.
 
 `placement` (DECISIONS I-1366) is where the machine goes when it is
 placed: `own`, the default, is a host this account owns when it owns any

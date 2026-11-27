@@ -231,6 +231,19 @@ export interface AgentSignal {
 	agent: string;
 	window: string;
 	state: string;
+	/**
+	 * An opaque id for the agent, never a process number, or its terminal (I-1676). An agent outside any
+	 * terminal repose can see (Claude Desktop's) has an id and an empty
+	 * window and terminal. An older api sends neither.
+	 */
+	agent_id?: string;
+	/** `tmux:<window>`, `herdr:<key>`, or empty for no terminal. */
+	terminal?: string;
+}
+
+/** Whether an agent runs outside any terminal repose can see (I-1676). */
+export function noTerminal(a: AgentSignal): boolean {
+	return !a.window && !!a.agent_id;
 }
 
 export interface Signals {
@@ -293,6 +306,10 @@ export interface Project {
 	 * three minutes (I-1652): hung, its memory full or its kernel stuck.
 	 * A Start restarts it, which loses what is in its memory. */
 	not_answering?: { since: string } | null;
+	/** Set while a machine on a Mac without the appliance is parked and
+	 * waits for the Mac's user to log in: its memory is kept and it runs
+	 * again at the login (I-1672). Never with not_answering. */
+	parked?: { since: string; waits_for: string } | null;
 	/** The machine is never frozen while idle (I-818, I-826); the switch
 	 * is on its Config page. Absent from an older api, which means off. */
 	keep_awake?: boolean;

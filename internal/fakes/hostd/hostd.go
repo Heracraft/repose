@@ -40,6 +40,10 @@ type Guest struct {
 	// running guest fails with guest_unresponsive, as the real hostd does,
 	// until the guest is booted again.
 	GuestdDead bool
+	// DesktopAgent adds an agent outside any terminal to the running
+	// guest's samples, as guestd reports Claude Desktop's session
+	// (DECISIONS I-1676): an id, no window, no terminal, working.
+	DesktopAgent bool
 	// ProjectJSON is the project_json the last CreateGuest, StartGuest or
 	// Restore delivered (I-26), passed through as hostd does to guestd's
 	// SetupProject; its `multiplexer` key names the session unit (I-503).
@@ -342,6 +346,23 @@ func (f *Fake) SetFailMessage(kind, msg string) {
 	f.failMsg[kind] = msg
 }
 
+// fakeTmuxAgentID is the tmux claude's process key in the fake's samples,
+// and FakeDesktopAgentID the windowless one's (DECISIONS I-1676).
+const (
+	fakeTmuxAgentID    = "a5f0c2e19b7d4a630"
+	FakeDesktopAgentID = "a3e81b07c4d29f560"
+)
+
+// SetDesktopAgent adds or removes the windowless agent of a guest's
+// samples (Guest.DesktopAgent).
+func (f *Fake) SetDesktopAgent(guestID string, on bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if g, ok := f.guests[guestID]; ok {
+		g.DesktopAgent = on
+	}
+}
+
 // SetGuestdDead marks a guest's guestd dead or alive.
 func (f *Fake) SetGuestdDead(guestID string, dead bool) {
 	f.mu.Lock()
@@ -546,14 +567,17 @@ func (f *Fake) Samples() *hostdv1.Samples {
 			// (DECISIONS I-818).
 			gs.Resting = true
 			gs.RootUsedBytes, gs.RootSizeBytes = 4<<30, 39<<30
-			gs.Signals = &hostdv1.GuestSignals{GuestdOk: true, Agents: []*hostdv1.AgentProc{{Agent: "claude", TmuxWindow: "claude", State: "idle"}}}
+			gs.Signals = &hostdv1.GuestSignals{GuestdOk: true, Agents: []*hostdv1.AgentProc{{Agent: "claude", TmuxWindow: "claude", State: "idle", AgentId: fakeTmuxAgentID, Terminal: "tmux:claude"}}}
 			s.Guests = append(s.Guests, gs)
 			continue
 		}
 		if g.State == "running" {
 			gs.CpuNsDelta, gs.MemRssBytes, gs.NetTxBytesDelta, gs.NetRxBytesDelta = 30e9, 2<<30, 1<<20, 4<<20
 			gs.RootUsedBytes, gs.RootSizeBytes = 4<<30, 39<<30
-			gs.Signals = &hostdv1.GuestSignals{SshSessions: 1, TmuxClients: 1, GuestdOk: !g.GuestdDead, Agents: []*hostdv1.AgentProc{{Agent: "claude", TmuxWindow: "claude", State: "working"}}}
+			gs.Signals = &hostdv1.GuestSignals{SshSessions: 1, TmuxClients: 1, GuestdOk: !g.GuestdDead, Agents: []*hostdv1.AgentProc{{Agent: "claude", TmuxWindow: "claude", State: "working", AgentId: fakeTmuxAgentID, Terminal: "tmux:claude"}}}
+			if g.DesktopAgent {
+				gs.Signals.Agents = append(gs.Signals.Agents, &hostdv1.AgentProc{Agent: "claude", State: "working", AgentId: FakeDesktopAgentID})
+			}
 			gs.Procs = []*hostdv1.ProcSample{{Comm: "claude", CpuNsDelta: 25e9, RssBytes: 1 << 30}, {Comm: "node", CpuNsDelta: 5e9, RssBytes: 300 << 20}}
 		}
 		s.Guests = append(s.Guests, gs)

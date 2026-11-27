@@ -217,7 +217,7 @@ done
 # /etc/repose/agents.json for `repose status --verbose` (agents.nix).
 mkdir -p /etc/repose
 jq '{
-  "claude-code": {binary: "claude", version: ."claude-code".version, hook: "settings.json hooks Notification+Stop+UserPromptSubmit"},
+  "claude-code": {binary: "claude", version: ."claude-code".version, hook: "settings.json hooks Notification+Stop+UserPromptSubmit+SessionStart+SessionEnd"},
   "codex": {binary: "codex", version: .codex.version, hook: "config.toml notify, /etc/codex/config.toml hooks UserPromptSubmit"},
   "gemini-cli": {binary: "gemini", version: ."gemini-cli".version, hook: "extension hooks BeforeAgent+AfterAgent"},
   "opencode": {binary: "opencode", version: .opencode.version, hook: "plugin ~/.config/opencode/plugins/repose.js"},
