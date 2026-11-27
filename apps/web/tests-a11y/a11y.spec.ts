@@ -133,7 +133,7 @@ const PAGES: Target[] = [
 		name: '/projects/[id]/config',
 		signedIn: true,
 		url: () => `/projects/${projectId}/config`,
-		ready: (page) => expect(page.getByRole('tab', { name: 'Menu' })).toBeVisible()
+		ready: (page) => expect(page.getByRole('heading', { level: 2, name: 'Revisions' })).toBeVisible()
 	},
 	// The dashboard's other pages (I-841): Questions, a project's other
 	// tabs and Settings' tabs. A tab page's title is the project's name.
