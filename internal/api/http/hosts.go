@@ -191,15 +191,27 @@ func (s *Server) listHosts(w http.ResponseWriter, r *http.Request) error {
 // two requests at once must not both see room for the last host.
 func (s *Server) createHost(w http.ResponseWriter, r *http.Request) error {
 	u := userFrom(r.Context())
-	// `{name?}`: no body at all is how the dashboard's Add and
-	// `repose host add` without a name ask for one.
+	// `{name?, provider?}`: no body at all is how the dashboard's Add and
+	// `repose host add` without a name ask for one. provider is what the
+	// caller knows the machine is before it registers (`mac` from the CLI
+	// that installs on that Mac, I-1700), so a create waiting for it can
+	// say "your Mac"; registration writes what the host says it is.
 	var body struct {
-		Name string `json:"name"`
+		Name     string `json:"name"`
+		Provider string `json:"provider"`
 	}
 	if r.ContentLength != 0 {
 		if err := decode(r, &body); err != nil {
 			return err
 		}
+	}
+	provider := "metal"
+	switch body.Provider {
+	case "", "metal":
+	case "mac":
+		provider = "mac"
+	default:
+		return withDetail(errf("invalid", "provider is mac or metal"), map[string]any{"reason": "provider"})
 	}
 	name := strings.TrimSpace(body.Name)
 	if name != "" && !hostNameRe.MatchString(name) {
@@ -269,7 +281,7 @@ func (s *Server) createHost(w http.ResponseWriter, r *http.Request) error {
 		owner := u.ID
 		var err error
 		token, hostID, err = hostmgr.MintJoinTokenIn(r.Context(), tx,
-			hostmgr.JoinTokenRequest{Name: name, Provider: "metal", Owner: &owner, Reissue: reissue})
+			hostmgr.JoinTokenRequest{Name: name, Provider: provider, Owner: &owner, Reissue: reissue})
 		if err != nil {
 			return err
 		}

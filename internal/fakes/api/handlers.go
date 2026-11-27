@@ -470,7 +470,9 @@ func (f *Fake) createGated(u *userRec, name, remoteURL, class, gateClass string)
 	p.ConfigRevisionID = rev.ID
 	f.projects[p.ID] = p
 	f.event(p, "project.created", "", "project created as "+class)
-	f.run(p)
+	if !f.createWaits {
+		f.run(p)
+	}
 	return p, nil
 }
 
@@ -562,11 +564,14 @@ func (f *Fake) createProject(w http.ResponseWriter, r *http.Request) *apiError {
 	if e != nil {
 		return e
 	}
-	ownHostID, e := f.placeNew(u, body.Class, placement, pin)
+	ownHostID, waitFor, e := f.placeNew(u, body.Class, placement, pin)
 	if e != nil {
 		return e
 	}
+	// A create that waits for its host is made but not run (I-1700).
+	f.createWaits = waitFor != nil
 	p, e := f.create(u, body.Name, body.RemoteURL, body.Class)
+	f.createWaits = false
 	if e != nil {
 		return e
 	}
@@ -598,6 +603,17 @@ func (f *Fake) createProject(w http.ResponseWriter, r *http.Request) *apiError {
 		if rev := p.revision(p.ConfigRevisionID); rev != nil {
 			rev.Personal, rev.personalText = true, cur.Fragment
 		}
+	}
+	if waitFor != nil {
+		// The account's host is still installing: the create waits for
+		// it, creating, and SetOwnedHostState or its removal settles it
+		// (I-1700).
+		o := f.newOp(p, "create")
+		o.State = "running"
+		p.State, p.OpID = "creating", o.id
+		p.waitHost, p.waitOp = waitFor.ID, o.id
+		writeJSON(w, http.StatusCreated, f.out(p))
+		return nil
 	}
 	if msg := f.refuseCreate; msg != "" {
 		// The host refused it (I-1648): the op says why, and the project
@@ -792,6 +808,14 @@ func (f *Fake) destroyProject(w http.ResponseWriter, r *http.Request) *apiError 
 	}
 	if e := busyStopping(p); e != nil {
 		return e
+	}
+	if p.waitHost != "" {
+		// A create still waiting for its host ends here, as the api's
+		// CancelRegistrationWait does (I-1700).
+		if w := f.ops[p.waitOp]; w != nil {
+			w.State, w.Error = "error", "cancelled: the project was removed while it waited for its host"
+		}
+		p.waitHost, p.waitOp, p.OpID = "", "", ""
 	}
 	o := f.newOp(p, "destroy")
 	if f.opts.DestroyDelay > 0 {

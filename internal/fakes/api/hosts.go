@@ -219,12 +219,76 @@ func (f *Fake) SetOwnedHostState(name, state string) {
 			continue
 		}
 		h.State = state
+		if state == "registering" {
+			// As the api has it: a host waiting to join has never
+			// registered and holds a token good for 24 hours (I-1700
+			// waits for exactly that).
+			expires := f.now().Add(24 * time.Hour)
+			h.RegisteredAt, h.LastHeartbeatAt, h.JoinTokenExpiresAt = nil, nil, &expires
+		}
 		if state == "ready" && h.RegisteredAt == nil {
 			now := f.now()
 			h.RegisteredAt = &now
 			h.LastHeartbeatAt = &now
 			h.MemBytes, h.VCPUs, h.Cores, h.Arch = 24<<30, 8, 8, "aarch64"
 			h.JoinToken = ""
+		}
+		f.settleWaits(h)
+	}
+}
+
+// waitableHost is the api's ops.waitable (I-1700): a host that has never
+// registered and whose join token is still good.
+func (f *Fake) waitableHost(h *ownedHostRec) bool {
+	return h.State == "registering" && h.RegisteredAt == nil && h.JoinTokenExpiresAt != nil && f.now().Before(*h.JoinTokenExpiresAt)
+}
+
+// settleWaits is the api's engine on the creates waiting for h to
+// register (I-1700): once h is ready each is placed there and made; once
+// it is removed or can no longer join, each fails and its project goes,
+// as one refused at placement never exists (I-1648), saying why.
+func (f *Fake) settleWaits(h *ownedHostRec) {
+	for _, p := range f.projects {
+		if p.waitHost != h.ID || p.destroyed {
+			continue
+		}
+		o := f.ops[p.waitOp]
+		switch {
+		case h.State == "ready":
+			p.waitHost, p.waitOp, p.OpID = "", "", ""
+			p.HostID, p.HostName = h.ID, h.Name
+			if !f.out(p).Sized {
+				p.Class, p.VolumeBytes = "large", 40<<30
+			}
+			f.run(p)
+			if o != nil {
+				o.State = "done"
+			}
+		case h.State == "retired" || h.State == "lost" || !f.waitableHost(h):
+			why := "your host " + h.Name + " did not finish installing within 24 hours of `repose host add`"
+			if h.State == "retired" || h.State == "lost" {
+				why = "your host " + h.Name + " was removed before it finished installing"
+			}
+			p.waitHost, p.waitOp, p.OpID = "", "", ""
+			if o != nil {
+				o.State, o.Error = "error", why
+			}
+			le := createRefusedPrefix + why
+			p.State, p.destroyed, p.destroyedAt, p.LastError = "destroyed", true, f.now(), &le
+		}
+	}
+}
+
+// ExpireJoinToken makes the join token of the account's live host called
+// name expire now, as 24 hours after `repose host add` does.
+func (f *Fake) ExpireJoinToken(name string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, h := range f.ownedHosts {
+		if h.Name == name && h.State != "retired" && h.State != "lost" {
+			past := f.now().Add(-time.Second)
+			h.JoinTokenExpiresAt = &past
+			f.settleWaits(h)
 		}
 	}
 }
@@ -335,10 +399,21 @@ func (f *Fake) machinesOn(hostID string) (projects, running int) {
 
 func (f *Fake) createHost(w http.ResponseWriter, r *http.Request) *apiError {
 	var body struct {
-		Name string `json:"name"`
+		Name     string `json:"name"`
+		Provider string `json:"provider"`
 	}
 	if e := decodeBody(r, &body, true); e != nil {
 		return e
+	}
+	// What the caller knows the machine is before it registers (I-1700),
+	// as the api takes it.
+	provider := "metal"
+	switch body.Provider {
+	case "", "metal":
+	case "mac":
+		provider = "mac"
+	default:
+		return invalid("provider is mac or metal").withDetail(map[string]any{"reason": "provider"})
 	}
 	name := strings.TrimSpace(body.Name)
 	if name != "" && !hostNameRe.MatchString(name) {
@@ -394,7 +469,7 @@ func (f *Fake) createHost(w http.ResponseWriter, r *http.Request) *apiError {
 	}
 	expires := f.now().Add(24 * time.Hour)
 	h := &ownedHostRec{owner: u.ID, freeMem: -1, OwnedHost: OwnedHost{
-		ID: f.nextID(), Name: name, State: "registering", Provider: "metal",
+		ID: f.nextID(), Name: name, State: "registering", Provider: provider,
 		CreatedAt: f.now(), JoinToken: base64.RawURLEncoding.EncodeToString(raw), JoinTokenExpiresAt: &expires,
 	}}
 	if revive != nil {
@@ -451,6 +526,8 @@ func (f *Fake) deleteHost(w http.ResponseWriter, r *http.Request) *apiError {
 		}
 		h.State = "retired"
 		h.JoinToken = ""
+		// A create waiting for it fails (I-1700).
+		f.settleWaits(h)
 		// Its snapshots were on its disk and go with it (I-1542).
 		name := h.Name
 		for _, p := range f.projects {
@@ -612,9 +689,13 @@ func (f *Fake) ownedHostName(hostID string) string {
 //
 // pin is the host the create named (`host`, I-1584): that host when it
 // is online, else a refusal about it alone, never another host.
-func (f *Fake) placeNew(u *userRec, class, placement string, pin *ownedHostRec) (string, *apiError) {
+//
+// wait is the host the create waits for instead (I-1700): the pinned
+// host, or the oldest of the account's, that is still installing, when
+// no host of the account's can take the machine now.
+func (f *Fake) placeNew(u *userRec, class, placement string, pin *ownedHostRec) (id string, wait *ownedHostRec, e *apiError) {
 	if placement == "hosted" {
-		return "", nil
+		return "", nil, nil
 	}
 	// A plan that sells a host sells no fleet memory (I-1364), so `hosted`
 	// is refused on it. De Morgan of !(set && above zero); the nil check
@@ -624,9 +705,12 @@ func (f *Fake) placeNew(u *userRec, class, placement string, pin *ownedHostRec) 
 		// The pinned host alone, under the same memory term (I-1586,
 		// I-1630).
 		if free, need := f.room(pin, class); pin.State == "ready" && free >= need {
-			return pin.ID, nil
+			return pin.ID, nil, nil
 		}
-		return "", errf("capacity", "your host %s %s", pin.Name, f.ownHostWhy(pin, class, false)).withDetail(map[string]any{
+		if f.waitableHost(pin) {
+			return "", pin, nil
+		}
+		return "", nil, errf("capacity", "your host %s %s", pin.Name, f.ownHostWhy(pin, class, false)).withDetail(map[string]any{
 			"reason": "no_own_host", "host": pin.Name, "host_state": pin.State, "hosted_allowed": hostedAllowed})
 	}
 	var own []*ownedHostRec
@@ -644,10 +728,15 @@ func (f *Fake) placeNew(u *userRec, class, placement string, pin *ownedHostRec) 
 		}
 	}
 	if best != "" {
-		return best, nil
+		return best, nil, nil
 	}
 	if len(own) == 0 {
-		return "", nil
+		return "", nil, nil
+	}
+	for _, h := range own {
+		if f.waitableHost(h) {
+			return "", h, nil
+		}
 	}
 	msg := "your host " + own[0].Name + " " + f.ownHostWhy(own[0], class, false)
 	if len(own) > 1 {
@@ -663,7 +752,7 @@ func (f *Fake) placeNew(u *userRec, class, placement string, pin *ownedHostRec) 
 			}
 		}
 	}
-	return "", errf("capacity", "%s", msg).withDetail(map[string]any{
+	return "", nil, errf("capacity", "%s", msg).withDetail(map[string]any{
 		"reason": "no_own_host", "host": own[0].Name, "host_state": own[0].State, "hosted_allowed": hostedAllowed})
 }
 

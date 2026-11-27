@@ -82,7 +82,7 @@ the operator's (`repose-admin hosts`) and appear on none of them.
 | Method | Path | Body / result |
 |---|---|---|
 | GET | `/hosts` | `[Host]`, oldest first: the hosts this account owns. A host repose runs is never listed, and neither is another account's, so an empty list is the answer for almost every account |
-| POST | `/hosts` | `{name?}`, or no body at all, which is the same as no name → `201`, the `Host` plus `join_token`, `join_token_expires_at` and `install`: the one answer that carries the token, as a minted API token is. `name` matches `[a-z0-9][a-z0-9-]{0,31}` and is free among this account's hosts; without it the api names the host `host-1`, `host-2`, … in the account, and the caller never invents a name. The token is single-use and valid 24 hours, the same token `repose-admin hosts add` mints, and the host trades it for its identity with `Register` (`grpc-hostd.md`) |
+| POST | `/hosts` | `{name?, provider?}`, or no body at all, which is the same as no name; `provider` is `mac` or `metal` (the default), what the caller knows the machine is before it registers (`repose host add` on a Mac sends `mac`, I-1700; anything else is `400 invalid` `reason: provider`), kept as the host's `provider` → `201`, the `Host` plus `join_token`, `join_token_expires_at` and `install`: the one answer that carries the token, as a minted API token is. `name` matches `[a-z0-9][a-z0-9-]{0,31}` and is free among this account's hosts; without it the api names the host `host-1`, `host-2`, … in the account, and the caller never invents a name. The token is single-use and valid 24 hours, the same token `repose-admin hosts add` mints, and the host trades it for its identity with `Register` (`grpc-hostd.md`) |
 | DELETE | `/hosts/{id}` | `204`: the host is drained and retired, its certificate serials and its unused join token cleared so it cannot come back on them, and a machine that is still dialling is refused. A host that still holds live machines is `409 conflict` `host_has_projects` with their slugs, **unless its state is `unreachable` or `lost`**, where it is retired with them still on it (I-1420): a destroy's phases are skipped only for `lost` and `retired` (I-924), so refusing left an account unable to remove the host, unable to destroy the machines and unable to add a replacement against the plan's one slot. The machines are not destroyed, and every `repose rm` on them then drains to no phases; what is lost is said at the client's confirmation, not here. Already retired answers `204` too, so a repeated remove is not an error. The row stays, so `GET /hosts` still lists it as `retired`; `repose host ls` and the dashboard leave a removed host out, because it is not hardware the user has. It also clears `last_error` on the account's machines that are in `error`, hold no host and failed on `capacity`: a placement that found no host of the account's own frees the machine and leaves its sentence on the row, so without this "your host mac-mini has not registered yet" outlives the host and the dashboard names hardware the user no longer has. The ops keep the history, and the next start says what is true then |
 | POST | `/hosts/{id}/restart` | `{force?}`, or no body → `202 {op_id}` (added with I-1690): a `host_restart` op whose one phase is hostd's `RestartHost` (`grpc-hostd.md`): every machine on the host is parked with its memory, then the host restarts, and the machines run again at its user's next login. Only for a host whose `can_restart` is true. A `host_restart` op already pending or running for the host is answered with its `op_id`, so a second press is the same restart. Refusals: `404 not_found` for a host that is not the account's; `409 conflict` `detail.reason = "host_not_ready"` (with `detail.state`) for a host that is not `ready` or is being removed; `409 conflict` `detail.reason = "restart_unsupported"` for a host whose hostd does not name `restart`. The op ends `done` with `result {parked, not_parked: [slug], restarting: true, park_ms}` when the host restarts (with `force`, `not_parked` names the machines that start fresh), and `error` with `code` `not_parked` when a machine could not be parked and `force` was false (when nothing was parked because the Mac's screen is locked, the `message` is "This Mac's screen is locked, and a locked Mac cannot save a machine's memory. Nothing restarted; unlock it and restart again."; otherwise its `message` names them by slug, each with hostd's reason (`kept: started with nobody logged in`), its `result` has them in `not_parked` and the reasons in `not_parked_reasons`, nothing restarted and the parked machines run again |
 | GET | `/hosts/:id/ops/:op_id` | an op of one of the account's hosts, in the shape of `GET /projects/:id/ops/:op_id` without the long-poll fields (`{op_id, kind, state, created_at, finished_at, error?: {code, message, detail?}, result?}`); `404 not_found` for a host or op that is not the account's (added with I-1690) |
@@ -306,6 +306,14 @@ first silent one). One `not_answering` event
 running project whose guestd is not answering. An api older than I-1652
 sends nothing.
 
+`waiting_for_host` (I-1700) is set on a `creating` project with no host
+whose create waits for a host of the account's own to finish installing:
+`{name, provider}`, the host's name and its `provider` (`mac` when it was
+added from that Mac). The clients say `Waiting for your Mac (NAME) to
+finish installing. This project starts there when it's ready.`, or `your
+host NAME` for any other provider. Absent everywhere else and from an api
+older than I-1700.
+
 `parked` (I-1672) is set on a `running` project on a host an account
 owns whose newest sample says the machine is parked and waits for the
 Mac's user to log in (hostd's `parked_waiting_since`, sent only by hostd
@@ -424,11 +432,29 @@ why `PATCH /projects/:id` does not take it: nothing would honour it. An
 account whose plan sells no memory on repose's own hosts never lands
 there, whatever the field says (I-1366): a re-placement of such a project
 goes to its owner's hardware. A create for `own` while the account's own
-host has not registered yet, or cannot take the machine, is refused at
-the request with `503 capacity` and a message that names the host and
-its state, rather than quietly using the fleet, and nothing is written
-(I-1390; before it the create op failed and left the row in `error`). An
-api older than I-1366 has no field and places as it always did.
+host cannot take the machine is refused at the request with `503
+capacity` and a message that names the host and its state, rather than
+quietly using the fleet, and nothing is written (I-1390; before it the
+create op failed and left the row in `error`). An api older than I-1366
+has no field and places as it always did.
+
+Since I-1700 a create for `own` that no host of the account's can take
+now, while one of them (the pinned one, with `host`) is still
+installing (`registering`, never registered, its join token still
+good), is not refused: it answers `201` with the project `creating`,
+`host_id` null and `waiting_for_host` set, and the create op waits for
+that host and is placed on it alone once it registers. The wait ends
+when the host is removed (`DELETE /hosts/{id}`) or its join token
+expires before it joined: the op fails with `capacity` and `your host
+NAME was removed before it finished installing` or `your host NAME did
+not finish installing within 24 hours of `repose host add``, the
+project is destroyed as a create the host refused is (I-1648), and
+`GET /projects/:id` answers `404 not_found` `NAME was not created: WHY`
+with `detail.reason = "create_refused"`. `DELETE /projects/:id` while it
+waits ends the create (its op `error`, code `cancelled`) and is accepted
+instead of `409 conflict`. A host that has not registered and can no
+longer join is refused as before. An api older than I-1700 refuses every
+such create with `503 capacity` `your host NAME has not registered yet`.
 
 `host` (DECISIONS I-1584) pins the create to one host the account owns,
 by id or by name: the scheduler considers that host alone, and when it

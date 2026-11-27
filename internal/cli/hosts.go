@@ -66,7 +66,11 @@ func HostAddCmd(ctx context.Context, e *Env, name string) error {
 			return err
 		}
 	}
-	h, err := e.Client.CreateHost(ctx, CreateHostRequest{Name: name})
+	req := CreateHostRequest{Name: name}
+	if onAppleSilicon() {
+		req.Provider = "mac" // the host is this Mac (I-1700)
+	}
+	h, err := e.Client.CreateHost(ctx, req)
 	if err != nil {
 		return hostErr(err, name)
 	}

@@ -134,6 +134,9 @@ const (
 
 // Fake is the running fake api.
 type Fake struct {
+	// createWaits makes create leave the project creating, unrun: a
+	// create waiting for its host (I-1700).
+	createWaits bool
 	Server *httptest.Server
 
 	// startOutcome is how the next start of a project ends, when set:
