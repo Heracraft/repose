@@ -960,6 +960,32 @@ func (s *Server) finalSnapshot(ctx context.Context, p *store.Project) bool {
 	return h.State != "lost" && h.State != "retired"
 }
 
+// wakeProject is POST /projects/:id/wake (DECISIONS I-1682):
+// a resting machine is woken now, as the gateway's first connection would
+// wake it. The CLI sends it the moment it reads a resting machine, so the
+// wake runs beside the ssh handshake instead of after it. A machine that
+// is not resting answers was_resting false at once.
+func (s *Server) wakeProject(w http.ResponseWriter, r *http.Request) error {
+	p, err := s.userProject(r)
+	if err != nil {
+		return err
+	}
+	if p.State != "running" || p.RestingSince == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"was_resting": false, "wake_ms": 0})
+		return nil
+	}
+	waker := s.userWake()
+	if waker == nil {
+		return errf("internal", "waking is not configured on this api")
+	}
+	res, err := waker.Wake(r.Context(), p.ID, "cli")
+	if err != nil {
+		return wakeFailed(p.Slug, err)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"was_resting": res.GetWasResting(), "wake_ms": res.GetWakeMs()})
+	return nil
+}
+
 func (s *Server) startProject(w http.ResponseWriter, r *http.Request) error {
 	p, err := s.userProject(r)
 	if err != nil {

@@ -472,3 +472,43 @@ func TestOneWordIsAWindowWhereAProjectResolves(t *testing.T) {
 		t.Fatalf("outside a checkout: %v %+v", err, calls)
 	}
 }
+
+// DECISIONS I-1682: exec on a resting machine asks the api for the wake
+// as soon as it has read the project, beside its ssh, rather than leaving
+// it to the gateway's first connection; on an awake machine it asks for
+// nothing.
+func TestExecWakesARestingMachineEarly(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	t.Cleanup(fake.Close)
+	f := newRunFixture(t, fake)
+	ctx := context.Background()
+	t.Cleanup(func() { _, _ = runSSH(context.Background(), f.target, "tmux kill-server", nil) })
+	if err := runRun(ctx, f.env, RunOptions{Name: testSlug, NoAttach: true}, false); err != nil {
+		t.Fatal(err)
+	}
+	f.env.Out, f.env.ErrOut = &discardWriter{}, &discardWriter{}
+	if err := ExecCmd(ctx, f.env, ExecOptions{ProjectArg: testSlug, Command: []string{"true"}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if n := fake.UserWakes(); n != 0 {
+		t.Fatalf("an awake machine was woken %d times", n)
+	}
+	ps, err := f.env.Client.ListProjects(ctx)
+	if err != nil || len(ps) != 1 {
+		t.Fatalf("projects %v %v", ps, err)
+	}
+	since := time.Now().Add(-20 * time.Minute)
+	if err := fake.SetResting(ps[0].ID, &since); err != nil {
+		t.Fatal(err)
+	}
+	if err := ExecCmd(ctx, f.env, ExecOptions{ProjectArg: testSlug, Command: []string{"true"}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for fake.UserWakes() != 1 {
+		if time.Now().After(deadline) {
+			t.Fatalf("a resting machine was woken %d times by exec, want 1", fake.UserWakes())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}

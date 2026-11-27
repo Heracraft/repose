@@ -314,8 +314,8 @@ func adaptMac(ctx context.Context, o Options, m MacOptions, u macUser, r shell.R
 	// it happens: the moment the screen locks, every machine resting as a
 	// save is restored and rests by pause through the lock (loop below,
 	// Manager.UnsaveRests), and a while after the unlock it is saved again.
-	// --mac-rest-by-save, off by default: the owner's call on the secrets
-	// promise (conductor 03:50Z); without it a rest is a pause.
+	// --mac-rest-by-save, on by default (the owner's ruling, ENG-273):
+	// false makes every rest a pause.
 	if m.RestBySave {
 		d.RestBySave = func(ctx context.Context, id string) bool {
 			return ld.Domain(ctx, guest.GuestUnit(id)) == "gui" && session(ctx).Unlocked()
