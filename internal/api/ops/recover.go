@@ -263,6 +263,11 @@ func humanError(kind, phase, code, msg string, hostGone bool) (string, bool) {
 			// after a stop or rm are the api's own wait (I-408), so a
 			// refusal that reaches here has nothing left to wait for.
 			return "the host has no free memory for a machine this size; stopping a running machine frees room", true
+		case strings.Contains(msg, "machines running on this host hold"):
+			// A Mac host sizes each machine to the memory its running
+			// machines leave, down to a floor, and refuses below it
+			// (I-1666): macOS's own free figure says nothing here.
+			return "the machines running on this host hold the memory it gives its machines; stopping a running machine frees room", true
 		case strings.Contains(msg, "not enough free CPU"):
 			// A host the user owns that runs under a hypervisor (the
 			// Mac appliance) boots no more guest vCPUs than it has
