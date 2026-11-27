@@ -22,7 +22,7 @@
 	import { listHosts, createHost, deleteHost, restartHost, getHostOp } from '$lib/api/client';
 	import { toastApiError } from '$lib/api/toast';
 	import { ApiError, errorText } from '$lib/api/errors';
-	import { gb, relativeTime } from '$lib/format';
+	import { gb, heldText, relativeTime } from '$lib/format';
 	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
 	import CodeCopy from '$lib/components/CodeCopy.svelte';
 	import { focusAfterRender, focusOnMount } from '$lib/focus';
@@ -312,7 +312,15 @@
 		const frozen = (projectsStore.list ?? []).filter(
 			(p) => p.host_id === h.id && p.state === 'running' && !!p.resting
 		).length;
-		return `${h.projects} ${word}, ${h.running_projects} running${frozen ? `, ${frozen} frozen` : ''}${silent ? `, ${silent} not answering` : ''}`;
+		// On a Mac, what macOS gives up for its machines together, in the
+		// CLI's word (I-1712).
+		const mac = (projectsStore.list ?? []).filter(
+			(p) => p.host_id === h.id && p.state === 'running' && !!p.vm
+		);
+		const held = mac.length
+			? `, ${heldText(mac.reduce((n, p) => n + (p.mem_used_bytes ?? 0), 0))}`
+			: '';
+		return `${h.projects} ${word}, ${h.running_projects} running${frozen ? `, ${frozen} frozen` : ''}${silent ? `, ${silent} not answering` : ''}${held}`;
 	}
 
 	// What the confirmation says. A host that is answering cannot be
