@@ -312,9 +312,11 @@ describe('BrowserView', () => {
 			// Copy on screen is the site's CopyButton, on a click.
 			expect(code).not.toContain('navigator.clipboard');
 			expect(code).toContain('CopyButton');
-			// One paste call, reached from the button and nowhere else.
+			// One paste call, reached from the button and from the
+			// watcher's own paste on the view (ENG-241), both gestures.
 			expect(code.match(/clipboardPasteFrom/g)).toHaveLength(1);
 			expect(code).toContain('onclick={send}');
+			expect(code).toContain('onpaste={onPaste}');
 		});
 	});
 });

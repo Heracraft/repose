@@ -3,7 +3,9 @@
 // the count and deletes them; afterwards Recently destroyed says the
 // snapshot went with the host and offers no Restore.
 import { test, expect, type Page } from '@playwright/test';
-import { signIn, apiURLFromEnv, ownedHost } from './helpers';
+import { signIn, apiURLFromEnv, ownedHost, cleanSlate } from './helpers';
+
+cleanSlate();
 
 const auth = { Authorization: 'Bearer playwright', 'Content-Type': 'application/json' };
 

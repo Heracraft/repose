@@ -8,8 +8,11 @@ import {
 	fail,
 	unfail,
 	setBilling,
-	resetBilling
+	resetBilling,
+	cleanSlate
 } from './helpers';
+
+cleanSlate();
 
 test.beforeEach(async ({ page }) => {
 	await resetBilling();

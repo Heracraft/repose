@@ -5,7 +5,16 @@
 // prompt, which I-1266 let a browser write into the machine. A webhook
 // route that forwards to the app is a row here too (webhooks.spec.ts).
 import { test, expect, type Page } from '@playwright/test';
-import { signIn, createProject, apiURLFromEnv, addTriggerRun, triggerPrompt } from './helpers';
+import {
+	signIn,
+	createProject,
+	apiURLFromEnv,
+	addTriggerRun,
+	triggerPrompt,
+	cleanSlate
+} from './helpers';
+
+cleanSlate();
 
 test.beforeEach(async ({ page }) => {
 	await signIn(page);

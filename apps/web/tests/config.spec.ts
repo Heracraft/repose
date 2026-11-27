@@ -2,7 +2,9 @@
 // a failing fragment shows the error block with the line highlighted."
 // The menu is gone (DECISIONS I-1698): no Menu tab, no catalog.
 import { test, expect } from '@playwright/test';
-import { signIn, createProject, destroyProject, apiURLFromEnv } from './helpers';
+import { signIn, createProject, destroyProject, apiURLFromEnv, cleanSlate } from './helpers';
+
+cleanSlate();
 
 test.beforeEach(async ({ page }) => {
 	await signIn(page);

@@ -14,8 +14,11 @@ import {
 	closeQuestion,
 	setBilling,
 	resetBilling,
-	settledBox
+	settledBox,
+	cleanSlate
 } from './helpers';
+
+cleanSlate();
 
 /** Presses Tab until the target holds the focus (at most 80 stops). */
 async function tabTo(page: Page, target: Locator): Promise<void> {
@@ -69,6 +72,10 @@ test.describe('signed in', () => {
 	});
 
 	test('the skip link is the first tab stop and moves focus to the page', async ({ page }) => {
+		// An account with no machine opens on the New project form, whose
+		// name field takes focus (I-1602); with one, the page does not.
+		// Run alone, this file starts on an empty account.
+		await project({ name: 'skip-link-app', remote_url: 'github.com/heracraft/skip-link-app' });
 		await page.goto('/projects');
 		await expect(page.getByRole('heading', { level: 1, name: 'Projects' })).toBeVisible();
 		await page.keyboard.press('Tab');
@@ -282,7 +289,7 @@ test.describe('signed in', () => {
 // DECISIONS I-655, I-656: one header on every kind of page, the same
 // items in the same order, its logo at the same x and going home, and a
 // Feedback link in the header and the footer of every page.
-const FRAME_PAGES = ['/', '/docs/cli', '/terms', '/projects'];
+const FRAME_PAGES = ['/?home', '/docs/cli', '/terms', '/projects'];
 
 test('the header row fits, aligns the logo at the frame edge, and links to home and feedback on every kind of page', async ({
 	page
@@ -293,7 +300,10 @@ test('the header row fits, aligns the logo at the frame edge, and links to home 
 		await page.setViewportSize({ width: 1440, height: 900 });
 		await page.goto(path);
 		if (path === '/projects') {
-			await expect(page.getByRole('link', { name: 'repose, home' })).toHaveAttribute('href', '/');
+			await expect(page.getByRole('link', { name: 'repose, home' })).toHaveAttribute(
+				'href',
+				'/?home'
+			);
 		}
 		for (const where of [
 			page.getByRole('navigation', { name: 'Site' }),

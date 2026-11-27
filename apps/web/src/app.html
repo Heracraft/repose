@@ -23,7 +23,7 @@
 		     (lib/theme.svelte.ts), so a visitor who chose Dark on a light
 		     computer never sees a light frame. The CSP (svelte.config.js)
 		     allows no inline script it has no hash for, so script-src
-		     carries this one's sha256 ('sha256-UsDo7j5S5AvoyFy9kU7vNq7d7jzVYI7KYhbawKMguC8='); the hash covers the
+		     carries this one's sha256 ('sha256-olfWszuTXJ1R52JyLxJAYNcwawtaxv+LE7IrzKvvZ50='); the hash covers the
 		     text between the tags, its tabs and newlines included, so any
 		     change to it changes the hash (app-html.test checks both). -->
 		<script>
@@ -34,6 +34,20 @@
 					document.documentElement.dataset.theme = t;
 					var m = document.querySelectorAll('meta[name="theme-color"]');
 					for (var i = 0; i < m.length; i++) m[i].content = t === 'dark' ? '#09090b' : '#fafafa';
+				}
+			} catch (e) {}
+			// A signed-in visitor on / goes to the dashboard before anything
+			// paints (ENG-239): Logto keeps the session's id token in
+			// localStorage as logto:<app>:idToken. /?home, where the logo
+			// points from the dashboard, shows the landing on purpose.
+			try {
+				if (location.pathname === '/' && !/(^|[?&])home\b/.test(location.search)) {
+					for (var k in localStorage) {
+						if (k.slice(0, 6) === 'logto:' && k.slice(-8) === ':idToken') {
+							location.replace('/projects');
+							break;
+						}
+					}
 				}
 			} catch (e) {}
 		</script>

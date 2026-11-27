@@ -14,8 +14,11 @@ import {
 	refuseNextCreate,
 	removeOwnedHosts,
 	resetBilling,
-	setBilling
+	setBilling,
+	cleanSlate
 } from './helpers';
+
+cleanSlate();
 
 /**
  * The viewport at 1440 and 390 in both schemes, at 1x, for the review
@@ -71,8 +74,11 @@ async function openForm(page: Page) {
 	await page.goto('/projects');
 	await expect(page.getByRole('heading', { name: 'Projects', level: 1 })).toBeVisible();
 	const open = page.getByRole('button', { name: 'New project' });
-	// An account with no machine opens on the form.
-	if (await open.isVisible()) await open.click();
+	// An account with no machine opens on the form; wait for whichever
+	// comes, then act, rather than check once and act on a page still
+	// rendering (ENG-231).
+	await expect(form(page).or(open)).toBeVisible();
+	if (!(await form(page).isVisible())) await open.click();
 	await expect(form(page)).toBeVisible();
 }
 
@@ -229,7 +235,10 @@ test('on a full Solo plan New project starts on the size that fits, and says whe
 	await openForm(page);
 	const room = form(page).getByTestId('nm-room');
 	await expect(room).toHaveText(/Your plan's 8 GB is in use\. Stop a machine to make one here\./);
-	await expect(summary).toContainText("0 GB of your plan's 8 GB free");
+	// Said once, under the line, and Create is not the primary action
+	// while the plan would refuse it (ENG-233).
+	await expect(summary).not.toContainText('of your plan');
+	await expect(form(page).getByRole('button', { name: 'Create' })).toHaveClass(/hk-btn-secondary/);
 	await expect(room.getByRole('button', { name: /^Stop / })).toHaveCount(2);
 	await shots(page, 'new-project-plan-full');
 	await room.getByRole('button', { name: `Stop ${first.name}` }).click();
@@ -242,6 +251,10 @@ test('on a full Solo plan New project starts on the size that fits, and says whe
 	await form(page).getByLabel('Size').selectOption('large');
 	await expect(form(page).getByTestId('nm-room')).toHaveText(
 		'A large machine needs 8 GB; 4 GB is free.'
+	);
+	await form(page).getByLabel('Size').selectOption('xl');
+	await expect(form(page).getByTestId('nm-room')).toHaveText(
+		'An xl machine needs 16 GB; 4 GB is free.'
 	);
 });
 

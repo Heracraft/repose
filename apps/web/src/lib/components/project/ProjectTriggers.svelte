@@ -32,6 +32,7 @@
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import {
+		getWebhook,
 		listTriggers,
 		listTriggerRuns,
 		putTrigger,
@@ -50,7 +51,7 @@
 	import { pollWhileVisible } from '$lib/poll';
 	import { ageShort, dateTime } from '$lib/format';
 	import { reasonSentence } from '$lib/triggers';
-	import type { Project, Trigger, TriggerRun, WebhookRoute } from '$lib/api/types';
+	import type { WebhookDelivery, Project, Trigger, TriggerRun, WebhookRoute } from '$lib/api/types';
 
 	let { project }: { project: Project } = $props();
 	const projectId = $derived(project.id);
@@ -110,16 +111,27 @@
 		return pollWhileVisible(() => load(true));
 	});
 
-	async function toggleRuns(name: string) {
+	/** The open route's newest deliveries, what `repose webhooks url`
+	 * prints (ENG-56); undefined while they load. */
+	let deliveries = $state<WebhookDelivery[] | undefined>(undefined);
+
+	async function toggleRuns(name: string, route = false, trigger = true) {
 		if (open === name) {
 			open = undefined;
 			runs = undefined;
+			deliveries = undefined;
 			return;
 		}
 		open = name;
 		runs = undefined;
+		deliveries = undefined;
 		try {
-			runs = await listTriggerRuns(projectId, name);
+			const [d, r] = await Promise.all([
+				route ? getWebhook(projectId, name) : undefined,
+				trigger ? listTriggerRuns(projectId, name) : undefined
+			]);
+			if (d) deliveries = d.deliveries ?? [];
+			if (r) runs = r;
 		} catch (err) {
 			toastApiError(err, `Could not load ${name}'s runs.`);
 			open = undefined;
@@ -412,7 +424,7 @@
 										id={`open-${row.name}`}
 										class="trunsbtn"
 										aria-expanded={open === row.name}
-										onclick={() => toggleRuns(row.name)}
+										onclick={() => toggleRuns(row.name, !!row.route, !!row.trigger)}
 										>{row.name}{#if t && !t.enabled}<span class="toff">off</span>{/if}</button
 									>
 									<!-- The door, where the Fires on column is not shown: a list
@@ -620,12 +632,25 @@
 												size="sm"
 											/>
 										</p>
-										{#if r.last_delivery}
-											<p class="tnone">
-												Last delivery {lastDelivery(r)}, {ageShort(r.last_delivery.at)}.
-											</p>
-										{:else}
+										{#if deliveries === undefined}
+											<p class="tnone">Loading deliveries…</p>
+										{:else if deliveries.length === 0}
 											<p class="tnone">{r.name} has had no delivery.</p>
+										{:else}
+											<ol class="deliveries" aria-label="Deliveries" data-testid="deliveries">
+												{#each deliveries as d, i (`${d.at}-${i}`)}
+													<li>
+														<span class="dwhen" title={dateTime(d.at)}>{ageShort(d.at)}</span>
+														<span
+															class={d.status < 300 ? 'hk-dot hk-dot--ok' : 'hk-dot hk-dot--err'}
+														></span>
+														<span class="hk-mono">{d.status}</span>
+														{#if d.outcome !== 'delivered'}<span class="dout">{d.outcome}</span
+															>{/if}
+														<span class="dms">{d.duration_ms} ms</span>
+													</li>
+												{/each}
+											</ol>
 										{/if}
 									</td>
 								</tr>
@@ -903,5 +928,26 @@
 		margin: 0;
 		font-size: 0.8125rem;
 		color: var(--hk-muted);
+	}
+	.deliveries {
+		margin: 0.5rem 0 0;
+		padding: 0;
+		list-style: none;
+		font-size: 0.8125rem;
+	}
+	.deliveries li {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.25rem 0;
+		border-top: 1px solid var(--hk-border, transparent);
+	}
+	.dwhen {
+		min-width: 4.5rem;
+		color: var(--hk-text-2, inherit);
+	}
+	.dout,
+	.dms {
+		color: var(--hk-text-2, inherit);
 	}
 </style>

@@ -12,8 +12,11 @@ import {
 	apiURLFromEnv,
 	addEvents,
 	addQuestion,
-	setAgents
+	setAgents,
+	cleanSlate
 } from './helpers';
+
+cleanSlate();
 
 test.beforeEach(async ({ page }) => {
 	await signIn(page);

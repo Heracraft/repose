@@ -2,7 +2,16 @@
 // draws it under the event and under the question, named by its label and
 // its host, opening in a new tab.
 import { test, expect } from '@playwright/test';
-import { signIn, createProject, apiURLFromEnv, addEvents, addQuestion } from './helpers';
+import {
+	signIn,
+	createProject,
+	apiURLFromEnv,
+	addEvents,
+	addQuestion,
+	cleanSlate
+} from './helpers';
+
+cleanSlate();
 
 test.beforeEach(async ({ page }) => {
 	await signIn(page);

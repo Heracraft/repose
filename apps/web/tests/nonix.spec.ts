@@ -5,7 +5,9 @@
 // nav lists machine.nix only for an account with a Nix project; the add
 // host dialog shows the x86 installer beside the Mac's step.
 import { test, expect, type Page, type Locator } from '@playwright/test';
-import { signIn, apiURLFromEnv, pruneProjects, ownedHost } from './helpers';
+import { signIn, apiURLFromEnv, pruneProjects, ownedHost, cleanSlate } from './helpers';
+
+cleanSlate();
 
 const auth = { Authorization: 'Bearer playwright', 'Content-Type': 'application/json' };
 

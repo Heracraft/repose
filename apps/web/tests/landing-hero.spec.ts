@@ -1,6 +1,9 @@
 // Landing hero, SSR completeness (no-JS), above-the-fold framing at 1440x900
 // and 390x844, and compact reduced-motion page height.
 import { test, expect } from '@playwright/test';
+import { cleanSlate } from './helpers';
+
+cleanSlate();
 
 test.describe('without scripts', () => {
 	test.use({ javaScriptEnabled: false });
