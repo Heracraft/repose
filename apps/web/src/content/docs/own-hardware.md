@@ -130,17 +130,21 @@ todo-app: your host mac-mini has not answered for 14m.
 
 `repose run` and `repose attach` wait up to 10 minutes for the host and then give up; `repose start` is refused while it is quiet, because a stopped machine's disk is on that host and nowhere else. A new machine is refused with the same sentence, and `repose run --host repose` makes it on repose's servers instead.
 
-A Mac that is only off the network keeps running your machines, and they are reachable again, with whatever the agents did meanwhile, as soon as it answers. A Mac you restart, shut down or lose power on stops them, and repose starts the ones that were running again once it is back; what they held in memory is gone, what they wrote to disk is not. If the hardware is gone for good, [retire the offline host](#taking-it-off) with `repose host rm <name>` to free your host slot and clear its stranded machines with `repose rm`.
+A Mac that is only off the network keeps running your machines, and they are reachable again, with whatever the agents did meanwhile, as soon as it answers. A Mac you restart, shut down or lose power on stops them, and repose starts the ones that were running again once it is back; what they held in memory is gone, what they wrote to disk is not, unless you [restart it through repose](#restart-your-mac-through-repose-and-your-machines-keep-their-memory). If the hardware is gone for good, [retire the offline host](#taking-it-off) with `repose host rm <name>` to free your host slot and clear its stranded machines with `repose rm`.
 
-## Restart your Mac and your machines start fresh
+## Restart your Mac through repose and your machines keep their memory
 
-When you restart or shut down your Mac, or it loses power, your machines stop. When it is back, the virtual machine starts with the Mac, with nobody logged in, and repose starts the machines that were running, cold: their disks are as they were, and what they held in memory is gone: programs, tmux windows, an agent mid-task. Stop anything you would miss before you restart, the way you would on a laptop.
+`repose host restart` on the Mac, or **Restart…** for that host on the dashboard's Settings → Hosts from any computer, saves every running machine's memory to a file on the Mac (it parks them), then restarts the Mac. When you log in again, each machine comes back where it was: its programs, its tmux windows, an agent mid-task. On an M4 Mac mini three machines were parked in 10.2 seconds and were running again, memory and all, 15.4 seconds after the login.
 
-Two things keep the machines off until someone is at the Mac:
+A machine that cannot be parked stops the restart: the answer names it and why, nothing restarts, and the machines already parked run again. `repose host restart --force`, or **Restart anyway** on the dashboard, restarts all the same, and those machines start fresh. An app on the Mac with unsaved work can still cancel the restart, as at any restart; repose then runs the parked machines again within three minutes.
 
-- **FileVault.** With FileVault on, macOS waits at its unlock screen after a power cut, before it starts anything. A restart you begin with `sudo fdesetup authrestart` unlocks itself once and comes back on its own.
+Until you log in, a parked machine waits, with its memory kept. `repose ls` shows it `running parked`, `repose status` and the dashboard say `parked; it waits for you to log in to mac-mini, and its memory is kept`, and `repose start` starts nothing. With automatic login on (System Settings → Users & Groups), the Mac logs you in itself and the machines come back without you. A memory file nobody logs in to read is deleted six hours after the park, and its machine stops, to start fresh at the next `repose start`: a machine's memory is never kept on the disk longer than that.
 
-macOS gives repose about a second when the Mac goes down, measured, and writing a machine's memory takes longer than that. Machines on repose's servers do keep their memory across a server restart ([when a machine's server restarts](/docs/lifecycle#when-a-machines-server-restarts)); your own Mac does not, today.
+**Any other restart loses the machines' memory**: Restart or Shut Down from the Apple menu, a macOS update that restarts on its own, a power cut or a crash. macOS ends every virtual machine the moment a restart begins, before anything can save it, measured on both restart paths. When the Mac is back, repose starts the machines that were running again, cold: their disks are as they were, and what they held in memory is gone. Stop or park anything you would miss before you restart the Mac yourself.
+
+**FileVault.** With FileVault on, macOS waits at its unlock screen after a restart or a power cut, before it starts anything, so your machines wait too. A restart you begin with `sudo fdesetup authrestart` unlocks itself once.
+
+Machines on repose's servers keep their memory across a server restart too ([when a machine's server restarts](/docs/lifecycle#when-a-machines-server-restarts)).
 
 ## Snapshots stay on its disk
 
