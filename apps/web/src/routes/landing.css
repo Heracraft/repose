@@ -153,6 +153,9 @@
 	letter-spacing: -0.02em;
 	text-wrap: balance;
 }
+.landing :is(h1.hk-h1, h2.hk-h2) .muted {
+	color: var(--hk-text-3);
+}
 .landing .item-title,
 main.landing .own .o-name,
 main.landing .plans .p-name {
@@ -261,6 +264,99 @@ main.landing .plans .p-name {
 	display: grid;
 	grid-template-columns: minmax(0, 1fr);
 	margin-inline: calc(-1 * var(--edge));
+}
+.landing .hero-top {
+	display: flex;
+	flex-direction: column;
+	gap: 1.25rem;
+	padding: 2rem 0 1.75rem;
+}
+@media (min-width: 1024px) {
+	.landing .hero-top {
+		padding: 2.25rem 0 1.5rem;
+	}
+	.landing .hero-top-copy h1.hk-h1 {
+		max-width: 24ch;
+	}
+	.landing .hero-top-copy .hk-lead {
+		max-width: 42rem;
+	}
+	.landing .hero-top-act .hero-act {
+		flex-direction: row;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.75rem 1.25rem;
+		margin-top: 0;
+	}
+}
+.landing .hero-wreck-desktop {
+	display: none;
+}
+.landing .hero-wreck-mobile {
+	display: block;
+	padding-bottom: 1.75rem;
+}
+@media (min-width: 1024px) {
+	.landing .hero-wreck-desktop {
+		display: block;
+	}
+	.landing .hero-wreck-mobile {
+		display: none;
+	}
+}
+.landing .hwm-card {
+	border: 1px solid var(--hk-border);
+	border-radius: 8px;
+	background: var(--hk-surface);
+	overflow: hidden;
+}
+.landing .hwm-row {
+	display: flex;
+	align-items: center;
+	gap: 0.6rem;
+	padding: 0.8rem 0.95rem;
+	border-bottom: 1px solid var(--hk-hairline);
+	font-size: 0.8125rem;
+}
+.landing .hwm-row:last-child {
+	border-bottom: 0;
+}
+.landing .hwm-row--mid {
+	color: var(--hk-text-3);
+}
+.landing .hwm-row--undo {
+	background: var(--hk-bg);
+}
+.landing .hwm-k {
+	font-weight: 500;
+	color: var(--hk-text);
+}
+.landing .hwm-row--mid .hwm-k {
+	color: var(--hk-text-2);
+}
+.landing .hwm-v {
+	margin-left: auto;
+	font-family: var(--hk-font-mono);
+	font-size: 0.75rem;
+	color: var(--hk-text-3);
+}
+.landing .hwm-row--undo .hwm-v {
+	color: var(--pic-accent);
+}
+.landing .hwm-dot {
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	flex: none;
+}
+.landing .hwm-dot--ok {
+	background: var(--hk-ok, #2f855a);
+}
+.landing .hwm-dot--err {
+	background: var(--hk-err, #c53030);
+}
+.landing .hwm-dot--acc {
+	background: var(--pic-accent);
 }
 .landing .hero-copy {
 	display: flex;
