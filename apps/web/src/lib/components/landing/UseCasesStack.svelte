@@ -287,9 +287,9 @@
 		.uc-card {
 			flex: 1 1 0%;
 			cursor: pointer;
-			background: var(--hk-surface-2);
+			background: transparent;
 			border-color: var(--hk-hairline);
-			box-shadow: 0 2px 6px -4px rgb(0 0 0 / 0.08);
+			box-shadow: none;
 			transition:
 				flex-grow 420ms cubic-bezier(0.22, 1, 0.36, 1),
 				background-color 280ms ease,
@@ -306,6 +306,7 @@
 		}
 		.uc-card:not(.is-open):hover {
 			border-color: var(--hk-border);
+			background: color-mix(in srgb, var(--hk-surface) 45%, transparent);
 		}
 		.uc-card:not(.is-open):hover .uc-head :global(.item-title) {
 			color: var(--hk-text);
@@ -316,8 +317,8 @@
 			background: var(--hk-surface);
 			border-color: var(--hk-border);
 			box-shadow:
-				0 14px 30px -18px rgb(0 0 0 / 0.24),
-				0 2px 8px -4px rgb(0 0 0 / 0.1);
+				inset 0 2px 0 var(--pic-accent),
+				0 12px 26px -18px rgb(0 0 0 / 0.22);
 		}
 		.uc-card:not(.is-open) .uc-head :global(.copy),
 		.uc-card:not(.is-open) .uc-body {

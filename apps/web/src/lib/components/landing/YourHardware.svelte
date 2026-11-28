@@ -7,15 +7,15 @@
 <div class="yh" data-testid="your-hardware">
 	<ul class="yh-list">
 		<li>
-			<strong>Your own hardware is already fast enough.</strong>
-			<span>Linux server or Mac mini — free for up to 2 hosts, no per-minute meter.</span>
+			<strong>Your own hardware is already fast enough</strong>
+			<span>Linux server or Mac mini · free up to 2 hosts, no per-minute meter.</span>
 		</li>
 		<li>
-			<strong>Reach it from anywhere.</strong>
+			<strong>Reach it from anywhere</strong>
 			<span>No port forwarding, no static IP, no VPN to configure.</span>
 		</li>
 		<li>
-			<strong>Real physical cores, either way.</strong>
+			<strong>Real physical cores, either way</strong>
 			<span>On your own box, or on repose Cloud when you don't want to manage hardware.</span>
 		</li>
 	</ul>

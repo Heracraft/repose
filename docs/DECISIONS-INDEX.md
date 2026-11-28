@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-1182 entries.
+1183 entries.
 
 ## Scope
 
@@ -1214,3 +1214,4 @@ pointer, not a summary.
 - **I-1720** A `repose run` with no terminal, from a folder that is not a git repository, that would make a new machine and names none, is refused with exit 2 before anything is made; named, or with `--temp`, it makes the empty machine as before (sweep-cli, board sweep 2, 2026-11-27) — L39903
 - **I-1722** What the CLI tells a customer about money and about a host that cannot join: `repose login --status` names the next charge or the trial's end beside the plan, and an own host that never registered and whose join token has expired is "never finished installing", not "has not registered yet" (sweep-cli, board sweep 2, 2026-11-27) — L39909
 - **I-1730** The landing page is reworked around user value rather than internal architecture comparisons: the hero pairs a left-aligned header with `Wreck` on desktop (and a compact 3-row undo summary on mobile), followed by horizontal scroll-expanding use-case cards (Development, Scheduled, Webhooks), a trimmed 2-column Your hardware band with a longer-is-faster build-speed bar (`Your Mac mini`, `repose Cloud`, `Average cloud sandbox`), a 2-column Unlimited agents band using the real dashboard `Frost` component (`active -> paused -> frozen`), a No lock-in band (`repose attach`, Claude Code Desktop, Terminal, t3code, mixed agents), and Pricing without the live seats-left counter (landing-v2, 2026-11-28) — L39915
+- **I-1732** Second-pass visual polish on the landing page (bands 01 through 04): inactive horizontal use-case cards sit bare on the canvas while the active expanded card carries a solid surface fill and 2px accent top rule, Your hardware tightens its three value rows into inline two-tone copy, Unlimited agents adds a 1px host pane header (`host-01 · 5 sandboxes`) and a 2px left accent rail on the active row, and No lock-in pairs `repose attach` with a dashed connector topology (landing-v2-polish, 2026-11-28) — L39918

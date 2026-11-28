@@ -10,6 +10,7 @@
 			<div class="am-cmd-pill">
 				<span class="am-prompt">$</span>
 				<code>repose attach</code>
+				<span class="am-cmd-hint">one command</span>
 			</div>
 			<div class="am-clients">
 				<span class="am-client">
@@ -132,6 +133,11 @@
 	.am-prompt {
 		color: var(--pic-accent);
 	}
+	.am-cmd-hint {
+		margin-left: auto;
+		font-size: 0.6875rem;
+		color: var(--hk-text-3);
+	}
 	.am-clients {
 		display: grid;
 		grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -177,13 +183,13 @@
 		.am-wire span {
 			position: relative;
 			width: 100%;
-			height: 1px;
-			background: var(--hk-border-strong);
+			height: 0;
+			border-top: 1px dashed var(--hk-border-strong);
 		}
 		.am-wire span::after {
 			content: '';
 			position: absolute;
-			top: -3.5px;
+			top: -4px;
 			right: 0;
 			border-block: 4px solid transparent;
 			border-left: 6px solid var(--hk-border-strong);

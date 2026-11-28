@@ -31,35 +31,41 @@
 		</p>
 	</div>
 
-	<ul class="it-list" aria-hidden="true">
-		{#each ROWS as r, idx (r.name)}
-			<li
-				class="it-row it-row--{r.state}"
-				data-frost-on={r.state === 'frozen' ? 'row' : undefined}
-			>
-				{#if r.state === 'frozen'}
-					<Frost kind="row" since={FROZEN_SINCE} n={idx} />
-				{/if}
-				<span class="it-name">{r.name}</span>
-				<span class="it-badge it-badge--{r.state}">
+	<div class="it-pane" aria-hidden="true">
+		<div class="it-pane-head">
+			<span>host-01 · 5 sandboxes</span>
+			<span class="it-pane-sum">1 active · 1 paused · 3 frozen</span>
+		</div>
+		<ul class="it-list">
+			{#each ROWS as r, idx (r.name)}
+				<li
+					class="it-row it-row--{r.state}"
+					data-frost-on={r.state === 'frozen' ? 'row' : undefined}
+				>
 					{#if r.state === 'frozen'}
-						<Snowflake size={12} />
-					{:else}
-						<i class="it-dot it-dot--{r.state}"></i>
+						<Frost kind="row" since={FROZEN_SINCE} n={idx} />
 					{/if}
-					{r.state}
-				</span>
-				<span class="it-mem">
-					{#if r.mem > 0}
-						<span class="it-mem-fill it-mem-fill--{r.state}" style:width="{r.mem}%"></span>
-					{:else}
-						<span class="it-mem-empty">memory freed</span>
-					{/if}
-				</span>
-				<span class="it-act">{r.action}</span>
-			</li>
-		{/each}
-	</ul>
+					<span class="it-name">{r.name}</span>
+					<span class="it-badge it-badge--{r.state}">
+						{#if r.state === 'frozen'}
+							<Snowflake size={12} />
+						{:else}
+							<i class="it-dot it-dot--{r.state}"></i>
+						{/if}
+						{r.state}
+					</span>
+					<span class="it-mem">
+						{#if r.mem > 0}
+							<span class="it-mem-fill it-mem-fill--{r.state}" style:width="{r.mem}%"></span>
+						{:else}
+							<span class="it-mem-empty">memory freed</span>
+						{/if}
+					</span>
+					<span class="it-act">{r.action}</span>
+				</li>
+			{/each}
+		</ul>
+	</div>
 </div>
 
 <style>
@@ -85,15 +91,32 @@
 		margin-top: 0.25rem;
 	}
 
-	/* Sharp-cornered, compact-width list with tall rows so Frost breathes */
+	/* Sharp-cornered host pane with 1px header bar (Zed) & 2px active accent rail (Warp) */
+	.it-pane {
+		border: 1px solid var(--hk-border);
+		border-radius: 0;
+		background: var(--hk-surface);
+	}
+	.it-pane-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.75rem;
+		padding: 0.6rem 1.25rem;
+		border-bottom: 1px solid var(--hk-border);
+		background: var(--hk-bg);
+		font-family: var(--hk-font-mono);
+		font-size: 0.6875rem;
+		color: var(--hk-text-3);
+	}
+	.it-pane-sum {
+		white-space: nowrap;
+	}
 	.it-list {
 		--hk-row-bleed: 0px;
 		margin: 0;
 		padding: 0;
 		list-style: none;
-		border: 1px solid var(--hk-border);
-		border-radius: 0;
-		background: var(--hk-surface);
 	}
 	.it-row {
 		display: grid;
@@ -104,6 +127,9 @@
 		padding: 1.25rem 1.25rem;
 		border-bottom: 1px solid var(--hk-hairline);
 		font-size: 0.8125rem;
+	}
+	.it-row--active {
+		box-shadow: inset 2px 0 0 var(--pic-accent);
 	}
 	.it-row:last-child {
 		border-bottom: 0;
