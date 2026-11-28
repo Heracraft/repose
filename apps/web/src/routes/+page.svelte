@@ -1,7 +1,7 @@
 <script lang="ts">
 	import './landing.css';
 	import '$lib/components/landing/pictures.css';
-	import { onMount, type Component } from 'svelte';
+	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
 	import { toast } from 'svelte-sonner';
 	import { SIGN_IN_FAILED, authState, onSignInLinkClick } from '$lib/auth.svelte';
@@ -13,23 +13,23 @@
 	import { OWN_HARDWARE, PLANS } from '$lib/plans';
 	import PlanCells from '$lib/components/PlanCells.svelte';
 	import CodeCopy from '$lib/components/CodeCopy.svelte';
-	import HeroVisual from '$lib/components/landing/HeroVisual.svelte';
-	import ScrollWheel from '$lib/components/landing/ScrollWheel.svelte';
+	// import HeroVisual from '$lib/components/landing/HeroVisual.svelte';
 	import Wreck from '$lib/components/landing/Wreck.svelte';
 	import PauseButton from '$lib/components/landing/PauseButton.svelte';
-	import MacFigures from '$lib/components/landing/MacFigures.svelte';
+	import UseCasesStack from '$lib/components/landing/UseCasesStack.svelte';
 	import YourHardware from '$lib/components/landing/YourHardware.svelte';
-	import { MAC_DESIGN2_LIVE } from '$lib/data/mac-figures';
-	import { loadHero } from '$lib/components/landing/heroes';
+	import IdleTiers from '$lib/components/landing/IdleTiers.svelte';
+	import AttachMix from '$lib/components/landing/AttachMix.svelte';
+	// import { loadHero } from '$lib/components/landing/heroes';
 
-	/** Optional `?hero=` gallery candidate override; defaults to HeroVisual. */
-	let HeroAlt = $state<Component | null>(null);
-	onMount(async () => {
-		const name = new URLSearchParams(window.location.search).get('hero');
-		if (!name) return;
-		const alt = await loadHero(name);
-		if (alt) HeroAlt = alt;
-	});
+	// /** Optional `?hero=` gallery candidate override; defaults to HeroVisual. */
+	// let HeroAlt = $state<Component | null>(null);
+	// onMount(async () => {
+	// 	const name = new URLSearchParams(window.location.search).get('hero');
+	// 	if (!name) return;
+	// 	const alt = await loadHero(name);
+	// 	if (alt) HeroAlt = alt;
+	// });
 
 	/** GET /public/seats (I-290); undefined until it answers, and if it never does. */
 	let seats = $state<PublicSeats | undefined>(undefined);
@@ -61,8 +61,6 @@
 		startMode === 'cloud' ? [install, login, run] : [install, login, hostAdd, run]
 	);
 
-	/* Sandboxes of the default `small` size (4 GB, docs/machine) that a
-	   plan's memory runs at once: the bar under each plan draws them. */
 	const SMALL_GB = 4;
 	const COUNT = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight'];
 	const fits = (gb: number) => Math.floor(gb / SMALL_GB);
@@ -77,7 +75,7 @@
 	<title>repose: sandboxes for your coding agents</title>
 	<meta
 		name="description"
-		content="Run Claude Code, Codex, and other coding agents with full permissions in isolated Linux VMs with whole-disk undo. On our cloud, or your Mac mini or Linux server."
+		content="Run coding agents with full permissions in isolated Linux VMs with whole-disk undo. On our cloud, or your Linux server or Mac mini."
 	/>
 </svelte:head>
 
@@ -112,13 +110,17 @@
 
 <main id="main" tabindex="-1" class="frame landing">
 	<section class="band hero" aria-labelledby="hero-h">
-		<div class="hero-grid">
-			<div class="hero-copy">
-				<h1 class="hk-h1" id="hero-h">A sandbox per repo, with undo</h1>
+		<div class="hero-top">
+			<div class="hero-top-copy">
+				<h1 class="hk-h1" id="hero-h">
+					A sandbox per repo, <span class="muted">with undo</span>
+				</h1>
 				<p class="hk-lead">
-					Agents get full permissions in a Linux VM set up like your laptop, on our cloud or your
-					Mac mini or Linux server.
+					Give coding agents full permissions in isolated Linux VMs that keep going after you close
+					your laptop — on our cloud, or your Linux server or Mac mini.
 				</p>
+			</div>
+			<div class="hero-top-act">
 				<div class="hero-act">
 					<div class="hero-btns">
 						{@render authAction('Start a free week', 'Open the dashboard', '/billing')}
@@ -134,76 +136,99 @@
 					</div>
 				</div>
 				<p class="hero-meta">
-					<span class="nw">{solo.trialDays} days free</span>
+					<span class="nw">{solo.trialDays} days free on cloud</span>
 					<span class="sep" aria-hidden="true">·</span>
-					<a class="meta-link nw" href="#pricing">Cloud from {price(soloPrice)}/mo</a>
+					<a class="meta-link nw" href="#pricing">Free on your own host</a>
 					<span class="sep" aria-hidden="true">·</span>
-					<a class="meta-link nw" href="#pricing"
-						>Your Mac mini or Linux server {price(OWN_HARDWARE.priceCents)}/mo</a
-					>
+					<span class="nw">Apache 2.0</span>
 				</p>
 			</div>
-
-			<div class="hero-pane hero-stage">
-				<div class="hero-term">
-					{#if HeroAlt}
-						<HeroAlt />
-					{:else}
-						<HeroVisual />
-					{/if}
-				</div>
-			</div>
 		</div>
-	</section>
 
-	<section class="band band--wheel" id="agents" aria-labelledby="where-h">
-		<ScrollWheel />
-	</section>
-
-	<section class="band" id="safety" aria-labelledby="safety-h">
-		<div class="head">
-			{@render label('02', 'Safety')}
-			<h2 class="hk-h2" id="safety-h">Let the agent break the whole machine</h2>
-		</div>
-		<div class="fig">
+		<!-- Desktop: full interactive Wreck -> Restore visual above the fold -->
+		<div class="fig hero-wreck-desktop">
 			<div class="stage">
 				<Wreck />
 			</div>
 			<PauseButton />
 		</div>
+
+		<!-- Mobile: compact single-card summary (avoids the 8-row vertical column) -->
+		<div class="hero-wreck-mobile" aria-hidden="true">
+			<div class="hwm-card">
+				<div class="hwm-row">
+					<span class="hwm-dot hwm-dot--ok"></span>
+					<span class="hwm-k">Your laptop</span>
+					<span class="hwm-v">Untouched</span>
+				</div>
+				<div class="hwm-row hwm-row--mid">
+					<span class="hwm-dot hwm-dot--err"></span>
+					<span class="hwm-k">Isolated sandbox</span>
+					<span class="hwm-v">Agent breaks OS &amp; deps</span>
+				</div>
+				<div class="hwm-row hwm-row--undo">
+					<span class="hwm-dot hwm-dot--acc"></span>
+					<span class="hwm-k">Whole-disk undo</span>
+					<span class="hwm-v">Restored in seconds</span>
+				</div>
+			</div>
+		</div>
+	</section>
+
+	<section class="band" id="agents" aria-labelledby="agents-h">
+		<div class="head">
+			{@render label('01', 'Always on')}
+			<h2 class="hk-h2" id="agents-h">
+				One machine, <span class="muted">any kind of agent</span>
+			</h2>
+			<p class="copy side">
+				Sandboxes stay up after you close your laptop, run on schedules, and wake up on webhooks.
+			</p>
+		</div>
+		<UseCasesStack />
 	</section>
 
 	<section class="band" id="hardware" aria-labelledby="hardware-h">
 		<div class="head">
-			{@render label('03', 'Your hardware')}
-			<h2 class="hk-h2" id="hardware-h">Run it on hardware you own</h2>
+			{@render label('02', 'Your hardware')}
+			<h2 class="hk-h2" id="hardware-h">
+				Run it on hardware <span class="muted">you already own</span>
+			</h2>
 			<div class="links side">
 				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'own-hardware' })}>What it needs</a
 				>
 			</div>
 		</div>
 		<YourHardware />
-		{#if MAC_DESIGN2_LIVE}<MacFigures />{/if}
+	</section>
+
+	<section class="band" id="idle" aria-labelledby="idle-h">
+		<IdleTiers />
+	</section>
+
+	<section class="band" id="attach" aria-labelledby="attach-h">
+		<div class="head">
+			{@render label('04', 'No lock-in')}
+			<h2 class="hk-h2" id="attach-h">
+				One command to attach. <span class="muted">Bring anything.</span>
+			</h2>
+			<p class="copy side">
+				Connect from Claude Code Desktop, your terminal, or any frontend. Mix agents and
+				subscriptions with full control of the machine.
+			</p>
+		</div>
+		<AttachMix />
 	</section>
 
 	<section class="band" id="pricing" aria-labelledby="pricing-h">
 		<div class="head head--pricing">
-			{@render label('04', 'Pricing')}
+			{@render label('05', 'Pricing')}
 			<div class="pricing-title">
 				<h2 class="hk-h2" id="pricing-h">Pay for what runs at once</h2>
 				<p class="copy pricing-lead">Stopped sandboxes don't count against your memory.</p>
 			</div>
 			<div class="cta-row side">
 				{@render authAction('Start a free week', 'Open the dashboard', '/billing')}
-				{#if !authState.authenticated && seats}
-					<p class="seats" data-testid="seats-line">
-						{#if seats.free > 0}
-							{seats.free} cloud {seats.free === 1 ? 'seat' : 'seats'} left
-						{:else}
-							Cloud full for now, {seats.waiting} waiting. Your machine has no waitlist.
-						{/if}
-					</p>
-				{/if}
 			</div>
 		</div>
 		<PlanCells plans={PLANS} {introEligible} variant="public" level={3} />
@@ -225,19 +250,19 @@
 		<div class="hw" id="parts" data-testid="plan-own">
 			<h3 class="hw-name">Your machine</h3>
 			<p class="hw-price">
-				<span class="n">{price(OWN_HARDWARE.priceCents)}</span>
-				<span class="per">a month</span>
+				<span class="n">Free</span>
+				<span class="per">for your first host</span>
 			</p>
 			<p class="hw-what">
-				Any number of hosts you own. Each runs as many sandboxes as its memory and disk hold.
-				Every cloud plan includes them.
+				Bring your own Linux server or Mac mini — run as many sandboxes as its memory and disk hold.
+				Add unlimited hosts for {price(OWN_HARDWARE.priceCents)}/mo, or included with any cloud plan.
 			</p>
 		</div>
 	</section>
 
 	<section class="band install-band" id="install" aria-labelledby="install-h">
 		<div class="head">
-			{@render label('05', 'Start')}
+			{@render label('06', 'Start')}
 			<h2 class="hk-h2" id="install-h">Run it in your repo</h2>
 		</div>
 		<div class="start-tabs">
