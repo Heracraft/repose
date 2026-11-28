@@ -138,7 +138,7 @@
 				<p class="hero-meta">
 					<span class="nw">{solo.trialDays} days free on cloud</span>
 					<span class="sep" aria-hidden="true">·</span>
-					<a class="meta-link nw" href="#pricing">Free on your own hardware (up to 2 hosts)</a>
+					<a class="meta-link nw" href="#pricing">Free on your own host</a>
 					<span class="sep" aria-hidden="true">·</span>
 					<span class="nw">Apache 2.0</span>
 				</p>
@@ -251,11 +251,11 @@
 			<h3 class="hw-name">Your machine</h3>
 			<p class="hw-price">
 				<span class="n">Free</span>
-				<span class="per">up to 2 hosts · {price(OWN_HARDWARE.priceCents)}/mo beyond</span>
+				<span class="per">for your first host</span>
 			</p>
 			<p class="hw-what">
-				Bring your own Linux server or Mac mini. Each runs as many sandboxes as its memory and disk
-				hold. Every cloud plan includes unlimited hosts.
+				Bring your own Linux server or Mac mini — run as many sandboxes as its memory and disk hold.
+				Add unlimited hosts for {price(OWN_HARDWARE.priceCents)}/mo, or included with any cloud plan.
 			</p>
 		</div>
 	</section>

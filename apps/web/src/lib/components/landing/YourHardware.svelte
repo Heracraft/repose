@@ -8,7 +8,7 @@
 	<ul class="yh-list">
 		<li>
 			<strong>Your own hardware is already fast enough.</strong>
-			<span>Linux server or Mac mini — free for up to 2 hosts, no per-minute meter.</span>
+			<span>Linux server or Mac mini — first host free, no per-minute meter.</span>
 		</li>
 		<li>
 			<strong>Reach it from anywhere.</strong>

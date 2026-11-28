@@ -1,114 +1,97 @@
 <!--
-  05 No lock-in: one command to attach from the frontends developers actually
-  use (Claude Code Desktop, Terminal, temu3code, or any frontend) into a
-  sandbox mixing agents and subscriptions with full root control.
-  Consistent --hk-border / --hk-hairline framing (no extra glows).
+  04 No lock-in: one command (`repose attach`) from any frontend
+  (Claude Desktop, Terminal, t3code, or any frontend) into a clean
+  sandbox pane showing mixed agents/subscriptions and full machine control.
 -->
-<div class="am-stage" data-testid="attach-mix">
-	<div class="am">
-		<div class="am-col">
-			<div class="am-cmd-pill">
-				<span class="am-prompt">$</span>
-				<code>repose attach</code>
-			</div>
-			<div class="am-clients">
-				<span class="am-client">
-					<svg
-						viewBox="0 0 16 16"
-						width="13"
-						height="13"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="1.4"
-						stroke-linejoin="round"
-						aria-hidden="true"
-					>
-						<rect x="2" y="2.75" width="12" height="10.5" rx="1.5" />
-						<path d="M2 5.75h12" />
-					</svg>
-					Claude Code Desktop
-				</span>
-				<span class="am-client">
-					<svg
-						viewBox="0 0 16 16"
-						width="13"
-						height="13"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="1.4"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						aria-hidden="true"
-					>
-						<path d="M3.5 5l3 3-3 3M8 11h4.5" />
-					</svg>
-					Terminal
-				</span>
-				<a
-					class="am-client am-client-link"
-					href="https://t3.codes"
-					target="_blank"
-					rel="noopener noreferrer">t3code ↗</a
+<div class="am" data-testid="attach-mix">
+	<div class="am-col">
+		<div class="am-cmd-pill">
+			<span class="am-prompt">$</span>
+			<code>repose attach</code>
+		</div>
+		<div class="am-clients">
+			<span class="am-client">
+				<svg
+					viewBox="0 0 16 16"
+					width="13"
+					height="13"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="1.4"
+					stroke-linejoin="round"
+					aria-hidden="true"
 				>
-				<span class="am-client">Any frontend</span>
-			</div>
+					<rect x="2" y="2.75" width="12" height="10.5" rx="1.5" />
+					<path d="M2 5.75h12" />
+				</svg>
+				<span>Claude Desktop</span>
+			</span>
+			<span class="am-client">
+				<svg
+					viewBox="0 0 16 16"
+					width="13"
+					height="13"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="1.4"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					aria-hidden="true"
+				>
+					<path d="M3.5 5l3 3-3 3M8 11h4.5" />
+				</svg>
+				<span>Terminal</span>
+			</span>
+			<a
+				class="am-client am-client-link"
+				href="https://t3.codes"
+				target="_blank"
+				rel="noopener noreferrer"><span>t3code ↗</span></a
+			>
+			<span class="am-client"><span>Any frontend</span></span>
 		</div>
+	</div>
 
-		<div class="am-wire" aria-hidden="true">
-			<span></span>
-		</div>
+	<div class="am-wire" aria-hidden="true">
+		<span></span>
+	</div>
 
-		<div class="am-col" aria-hidden="true">
-			<div class="am-box">
-				<div class="am-box-h">
-					<span class="am-dot"></span>
-					<span class="am-mono">your-repo</span>
-					<span class="am-sub-tag">full root · your dotfiles</span>
-				</div>
-				<div class="am-agents">
-					<div class="am-agent">
-						<span class="am-role">Primary driver</span>
-						<span class="am-name">Claude Code</span>
-					</div>
-					<span class="am-plus">+</span>
-					<div class="am-agent">
-						<span class="am-role">Builder worker</span>
-						<span class="am-name">DeepSeek</span>
-					</div>
-					<span class="am-plus">+</span>
-					<div class="am-agent am-agent--any">
-						<span class="am-role">Any model</span>
-						<span class="am-name">Codex / custom</span>
-					</div>
-				</div>
-				<div class="am-dots">
-					<code>.zshrc</code>
-					<code>.gitconfig</code>
-					<code>~/.claude/</code>
-					<code>your scripts</code>
-				</div>
-			</div>
+	<div class="am-box" aria-hidden="true">
+		<div class="am-box-h">
+			<span class="am-dot"></span>
+			<span class="am-mono">your-repo</span>
+			<span class="am-sub-tag">root · your dotfiles</span>
 		</div>
+		<ul class="am-list">
+			<li>
+				<span class="am-agent-name">Claude Code</span>
+				<span class="am-agent-role">primary driver</span>
+				<span class="am-agent-src">Anthropic sub</span>
+			</li>
+			<li>
+				<span class="am-agent-name">DeepSeek</span>
+				<span class="am-agent-role">builder worker</span>
+				<span class="am-agent-src">API key</span>
+			</li>
+			<li class="am-list-more">
+				<span class="am-agent-name">Codex, opencode, or custom</span>
+				<span class="am-agent-src">your choice</span>
+			</li>
+		</ul>
 	</div>
 </div>
 
 <style>
-	.am-stage {
-		padding: 1.25rem;
-		border: 1px solid var(--hk-hairline);
-		border-radius: 12px;
-		background: var(--hk-bg);
-		margin-bottom: 2.25rem;
-	}
 	.am {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr);
-		gap: 1rem;
+		gap: 1.25rem;
 		align-items: center;
+		padding-bottom: 2.5rem;
 	}
-	@media (min-width: 900px) {
+	@media (min-width: 960px) {
 		.am {
-			grid-template-columns: minmax(0, 0.92fr) 3rem minmax(0, 1.38fr);
+			grid-template-columns: minmax(0, 0.95fr) 3rem minmax(0, 1.35fr);
 			gap: 0;
 		}
 	}
@@ -116,6 +99,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.625rem;
+		min-width: 0;
 	}
 	.am-cmd-pill {
 		display: flex;
@@ -123,7 +107,7 @@
 		gap: 0.5rem;
 		padding: 0.75rem 1rem;
 		border: 1px solid var(--hk-border);
-		border-radius: 9px;
+		border-radius: 6px;
 		background: var(--hk-surface);
 		font-family: var(--hk-font-mono);
 		font-size: 0.875rem;
@@ -136,40 +120,47 @@
 		display: grid;
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 		border: 1px solid var(--hk-border);
-		border-radius: 9px;
+		border-radius: 6px;
 		background: var(--hk-surface);
 		overflow: hidden;
 		font-size: 0.8125rem;
 		color: var(--hk-text-2);
 	}
-	.am-clients > :is(span, a) {
+	.am-client {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.45rem;
-		padding: 0.65rem 0.875rem;
+		min-width: 0;
+		padding: 0.7rem 0.85rem;
 		border-right: 1px solid var(--hk-hairline);
 		border-bottom: 1px solid var(--hk-hairline);
 		text-decoration: none;
 		color: inherit;
 	}
+	.am-client span {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
 	.am-client svg {
 		flex: none;
 		color: var(--hk-text-3);
 	}
-	.am-clients > :is(span, a):nth-child(2n) {
+	.am-client:nth-child(2n) {
 		border-right: 0;
 	}
-	.am-clients > :is(span, a):nth-last-child(-n + 2) {
+	.am-client:nth-last-child(-n + 2) {
 		border-bottom: 0;
 	}
 	.am-client-link:hover {
 		color: var(--hk-text);
 		background: var(--hk-surface-2);
 	}
+
 	.am-wire {
 		display: none;
 	}
-	@media (min-width: 900px) {
+	@media (min-width: 960px) {
 		.am-wire {
 			display: flex;
 			align-items: center;
@@ -189,19 +180,22 @@
 			border-left: 6px solid var(--hk-border-strong);
 		}
 	}
+
+	/* Clean ruled machine pane for `your-repo` */
 	.am-box {
 		border: 1px solid var(--hk-border);
-		border-radius: 10px;
+		border-radius: 6px;
 		background: var(--hk-surface);
-		padding: 1rem 1.125rem;
+		overflow: hidden;
+		min-width: 0;
 	}
 	.am-box-h {
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
-		padding-bottom: 0.75rem;
-		margin-bottom: 0.875rem;
+		padding: 0.65rem 1rem;
 		border-bottom: 1px solid var(--hk-hairline);
+		background: var(--hk-bg);
 		font-size: 0.75rem;
 	}
 	.am-dot {
@@ -209,6 +203,7 @@
 		height: 7px;
 		border-radius: 50%;
 		background: var(--pic-accent);
+		flex: none;
 	}
 	.am-mono {
 		font-family: var(--hk-font-mono);
@@ -220,55 +215,57 @@
 		font-size: 0.6875rem;
 		color: var(--hk-text-3);
 	}
-	.am-agents {
-		display: flex;
-		flex-wrap: wrap;
+	.am-list {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+	.am-list li {
+		display: grid;
+		grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) auto;
 		align-items: center;
-		gap: 0.5rem;
-		margin-bottom: 0.875rem;
+		gap: 0.75rem;
+		padding: 0.8rem 1rem;
+		border-bottom: 1px solid var(--hk-hairline);
+		font-size: 0.8125rem;
 	}
-	.am-agent {
-		flex: 1 1 7.5rem;
-		display: flex;
-		flex-direction: column;
-		gap: 0.125rem;
-		padding: 0.625rem 0.75rem;
-		border: 1px solid var(--hk-hairline);
-		border-radius: 7px;
-		background: var(--hk-bg);
+	.am-list li:last-child {
+		border-bottom: 0;
 	}
-	.am-agent--any {
-		border-style: dashed;
-	}
-	.am-role {
-		font-family: var(--hk-font-mono);
-		font-size: 0.6875rem;
+	.am-list li.am-list-more {
+		grid-template-columns: minmax(0, 1fr) auto;
 		color: var(--hk-text-3);
 	}
-	.am-name {
-		font-size: 0.875rem;
+	.am-agent-name {
 		font-weight: 500;
 		color: var(--hk-text);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
-	.am-plus {
-		font-family: var(--hk-font-mono);
-		font-size: 0.875rem;
-		color: var(--hk-text-4);
+	.am-list-more .am-agent-name {
+		font-weight: 400;
+		color: var(--hk-text-2);
 	}
-	.am-dots {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.45rem;
-		padding-top: 0.75rem;
-		border-top: 1px solid var(--hk-hairline);
+	.am-agent-role {
+		font-size: 0.75rem;
+		color: var(--hk-text-3);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
-	.am-dots code {
-		padding: 0.15rem 0.45rem;
-		border: 1px solid var(--hk-hairline);
-		border-radius: 4px;
-		background: var(--hk-bg);
+	.am-agent-src {
 		font-family: var(--hk-font-mono);
 		font-size: 0.6875rem;
 		color: var(--hk-text-3);
+		white-space: nowrap;
+	}
+	@media (max-width: 639.98px) {
+		.am-list li {
+			grid-template-columns: minmax(0, 1fr) auto;
+		}
+		.am-agent-role {
+			display: none;
+		}
 	}
 </style>

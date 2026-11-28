@@ -298,20 +298,12 @@ main.landing .plans .p-name {
 .landing .hero-top-act .hero-meta {
 	justify-content: center;
 }
-@media (min-width: 768px) {
-	.landing .hero-top-act .hero-act {
-		flex-direction: row;
-		flex-wrap: wrap;
-		justify-content: center;
-		gap: 0.75rem 1.25rem;
-	}
-}
 @media (min-width: 1024px) {
 	.landing .hero-top {
 		padding: 3rem 0 1.75rem;
 	}
 	.landing .hero-top-copy h1.hk-h1 {
-		max-width: 24ch;
+		max-width: 20ch;
 	}
 }
 .landing .hero-wreck-desktop {
