@@ -268,25 +268,50 @@ main.landing .plans .p-name {
 .landing .hero-top {
 	display: flex;
 	flex-direction: column;
+	align-items: center;
+	text-align: center;
 	gap: 1.25rem;
-	padding: 2rem 0 1.75rem;
+	padding: 2.5rem 0 1.75rem;
 }
-@media (min-width: 1024px) {
-	.landing .hero-top {
-		padding: 2.25rem 0 1.5rem;
-	}
-	.landing .hero-top-copy h1.hk-h1 {
-		max-width: 24ch;
-	}
-	.landing .hero-top-copy .hk-lead {
-		max-width: 42rem;
-	}
+.landing .hero-top-copy {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+}
+.landing .hero-top-copy h1.hk-h1 {
+	max-width: 22ch;
+}
+.landing .hero-top-copy .hk-lead {
+	max-width: 42rem;
+}
+.landing .hero-top-act {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	width: 100%;
+}
+.landing .hero-top-act .hero-act {
+	align-items: center;
+	margin-top: 0;
+}
+.landing .hero-top-act .hero-btns,
+.landing .hero-top-act .hero-meta {
+	justify-content: center;
+}
+@media (min-width: 768px) {
 	.landing .hero-top-act .hero-act {
 		flex-direction: row;
 		flex-wrap: wrap;
-		align-items: center;
+		justify-content: center;
 		gap: 0.75rem 1.25rem;
-		margin-top: 0;
+	}
+}
+@media (min-width: 1024px) {
+	.landing .hero-top {
+		padding: 3rem 0 1.75rem;
+	}
+	.landing .hero-top-copy h1.hk-h1 {
+		max-width: 24ch;
 	}
 }
 .landing .hero-wreck-desktop {
